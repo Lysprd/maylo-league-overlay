@@ -21,7 +21,7 @@
 maylo reads English and French augment titles and places stats above the matching cards. This simulated offer shows how a fourth badge appears while the first three stay in place.
 
 <p align="center">
-  <img src="docs/media/overlay-demo.gif" width="900" alt="The maylo overlay recognizes a fourth augment in a simulated ARAM Mayhem offer" />
+  <img src="docs/media/overlay-demo-rounded.gif" width="900" alt="The maylo overlay recognizes a fourth augment in a simulated ARAM Mayhem offer" />
 </p>
 
 **Alt+G** opens the in-game sheet, **Alt+O** lets you move widgets, and **Alt+A** rescans the offer.
@@ -47,7 +47,7 @@ The Hub shows recent matches, champion stats and tier lists.
 3. maylo downloads updates in the background, verifies their SHA-256 digest and applies them at the next launch. Your settings carry over.
 
 <p align="center">
-  <img src="docs/media/installer-demo.gif" width="900" alt="The maylo installer shows shortcut options, installation progress and the completion screen" />
+  <img src="docs/media/installer-demo-rounded.gif" width="900" alt="The maylo installer shows shortcut options, installation progress and the completion screen" />
 </p>
 
 For portable use, extract the entire ZIP and run `MAYLO-Hub.exe`. The portable ZIP is updated manually.
