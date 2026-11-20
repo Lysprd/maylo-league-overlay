@@ -65,11 +65,10 @@ jobs:
               Set-Content -LiteralPath $notesPath -Value $notes -Encoding utf8
               $releaseArgs += @('--notes-file', $notesPath)
             }
-            if ($env:MAYLO_VERSION.Contains('-beta.')) { $releaseArgs += '--prerelease' }
             gh @releaseArgs
             if ($LASTEXITCODE) { throw 'Could not create draft' }
           }
           gh release upload $tag "dist/MAYLO-$tag-Setup.exe" dist/MAYLO-win-x64.zip --clobber
           if ($LASTEXITCODE) { throw 'Upload failed' }
-          gh release edit $tag --draft=false
+          gh release edit $tag --draft=false --latest
           if ($LASTEXITCODE) { throw 'Could not publish release' }
