@@ -11,27 +11,28 @@ namespace MayhemCompanion {
   public bool Visible, Refreshing;
   public int Revision;
   DateTime missingSince = DateTime.MinValue;
-  public const int HoldMilliseconds = 750;
+  public const int HoldMilliseconds = 550;
   const int SlotHoldMilliseconds = 2400;
   const int ClickRerollHoldMilliseconds = 1500;
-  const int ClickPickHoldMilliseconds = 240;
+  const int ClickPickHoldMilliseconds = 90;
   AugmentHit clickedSlot;
   bool clickCanPick;
   DateTime clickUntil;
   int missingFrames;
   public Stat ConfirmedPick { get; private set; }
+  public bool PendingPick { get { return clickCanPick; } }
 
   public bool TrackClick(double x, double y, DateTime now) {
-   if (!Visible || y < 0.18 || y > 0.90) return false;
+   if (!Visible || y < 0.14 || y > 0.92) return false;
    var nearest = Positions.Where(p => p != null).OrderBy(p => Math.Abs(p.X - x)).FirstOrDefault();
    if (nearest == null) return false;
    double halfWidth = Positions.Where(p => p != null && p != nearest)
-    .Select(p => Math.Abs(p.X - nearest.X) / 2).DefaultIfEmpty(0.115).Min();
-   if (Math.Abs(nearest.X - x) >= Math.Min(halfWidth, 0.115)) return false;
+    .Select(p => Math.Abs(p.X - nearest.X) / 2).DefaultIfEmpty(0.12).Min();
+   if (Math.Abs(nearest.X - x) >= Math.Min(halfWidth, 0.12)) return false;
 
-   // A click lower down can be a reroll button (keep 1500ms grace so reroll animations never blink).
-   // A click inside the card is likely a pick: close quickly (~240ms + 2 empty frames) once the offer disappears.
-   bool cardInterior = y >= nearest.Y - 0.14 && y <= nearest.Y + 0.22;
+   // A click below the card (~Y=0.72+) is the reroll button (keep 1500ms grace so rerolls never blink).
+   // A click inside the card (art, title, or description) is a pick: close promptly (~90ms + 2 fast 45ms frames).
+   bool cardInterior = y >= nearest.Y - 0.22 && y <= nearest.Y + 0.25;
    clickedSlot = nearest;
    clickCanPick = cardInterior && (now - SlotLastSeen[Array.IndexOf(Positions, nearest)]).TotalMilliseconds <= ClickRerollHoldMilliseconds;
    clickUntil = now.AddMilliseconds(clickCanPick ? ClickPickHoldMilliseconds : ClickRerollHoldMilliseconds);

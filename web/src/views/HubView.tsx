@@ -1098,14 +1098,13 @@ export function HubView({ state }: { state: AppState }) {
             {(state.update?.state === 'downloading' || state.update?.state === 'ready') && (
               <div
                 className={cn(
-                  'relative overflow-hidden rounded-xl border p-2.5 space-y-2',
+                  'rounded-xl border p-2.5 space-y-2 transition-colors',
                   state.update.canRestart
-                    ? 'border-indigo-400/65 bg-indigo-500/14 shadow-[0_0_24px_rgba(99,102,241,0.22)]'
+                    ? 'border-indigo-400/70 bg-gradient-to-b from-indigo-500/18 to-indigo-500/8 shadow-[0_0_22px_rgba(99,102,241,0.22)]'
                     : 'border-indigo-400/40 bg-indigo-500/10'
                 )}
               >
-                {state.update.canRestart && <BorderBeam tone="indigo" />}
-                <div className="relative z-10 flex items-center justify-between gap-2 min-w-0">
+                <div className="flex items-center justify-between gap-2 min-w-0">
                   <span className="inline-flex items-center gap-1.5 min-w-0 text-[11px] font-bold text-indigo-700 dark:text-indigo-200 whitespace-nowrap">
                     {state.update.state === 'downloading' ? (
                       <RefreshCw className="size-3 animate-spin shrink-0" />

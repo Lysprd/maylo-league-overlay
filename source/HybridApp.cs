@@ -205,7 +205,7 @@ namespace MayhemCompanion {
     Height = r.Height * sy;
     lastRect = key;
    }
-   bool wantInteractive = app.IsOverlayEditing || app.InGameSheet || app.OverlayDragging;
+   bool wantInteractive = app.IsOverlayEditing || app.IsTabInteractive || app.InGameSheet || app.OverlayDragging;
    // CRITICAL: On Tab hold, keep WS_EX_NOACTIVATE (wantActivate = false) so League keeps keyboard focus (ZERO lag, ZERO Tab scroll)
    // while Background alpha=1 + ~WS_EX_TRANSPARENT still allows instant mouse dragging!
    bool wantActivate = app.InGameSheet || app.Editing;
@@ -219,10 +219,11 @@ namespace MayhemCompanion {
   readonly WebView2 web;
   Border splashCover;
   Task<CoreWebView2Environment> webEnvTask;
-  bool webReady, splashDismissed, closing, pollBusy, ocrBusy, selectionBusy, tabHeld, tabSuppressed, manualModeOverride;
+  bool webReady, splashDismissed, closing, pollBusy, ocrBusy, selectionBusy, tabHeld, tabInteractive, tabSuppressed, manualModeOverride;
   public bool HubActive, Preview, Editing, OverlayVisible = true, PrivateMode, InGameSheet, OverlayDragging;
   public string InGameSheetTab = "build", PreviewScene = "";
   public bool IsOverlayEditing { get { return Editing || tabHeld; } }
+  public bool IsTabInteractive { get { return tabInteractive; } }
   public string UiDistDir { get { return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ui-dist"); } }
 
   public readonly GameBridge Bridge = new GameBridge();
@@ -243,7 +244,7 @@ namespace MayhemCompanion {
   byte[] lastDebugPng;
   ulong lastOcrSig, lastChampCardSig;
   DateTime nextOcrRecovery = DateTime.MinValue;
-  DateTime offerAppearedAt = DateTime.MinValue;
+  DateTime offerAppearedAt = DateTime.MinValue, champCardCooldownUntil = DateTime.MinValue;
   int offerScanGeneration, lastRawHitCount, champCardMisses;
   int previewAugmentCount = 3;
   bool manualRoleOverride, leftMouseWasDown, realQuit, wasInGame, hadGameWindow, loadoutBusy, champCardBusy;
@@ -695,7 +696,34 @@ namespace MayhemCompanion {
    bool down = (Native.GetAsyncKeyState(0x01) & 0x8000) != 0;
    bool edge = down && !leftMouseWasDown;
    leftMouseWasDown = down;
-   if (!edge || !offerSession.Visible || !Game.InGame || HubActive || InGameSheet || IsOverlayEditing) return;
+   if (!edge || HubActive || InGameSheet || IsOverlayEditing) return;
+
+   // 1. Instant dismissal when clicking a Champion Card in ARAM / ARAM Mayhem Champ Select (<40ms!)
+   if (Game.InSelection && !Game.InGame && champSelectCards.Count >= 2) {
+    IntPtr clientWin = Game.Window != IntPtr.Zero ? Game.Window : Native.Target(false);
+    if (clientWin != IntPtr.Zero && Native.SameApplication(Native.GetForegroundWindow(), clientWin)) {
+     Native.Point cpt;
+     if (Native.GetCursorPos(out cpt)) {
+      var cr = Native.Bounds(clientWin);
+      if (cr.Width >= 400 && cr.Height >= 250) {
+       double crx = (cpt.X - cr.Left) / (double)cr.Width;
+       double cry = (cpt.Y - cr.Top) / (double)cr.Height;
+       bool hitCard = cry >= 0.16 && cry <= 0.88 && champSelectCards.Any(c => Math.Abs(c.X - crx) <= 0.14);
+       if (hitCard) {
+        champSelectCards = new List<ChampionCardHit>();
+        lastChampCardSig = 0;
+        champCardMisses = 0;
+        champCardCooldownUntil = DateTime.UtcNow.AddMilliseconds(1100);
+        PushState();
+       }
+      }
+     }
+    }
+    return;
+   }
+
+   // 2. Fast pick / reroll tracking when clicking an In-Game Augment Card
+   if (!offerSession.Visible || !Game.InGame) return;
    if (!Native.SameApplication(Native.GetForegroundWindow(), Game.Window)) return;
    Native.Point pt;
    if (!Native.GetCursorPos(out pt)) return;
@@ -708,21 +736,48 @@ namespace MayhemCompanion {
     lastOcrSig = 0;
     nextOcrRecovery = DateTime.MinValue;
     offerScanGeneration++;
+    if (offerSession.PendingPick && ocrTimer != null) ocrTimer.Interval = TimeSpan.FromMilliseconds(45);
    }
   }
 
   void UpdateTabEditing() {
-   // Require Ctrl + Tab (instead of bare Tab) so checking the League scoreboard with Tab NEVER interrupts gameplay!
    bool ctrl = (Native.GetAsyncKeyState(0x11) & 0x8000) != 0;
-   bool down = ctrl && ((Native.GetAsyncKeyState(9) & 0x8000) != 0);
-   if (!down) tabSuppressed = false;
-   bool allowed = !tabSuppressed && !HubActive && !InGameSheet && (Game.InGame || Game.InSelection || Preview) && Config.Overlay && OverlayVisible && (Native.SameApplication(Native.GetForegroundWindow(), Game.Window) || Native.OurWindow(Native.GetForegroundWindow()));
-   bool next = down && allowed;
-   if (!next && OverlayDragging) return;
-   if (next == tabHeld) return;
-   tabHeld = next;
+   bool tabKey = (Native.GetAsyncKeyState(9) & 0x8000) != 0;
+   bool editDown = ctrl && tabKey;
+   if (!editDown) tabSuppressed = false;
+   bool allowed = !HubActive && !InGameSheet && (Game.InGame || Game.InSelection || Preview) && Config.Overlay && OverlayVisible
+    && (Native.SameApplication(Native.GetForegroundWindow(), Game.Window) || Native.OurWindow(Native.GetForegroundWindow()));
+   bool nextEdit = editDown && !tabSuppressed && allowed;
+
+   // Bare Tab (without Ctrl): allow clicking overlay buttons (RED/BLUE jungle clear, Spell Tracker)
+   // when hovering their corner, while keeping the center League Tab scoreboard 100% click-through!
+   bool nextTabClick = false;
+   if (tabKey && !ctrl && allowed && Game.InGame && !Editing && Game.Window != IntPtr.Zero) {
+    Native.Point pt;
+    if (Native.GetCursorPos(out pt)) {
+     var r = Native.Bounds(Game.Window);
+     if (r.Width >= 400 && r.Height >= 250) {
+      double rx = (pt.X - r.Left) / (double)r.Width;
+      double ry = (pt.Y - r.Top) / (double)r.Height;
+      bool overMinimap = ry >= 0.50 && (Config.MinimapLeft ? rx <= 0.36 : rx >= 0.64);
+      bool overLeftHud = rx <= 0.24 && ry >= 0.06 && ry <= 0.78;
+      nextTabClick = overMinimap || overLeftHud;
+     }
+    }
+   }
+
+   bool changed = false;
+   if (nextEdit != tabHeld && (nextEdit || !OverlayDragging)) {
+    tabHeld = nextEdit;
+    changed = true;
+   }
+   if (nextTabClick != tabInteractive) {
+    tabInteractive = nextTabClick;
+    changed = true;
+   }
+   if (!changed) return;
    if (overlay != null) overlay.Sync();
-   PushState();
+   if (nextEdit == tabHeld) PushState();
   }
 
   void ToggleInGameSheet(string tab) {
@@ -1035,6 +1090,12 @@ namespace MayhemCompanion {
     if (matchPhase && Game.ModeKey == "" && InGameSheet && !Preview) CloseInGameSheet(false);
     if (Game.InSelection && String.IsNullOrEmpty(Game.Champion) && DateTime.UtcNow - lastFastSelection < TimeSpan.FromSeconds(2)) Game.Champion = fastChampion;
     if (!oldGame.InGame && Game.InGame) displayedClientChampion = "";
+    if (Game.InSelection && champSelectCards.Count > 0 && ((String.IsNullOrEmpty(oldGame.Champion) && !String.IsNullOrEmpty(Game.Champion)) || Game.Bench.Count > oldGame.Bench.Count)) {
+     champSelectCards = new List<ChampionCardHit>();
+     lastChampCardSig = 0;
+     champCardMisses = 0;
+     champCardCooldownUntil = DateTime.UtcNow.AddMilliseconds(1100);
+    }
     if (Game.ModeKey != "") FollowPage(Game.Champion);
     if (Game.InSelection) PrefetchChampSelectSynergies();
     await SyncLoadout();
@@ -1097,6 +1158,7 @@ namespace MayhemCompanion {
 
   async Task ReadChampSelectCards() {
    if (champCardBusy || closing || !Game.InSelection || Game.InGame || Champions.Count == 0) return;
+   if (DateTime.UtcNow < champCardCooldownUntil) return;
    IntPtr target = Game.Window != IntPtr.Zero ? Game.Window : Native.Target(false);
    if (target == IntPtr.Zero || !Native.IsWindow(target) || !Native.IsWindowVisible(target) || Native.IsIconic(target)) return;
    if (!Native.SameApplication(Native.GetForegroundWindow(), target)) return;
@@ -1135,7 +1197,8 @@ namespace MayhemCompanion {
      }
     } else if (champSelectCards.Count > 0) {
      champCardMisses++;
-     if (champCardMisses >= 2) {
+     int needMisses = !String.IsNullOrEmpty(Game.Champion) ? 1 : 2;
+     if (champCardMisses >= needMisses) {
       champSelectCards = new List<ChampionCardHit>();
       lastChampCardSig = 0;
       champCardMisses = 0;

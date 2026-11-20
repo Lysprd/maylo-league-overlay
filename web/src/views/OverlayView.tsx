@@ -2186,7 +2186,7 @@ export function OverlayView({ state }: { state: AppState }) {
               {(showEarlyClearPath || editing) && (
                 <div
                   data-no-drag
-                  className="mb-1.5 flex w-full flex-wrap items-center justify-between gap-1 rounded-lg border border-white/12 bg-[#0B0C10]/92 px-1.5 py-1 text-[10px] backdrop-blur-md shadow-md"
+                  className="pointer-events-auto mb-1.5 flex w-full flex-wrap items-center justify-between gap-1 rounded-lg border border-white/12 bg-[#0B0C10]/92 px-1.5 py-1 text-[10px] backdrop-blur-md shadow-md"
                 >
                   {editing ? (
                     <>

@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.0-beta.3
+- **Hold `Tab` to click `RED` / `BLUE` jungle clear (and overlay controls):** Holding bare `Tab` in-game now makes the Minimap `Clear 3:20 · RED | BLUE` bar and left HUD interactive whenever your cursor hovers them (with `WS_EX_NOACTIVATE` so League never loses focus), while keeping the center Tab scoreboard 100% click-through.
+- **Instant Champion Card & faster Augment dismissal:** Clicking a spawned ARAM / Mayhem Champion Card hides its floating badges immediately (< 40 ms with a 1.1 s anti-repop cooldown). In-game Augment card clicks now cover the full card interior and dismiss in ~100 ms (`90 ms` hold + `45 ms` OCR tick) while preserving full 1.5 s reroll protection.
+- **Fixed sidebar Update card border artifact:** Removed the inner double-curve `BorderBeam` seam on the sidebar Update Ready card for a crisp glowing border and shimmer button.
+
 ## v0.2.0-beta.2
 - **Floating Tier, Win Rate & Synergy Badges Directly on Spawned Champion Cards:** Detects 2, 3, 4, or 5 ARAM / ARAM Mayhem Champion Cards the instant they appear on the `PICK YOUR CHAMPION` screen using fast localized OCR (~35 ms, zero flicker) and pins a click-through **Tier + Win Rate % + Team Synergy + Golden Best Pick** badge directly on every individual card.
 

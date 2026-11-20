@@ -23,9 +23,9 @@ export function BorderBeam({
   return (
     <div
       aria-hidden="true"
-      className={cn('pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]', className)}
+      className={cn('pointer-events-none absolute -inset-px overflow-hidden rounded-[inherit]', className)}
       style={{
-        padding: '1px',
+        padding: '1.5px',
         WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
         WebkitMaskComposite: 'xor',
         maskComposite: 'exclude',
