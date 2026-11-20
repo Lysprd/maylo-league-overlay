@@ -79,16 +79,18 @@ namespace MayhemCompanion {
   public static string DetectModeKey(string mode, int queueId, bool mayhem) {
    switch (queueId) {
     case 2400: case 3270: return "MAYHEM";
+    case 1700: case 1710: return "ARENA";
     case 450: case 720: return "ARAM";
     case 400: case 420: case 430: case 440: case 480: case 490: case 700:
     case 830: case 840: case 850: case 870: case 880: case 890:
     case 2000: case 2010: case 2020:
     case 3100: case 3110: case 3120: case 3130: case 3140: return "SR";
-    case 1700: case 1710: return "";
    }
-   // Explicit ARAM Mayhem (KIWI) and Practice Tool / Tutorial modes work across Riot queue ID rotations.
+   // Explicit ARAM Mayhem (KIWI), Arena (CHERRY), and Practice Tool / Tutorial modes work across Riot queue ID rotations.
    if (String.Equals(mode, "KIWI", StringComparison.OrdinalIgnoreCase) ||
        String.Equals(mode, "MAYHEM", StringComparison.OrdinalIgnoreCase)) return "MAYHEM";
+   if (String.Equals(mode, "CHERRY", StringComparison.OrdinalIgnoreCase) ||
+       String.Equals(mode, "ARENA", StringComparison.OrdinalIgnoreCase)) return "ARENA";
    if (String.Equals(mode, "PRACTICETOOL", StringComparison.OrdinalIgnoreCase) ||
        (mode != null && mode.StartsWith("TUTORIAL", StringComparison.OrdinalIgnoreCase))) return "SR";
    // Published queue IDs take precedence over a generic map mode such as CLASSIC.
@@ -115,6 +117,7 @@ namespace MayhemCompanion {
     case 3140: return "Practice Tool";
    }
    if (modeKey == "MAYHEM") return "ARAM Mayhem";
+   if (modeKey == "ARENA") return queueId < 0 ? "Custom Arena" : "Arena";
    if (modeKey == "ARAM") return queueId < 0 ? "Custom ARAM" : "ARAM";
    if (modeKey == "SR") {
     if (String.Equals(mode, "SWIFTPLAY", StringComparison.OrdinalIgnoreCase)) return "Swiftplay";
@@ -142,6 +145,7 @@ namespace MayhemCompanion {
    if (resolved == "" && qType.IndexOf("PRACTICE", StringComparison.OrdinalIgnoreCase) >= 0) resolved = "PRACTICETOOL";
    if (resolved == "" && (isCustom || snapshot.QueueId <= 0)) {
     if (mapId == 12) resolved = "ARAM";
+    else if (mapId == 30) resolved = "CHERRY";
     else if (mapId == 11) resolved = "CLASSIC";
    }
    if (resolved != "" && (!preserveExistingMode || snapshot.Mode == "")) snapshot.Mode = resolved;
@@ -373,6 +377,7 @@ namespace MayhemCompanion {
      if (snapshot.Mode == "" && data != null) {
       int mapNum = Json.I(data, "mapNumber");
       if (mapNum == 12) snapshot.Mode = "ARAM";
+      else if (mapNum == 30) snapshot.Mode = "CHERRY";
       else if (mapNum == 11) snapshot.Mode = "CLASSIC";
      }
      snapshot.Mayhem = IsMayhemMode(snapshot.Mode);

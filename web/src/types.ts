@@ -1,4 +1,4 @@
-export type GameModeKey = 'MAYHEM' | 'ARAM' | 'SR';
+export type GameModeKey = 'MAYHEM' | 'ARENA' | 'ARAM' | 'SR';
 
 export interface Champion {
   name: string;
@@ -332,6 +332,7 @@ export interface AppState {
   previewAugmentCount?: number;
   editing: boolean;
   overlayVisible: boolean;
+  champTierOpen?: boolean;
   augmentsVisible: boolean;
   refreshingOffers: boolean;
   connectionText: string;
@@ -368,6 +369,7 @@ export interface AppState {
   enemyThreats?: string[];
   buildPath: BuildStep[];
   starters: StatItem[];
+  prismaticItems?: StatItem[];
   boots: StatItem[];
   spells: StatItem[];
   bestItems: StatItem[];

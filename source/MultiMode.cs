@@ -15,6 +15,7 @@ namespace MayhemCompanion {
   public List<string> AvailableRoles = new List<string>();
   public List<Stat> Items = new List<Stat>();
   public List<Stat> Starters = new List<Stat>();
+  public List<Stat> PrismaticItems = new List<Stat>();
   public List<Stat> Boots = new List<Stat>();
   public List<Stat> BestItems = new List<Stat>();
   public List<Stat> Spells = new List<Stat>();
@@ -44,11 +45,17 @@ namespace MayhemCompanion {
   public static Dictionary<string, string> AugmentDescByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
   public static Dictionary<int, List<string>> AugmentAliasesById = new Dictionary<int, List<string>>();
   public static Dictionary<int, string> AugmentRarityById = new Dictionary<int, string>();
+  public static Dictionary<int, string> AugmentNameById = new Dictionary<int, string>();
+  public static Dictionary<int, string> AugmentIconById = new Dictionary<int, string>();
   static Dictionary<int, List<string>> cachedSrRoles = new Dictionary<int, List<string>>();
   static bool ddLoaded = false, augMetaLoaded = false;
   static Task ddTask = null, augMetaTask = null;
 
-  static readonly HashSet<int> BootIds = new HashSet<int> { 3006, 3009, 3020, 3047, 3111, 3117, 3158, 3010, 3013 };
+  static readonly HashSet<int> BootIds = new HashSet<int> {
+   3006, 3009, 3020, 3047, 3111, 3117, 3158, 3010, 3013,
+   223006, 223008, 223009, 223020, 223047, 223111, 223117, 223158
+  };
+  static readonly HashSet<int> GenericArenaIds = new HashSet<int> { 220007, 220000, 220001, 220002 };
   public static readonly HashSet<int> StarterIds = new HashSet<int> {
    1054, 1055, 1056, 1082, 1083, 2003, 2031, 2051, 3112, 3184, 3865,
    1101, 1102, 1103
@@ -310,9 +317,15 @@ namespace MayhemCompanion {
        string name = Json.S(d, "nameTRA");
        string api = Json.S(d, "augmentNameId").Replace("ARAM_", "");
        string rar = TierLogic.RarityKey(Json.S(d, "rarity"));
+       string iconPath = Json.S(d, "augmentSmallIconPath");
        if (id <= 0) continue;
        cherryIds.Add(id);
        AddAugAlias(id, name);
+       if (!String.IsNullOrEmpty(name) && (lang.Item1 == "en" || !AugmentNameById.ContainsKey(id))) AugmentNameById[id] = name;
+       if (!String.IsNullOrEmpty(iconPath) && !AugmentIconById.ContainsKey(id)) {
+        string cleanIcon = iconPath.Replace("/lol-game-data/assets/", "").TrimStart('/').ToLowerInvariant();
+        if (cleanIcon != "") AugmentIconById[id] = "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/" + cleanIcon;
+       }
        if (rar != "" && !AugmentRarityById.ContainsKey(id)) AugmentRarityById[id] = rar;
        string desc = "";
        if (!AugmentDescById.TryGetValue(id, out desc)) {
@@ -377,6 +390,37 @@ namespace MayhemCompanion {
    }
 
    string safeElo = String.IsNullOrEmpty(elo) ? "emerald_plus" : elo.ToLowerInvariant();
+   if (modeKey == "ARENA") {
+    string raw = await WebCache.Page("opgg-tier-arena", "https://lol-api-champion.op.gg/api/global/champions/arena", force, s => s.Contains("\"data\""), ".json", 45);
+    var root = Json.D(Json.Serializer().DeserializeObject(raw));
+    foreach (var obj in Json.A(root, "data")) {
+     var d = Json.D(obj);
+     int id = Json.I(d, "id");
+     Champion ch; if (!DDragonChamps.TryGetValue(id, out ch)) continue;
+     var st = d.ContainsKey("average_stats") ? Json.D(d["average_stats"]) : null;
+     if (st == null) continue;
+     var td = st.ContainsKey("tier_data") ? Json.D(st["tier_data"]) : null;
+     int tierNum = td != null ? Json.I(td, "tier") : Json.I(st, "tier");
+     int rankNum = td != null ? Json.I(td, "rank") : Json.I(st, "rank");
+     int prevPatch = td != null ? Json.I(td, "rank_prev_patch") : 0;
+     if (tierNum <= 0) tierNum = 5;
+     int play = Json.I(st, "play"), win = Json.I(st, "win");
+     double wr = play > 0 ? Math.Round(win * 100.0 / play, 2) : 50.0;
+     double deaths = Math.Max(1.0, Dbl(st, "deaths"));
+     double kda = Math.Round((Dbl(st, "kills") + Dbl(st, "assists")) / deaths, 2);
+     result.Add(new TierListEntry {
+      Id = id, Slug = ch.Slug, Name = ch.Name, Icon = ChampIconOf(ch),
+      Role = "ARENA", Tier = MapOpGgTier(tierNum), Rank = rankNum > 0 ? rankNum : 999,
+      RankDelta = (rankNum > 0 && prevPatch > 0) ? (prevPatch - rankNum) : 0,
+      WinRate = wr,
+      PickRate = Math.Round(Dbl(st, "pick_rate") * 100.0, 2),
+      BanRate = Math.Round(Dbl(st, "ban_rate") * 100.0, 2),
+      Kda = kda, Games = play
+     });
+    }
+    return result.OrderBy(x => TierOrder(x.Tier)).ThenBy(x => x.Rank).ThenByDescending(x => x.WinRate).ToList();
+   }
+
    if (modeKey == "ARAM") {
     string raw = await WebCache.Page("opgg-tier-aram", "https://lol-api-champion.op.gg/api/global/champions/aram", force, s => s.Contains("\"data\""), ".json", 45);
     var root = Json.D(Json.Serializer().DeserializeObject(raw));
@@ -705,10 +749,169 @@ namespace MayhemCompanion {
    return data;
   }
 
+  public static ModeBuildData ParseOpGgArenaJson(string jsonText, string champName, Dictionary<int, Dictionary<string, object>> lcuItems = null) {
+   var root = Json.D(Json.Serializer().DeserializeObject(jsonText));
+   var d = root != null && root.ContainsKey("data") ? Json.D(root["data"]) : null;
+   if (d == null) return null;
+
+   var data = new ModeBuildData {
+    ModeKey = "ARENA",
+    ActiveRole = "",
+    ActiveElo = "",
+    SourceLabel = "OP.GG · Arena 2v2"
+   };
+
+   // Prismatic Items (Arena signature items!)
+   foreach (var po in Json.A(d, "prism_items").Take(6)) {
+    var pd = Json.D(po);
+    var ids = Json.A(pd, "ids").Select(Json.ToInt).Where(x => x > 0).ToList();
+    if (ids.Count == 0) continue;
+    int id = ids[0], play = Json.I(pd, "play"), win = Json.I(pd, "win");
+    double pr = Dbl(pd, "pick_rate") * 100.0;
+    double wr = play > 0 ? Math.Round(win * 100.0 / play, 2) : 50.0;
+    data.PrismaticItems.Add(new Stat {
+     Id = id, Name = ItemNameOf(id, lcuItems), Rate = wr,
+     Pick = pr.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "%",
+     Win = wr.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "%",
+     Icon = ItemIconOf(id), Games = play, Rarity = "Prismatic"
+    });
+   }
+
+   // Core Arena item sequences (filter out Boots & generic Prismatic placeholder 220007)
+   var itemScores = new Dictionary<int, Stat>();
+   var itemSlotWeights = new Dictionary<int, double[]>();
+   foreach (var co in Json.A(d, "core_items")) {
+    var cd = Json.D(co);
+    int play = Json.I(cd, "play"), win = Json.I(cd, "win");
+    double pr = Dbl(cd, "pick_rate") * 100.0;
+    double wr = play > 0 ? Math.Round(win * 100.0 / play, 2) : 50.0;
+    var ids = Json.A(cd, "ids").Select(Json.ToInt).Where(x => x > 0 && !BootIds.Contains(x) && !GenericArenaIds.Contains(x)).ToList();
+    if (ids.Count >= 2) {
+     data.CorePaths.Add(new CoreBuildPath { Ids = ids.Take(3).ToList(), WinRate = wr, PickRate = pr, Games = play });
+    }
+    for (int i = 0; i < Math.Min(3, ids.Count); i++) {
+     int id = ids[i];
+     double w = Math.Max(0.5, pr);
+     if (!itemSlotWeights.ContainsKey(id)) itemSlotWeights[id] = new double[3];
+     itemSlotWeights[id][i] += w;
+     Stat existing;
+     if (!itemScores.TryGetValue(id, out existing)) {
+      itemScores[id] = new Stat {
+       Id = id, Name = ItemNameOf(id, lcuItems), Rate = wr,
+       Pick = pr.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "%",
+       Win = wr.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "%",
+       Icon = ItemIconOf(id), Games = Math.Max(play, 50), CoreSlot = i + 1
+      };
+     } else {
+      double prevPick = Parser.Number(existing.Pick);
+      double nextPick = Math.Min(95, prevPick + pr);
+      existing.Pick = nextPick.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "%";
+      existing.Rate = Math.Round((existing.Rate * Math.Max(1, prevPick) + wr * w) / Math.Max(1, prevPick + w), 2);
+      existing.Games += play;
+     }
+    }
+   }
+   foreach (var kv in itemScores) {
+    var sw = itemSlotWeights[kv.Key];
+    kv.Value.CoreSlot = sw[0] >= sw[1] && sw[0] >= sw[2] ? 1 : (sw[1] >= sw[2] ? 2 : 3);
+   }
+   data.Items = itemScores.Values.OrderBy(x => x.CoreSlot).ThenByDescending(x => Parser.Number(x.Pick)).ThenByDescending(x => x.Rate).Take(8).ToList();
+
+   // Arena Boots
+   foreach (var bo in Json.A(d, "boots").Take(4)) {
+    var bd = Json.D(bo);
+    var ids = Json.A(bd, "ids").Select(Json.ToInt).Where(x => x > 0).ToList();
+    if (ids.Count == 0) continue;
+    int id = ids[0], play = Json.I(bd, "play"), win = Json.I(bd, "win");
+    double pr = Dbl(bd, "pick_rate") * 100.0;
+    double wr = play > 0 ? Math.Round(win * 100.0 / play, 2) : 50.0;
+    data.Boots.Add(new Stat {
+     Id = id, Name = ItemNameOf(id, lcuItems), Rate = wr,
+     Pick = pr.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "%",
+     Win = wr.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "%",
+     Icon = ItemIconOf(id), Games = play
+    });
+   }
+
+   // Situational / Late Arena items
+   foreach (var lo in Json.A(d, "last_items")) {
+    var ld = Json.D(lo);
+    var ids = Json.A(ld, "ids").Select(Json.ToInt).Where(x => x > 0).ToList();
+    if (ids.Count == 0) continue;
+    int id = ids[0];
+    if (BootIds.Contains(id) || StarterIds.Contains(id) || GenericArenaIds.Contains(id) || itemScores.ContainsKey(id)) continue;
+    int play = Json.I(ld, "play"), win = Json.I(ld, "win");
+    double pr = Dbl(ld, "pick_rate") * 100.0;
+    double wr = play > 0 ? Math.Round(win * 100.0 / play, 2) : 50.0;
+    data.BestItems.Add(new Stat {
+     Id = id, Name = ItemNameOf(id, lcuItems), Rate = wr,
+     Pick = pr.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "%",
+     Win = wr.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "%",
+     Icon = ItemIconOf(id), Games = play, CoreSlot = 4
+    });
+    if (data.BestItems.Count >= 6) break;
+   }
+
+   // Arena Augments (Silver=1, Gold=4, Prismatic=8)
+   var seenAug = new HashSet<int>();
+   foreach (var grpObj in Json.A(d, "augment_group")) {
+    var gd = Json.D(grpObj); if (gd == null) continue;
+    int rarNum = Json.I(gd, "rarity");
+    string rarity = rarNum == 1 ? "Silver" : (rarNum == 4 ? "Gold" : "Prismatic");
+    foreach (var ao in Json.A(gd, "augments")) {
+     var ad = Json.D(ao); if (ad == null) continue;
+     int aid = Json.I(ad, "id");
+     if (aid <= 0 || !seenAug.Add(aid)) continue;
+     int play = Json.I(ad, "play"), win = Json.I(ad, "win");
+     double wrVal = Dbl(ad, "win_rate") * 100.0;
+     if (wrVal <= 0 && play > 0) wrVal = win * 100.0 / play;
+     wrVal = Math.Round(wrVal, 2);
+     double pr = Math.Round(Dbl(ad, "pick_rate") * 100.0, 2);
+     string aName;
+     if (!AugmentNameById.TryGetValue(aid, out aName) || String.IsNullOrEmpty(aName)) {
+      List<string> als;
+      aName = (AugmentAliasesById.TryGetValue(aid, out als) && als != null && als.Count > 0) ? als[als.Count - 1] : ("Augment " + aid);
+     }
+     string aIcon;
+     if (!AugmentIconById.TryGetValue(aid, out aIcon) || String.IsNullOrEmpty(aIcon)) aIcon = "/icons/augments/" + aid + ".png";
+     data.Augments.Add(new Stat {
+      Id = aid, Name = aName, Icon = aIcon, Rarity = rarity,
+      Rate = wrVal, Games = play,
+      Pick = pr.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "%",
+      Win = wrVal.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "%"
+     });
+    }
+   }
+   data.Augments = data.Augments.OrderByDescending(x => x.Games >= 30).ThenByDescending(x => x.Rate).ToList();
+
+   // Arena Best Duo Synergies
+   foreach (var so in Json.A(d, "synergies")) {
+    var sd = Json.D(so); if (sd == null) continue;
+    int cid = Json.I(sd, "champion_id"), play = Json.I(sd, "play"), win = Json.I(sd, "win");
+    Champion cch; if (!DDragonChamps.TryGetValue(cid, out cch) || play <= 0) continue;
+    double wr = Math.Round(win * 100.0 / play, 1);
+    data.Teammates.Add(new Stat { Id = cid, Name = cch.Name, Icon = ChampIconOf(cch), Rate = wr, Pick = play + " games", Games = play });
+   }
+   data.Teammates = data.Teammates.OrderByDescending(x => x.Games >= 20).ThenByDescending(x => x.Rate).Take(12).ToList();
+
+   // Skill Order
+   data.Skills = ParseOpGgJsonSkills(d, data.SourceLabel);
+   return data;
+  }
+
   public static async Task<ModeBuildData> LoadChampionMode(Champion champ, string modeKey, string requestedRole = "", string elo = "emerald_plus", bool force = false, Dictionary<int, Dictionary<string, object>> lcuItems = null, List<Champion> mayhemChamps = null) {
    await EnsureDDragon(mayhemChamps);
    string opSlug = champ.Slug.Replace("-", "");
    string safeElo = String.IsNullOrEmpty(elo) ? "emerald_plus" : elo.ToLowerInvariant();
+
+   if (modeKey == "ARENA") {
+    try {
+     string url = "https://lol-api-champion.op.gg/api/global/champions/arena/" + opSlug;
+     string json = await WebCache.Page("opgg-arena-" + champ.Slug, url, force, s => s.Contains("\"augment_group\"") || s.Contains("\"core_items\""), ".json", 60);
+     var parsed = ParseOpGgArenaJson(json, champ.Name, lcuItems);
+     if (parsed != null && (parsed.Items.Count > 0 || parsed.Augments.Count > 0)) { parsed.ChampionSlug = champ.Slug; return parsed; }
+    } catch { }
+   }
 
    if (modeKey == "ARAM") {
     try {

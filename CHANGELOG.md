@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.2.0-beta.5
+- **Full Arena 2v2 (`CHERRY` / Queue `1700`) Mode:**
+  - Dedicated **Arena** topbar mode tab alongside Mayhem, ARAM, and Ranked SR, with automatic queue detection (`1700`, `1710`, `CHERRY`, Custom Arena) and mode-scoped Overview, Match History, and Arena Patch Notes.
+  - Live OP.GG Arena data: **Arena 2v2 Tier List** (Top-4 Win Rate %, Pick Rate %, Ban Rate %, patch rank delta), **Prismatic Items**, Core Arena Builds, Arena Boots, Situational Items, Skill Order, **Best Arena Duo Partners**, and **Arena Augments (Silver / Gold / Prismatic)** with official CommunityDragon icons & EN/FR descriptions.
+  - Full **In-Game Augment OCR**, floating Augment Tier badges, Reroll Reference Bar, and `Alt+G` Augments tab work natively in Arena just like ARAM Mayhem.
+- **Live Tier List Drawer Directly in Champion Select:**
+  - Adds a compact **`Tier List`** toggle pill on the top-right edge of Champion Select (Arena, Ranked SR, ARAM, and Mayhem) that expands into a searchable glass drawer with `All / S+ / S / A` tier filters, SR role filters, patch tags, and Top-4 / Win / Ban rates.
+  - **Cursor-aware zero-friction click-through:** moving the mouse into the drawer lets you search, scroll, and click champions to inspect builds; moving the mouse back onto League's champion grid restores 100% click-through in `< 40 ms` without closing the drawer.
+
 ## v0.2.0-beta.4
 - **Strict Riot Games Third-Party Policy & Vanguard Compliance:**
   - **Removed Auto-Accept Queue Pop** (`POST /lol-matchmaking/v1/ready-check/accept`) so maylo never triggers match-accept actions on your behalf.

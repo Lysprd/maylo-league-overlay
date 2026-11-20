@@ -23,9 +23,15 @@ namespace MayhemCompanion {
     var jgTier = MultiModeParser.LoadTierList("SR", "JUNGLE", "emerald_plus", champs, true).GetAwaiter().GetResult();
     Req(jgTier.Count >= 25, "SR Jungle Emerald+ tier list");
     var aramTier = MultiModeParser.LoadTierList("ARAM", "", "emerald_plus", champs, true).GetAwaiter().GetResult();
+    var arenaTier = MultiModeParser.LoadTierList("ARENA", "", "emerald_plus", champs, true).GetAwaiter().GetResult();
     var mayhemTier = MultiModeParser.LoadTierList("MAYHEM", "", "emerald_plus", champs, false).GetAwaiter().GetResult();
     Req(aramTier.Count >= 140, "OP.GG ARAM tier list must load 140+ champions (got " + aramTier.Count + ")");
+    Req(arenaTier.Count >= 140, "OP.GG Arena tier list must load 140+ champions (got " + arenaTier.Count + ")");
     Req(String.Join(",", aramTier.Take(5).Select(x => x.Slug)) != String.Join(",", mayhemTier.Take(5).Select(x => x.Slug)), "ARAM top 5 must be distinct from Mayhem top 5");
+    var gwenChamp = champs.First(c => c.Slug == "gwen");
+    var gwenArena = MultiModeParser.LoadChampionMode(gwenChamp, "ARENA", "", "emerald_plus", true, null, champs).GetAwaiter().GetResult();
+    Req(gwenArena.ModeKey == "ARENA" && gwenArena.Augments.Count >= 20 && gwenArena.PrismaticItems.Count >= 3 && gwenArena.Teammates.Count >= 5,
+        "OP.GG Arena Gwen must load augments, prismatic items & duo synergies (augs=" + gwenArena.Augments.Count + ", prism=" + gwenArena.PrismaticItems.Count + ")");
     var patchNotes = MultiModeParser.LoadPatchNotes(true).GetAwaiter().GetResult();
     Req(patchNotes != null && patchNotes.Entries.Count >= 10 && !String.IsNullOrEmpty(patchNotes.PatchVersion), "OP.GG Patch Notes must load latest patch buffs/nerfs");
     Req(MultiModeParser.DDragonRunes.ContainsKey(8005) && MultiModeParser.DDragonRunes.ContainsKey(5008), "DDragon Runes & Stat Shards must be loaded");
@@ -79,8 +85,8 @@ namespace MayhemCompanion {
         GameBridge.DetectModeKey("CLASSIC", -1, false) == "SR" &&
         GameBridge.DetectModeKey("ARAM", -1, false) == "ARAM" &&
         GameBridge.DetectModeKey("ARAM", 720, false) == "ARAM" &&
-        GameBridge.DetectModeKey("CLASSIC", 1700, true) == "" &&
-        GameBridge.DetectModeKey("CHERRY", 0, false) == "" &&
+        GameBridge.DetectModeKey("CLASSIC", 1700, true) == "ARENA" &&
+        GameBridge.DetectModeKey("CHERRY", 0, false) == "ARENA" &&
         GameBridge.DetectModeKey("CLASSIC", 99999, false) == "",
         "Queue context must override generic or stale game modes");
     var modeFixture = Json.Serializer().Deserialize<Dictionary<string, object>>(@"{
@@ -101,7 +107,7 @@ namespace MayhemCompanion {
         standard.Objectives.Single(x => x.Key == "herald").SecondsLeft == 490 &&
         standard.Objectives.Single(x => x.Key == "baron").SecondsLeft == 790, "Standard SR uses current objective schedule");
     Req(swift.Objectives.Count == 2 && swift.Objectives.Single(x => x.Key == "baron").SecondsLeft == 310 &&
-        swift.Inhibitors.Count == 0 && LiveParser.Parse(modeFixture, "", 1700).Objectives.Count == 0,
+        swift.Inhibitors.Count == 0 && LiveParser.Parse(modeFixture, "ARENA", 1700).Objectives.Count == 0,
         "Swiftplay uses its own objectives and Arena receives no SR timers");
     Req(standard.Inhibitors.Count == 1 && standard.Inhibitors[0].SecondsLeft == 270 &&
         standard.Inhibitors[0].Name == "Blue Mid inhibitor", "Inhibitor events use their own clocks and respawn clears the matching inhibitor");

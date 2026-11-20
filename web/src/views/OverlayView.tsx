@@ -11,10 +11,12 @@ import {
   Minus,
   Plus,
   RotateCcw,
+  Search,
   Sparkles,
   Swords,
   Timer,
   TrendingUp,
+  Trophy,
   X,
   Zap,
 } from 'lucide-react';
@@ -516,8 +518,10 @@ const ROLE_LIST = [
 function InGameCommandSheet({ state }: { state: AppState }) {
   const champ = state.selected;
   const isMayhem = state.activeMode === 'MAYHEM';
+  const isArena = state.activeMode === 'ARENA';
+  const hasAugments = isMayhem || isArena;
   const rawTab = state.inGameSheetTab || 'build';
-  const tab = !isMayhem && rawTab === 'augments' ? 'build' : rawTab;
+  const tab = !hasAugments && rawTab === 'augments' ? 'build' : rawTab;
   const live = state.game.live;
   const me = useMemo(() => live.players.find((p) => p.me) ?? null, [live.players]);
   const minutes = Math.max(1 / 60, (live.seconds || 0) / 60);
@@ -527,9 +531,11 @@ function InGameCommandSheet({ state }: { state: AppState }) {
   const modeLabel = (!state.preview && state.game.modeLabel) || (
     state.activeMode === 'MAYHEM'
       ? 'ARAM Mayhem'
-      : state.activeMode === 'ARAM'
-        ? 'ARAM'
-        : "Summoner's Rift");
+      : state.activeMode === 'ARENA'
+        ? 'Arena 2v2'
+        : state.activeMode === 'ARAM'
+          ? 'ARAM'
+          : "Summoner's Rift");
 
   const blueTeam = live.players.filter((p) => p.team === 'ORDER');
   const redTeam = live.players.filter((p) => p.team === 'CHAOS');
@@ -721,7 +727,7 @@ function InGameCommandSheet({ state }: { state: AppState }) {
               onChange={(v) => postAction('setInGameSheetTab', { tab: v })}
               className="border-white/[0.1] bg-white/[0.04]"
               options={
-                isMayhem
+                hasAugments
                   ? [
                       { value: 'build', label: 'Build & Skills', icon: <Swords className="size-3" /> },
                       { value: 'augments', label: 'Augments', icon: <Sparkles className="size-3" /> },
@@ -1015,13 +1021,20 @@ function InGameCommandSheet({ state }: { state: AppState }) {
                 </div>
               )}
 
-              {/* Starters / Boots / Spells Compact Strip */}
+              {/* Starters / Prismatic / Boots / Spells Compact Strip */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {[
-                  { title: 'Starters', items: state.starters.slice(0, 3) },
-                  { title: 'Boots', items: state.boots.slice(0, 3) },
-                  { title: 'Summoner Spells', items: state.spells.slice(0, 3) },
-                ].map((group) => (
+                {(isArena
+                  ? [
+                      { title: 'Prismatic Items', items: (state.prismaticItems || []).slice(0, 4) },
+                      { title: 'Boots', items: state.boots.slice(0, 3) },
+                      { title: 'Situational', items: state.bestItems.slice(0, 3) },
+                    ]
+                  : [
+                      { title: 'Starters', items: state.starters.slice(0, 3) },
+                      { title: 'Boots', items: state.boots.slice(0, 3) },
+                      { title: 'Summoner Spells', items: state.spells.slice(0, 3) },
+                    ]
+                ).map((group) => (
                   <div
                     key={group.title}
                     className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3"
@@ -1062,7 +1075,7 @@ function InGameCommandSheet({ state }: { state: AppState }) {
             <div className="space-y-4">
               {state.allAugments.length === 0 ? (
                 <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-8 text-center text-sm text-zinc-400">
-                  Augments are available in ARAM Mayhem mode. Switch mode or launch a Mayhem match to see live augment rankings.
+                  Augments are available in ARAM Mayhem and Arena modes. Switch mode or launch a Mayhem / Arena match to see live augment rankings.
                 </div>
               ) : (
                 <>
@@ -1257,6 +1270,228 @@ function InGameCommandSheet({ state }: { state: AppState }) {
 function fmtSecs(secs: number): string {
   const s = Math.max(0, Math.ceil(secs));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+const CS_ROLES = [
+  { key: 'ALL', label: 'All' },
+  { key: 'TOP', label: 'Top' },
+  { key: 'JUNGLE', label: 'Jg' },
+  { key: 'MID', label: 'Mid' },
+  { key: 'ADC', label: 'ADC' },
+  { key: 'SUPPORT', label: 'Sup' },
+] as const;
+
+function ChampSelectTierDrawer({ state }: { state: AppState }) {
+  const [search, setSearch] = useState('');
+  const [tierFilter, setTierFilter] = useState<'ALL' | 'S+' | 'S' | 'A'>('ALL');
+  const open = Boolean(state.champTierOpen);
+  const isSR = state.activeMode === 'SR';
+  const isArena = state.activeMode === 'ARENA';
+  const modeLabel =
+    state.activeMode === 'ARENA'
+      ? 'Arena Tier List'
+      : state.activeMode === 'MAYHEM'
+        ? 'Mayhem Meta'
+        : state.activeMode === 'ARAM'
+          ? 'ARAM Tier List'
+          : 'SR Tier List';
+
+  const rows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (state.tierList || []).filter((t) => {
+      if (tierFilter !== 'ALL' && t.tier.toUpperCase() !== tierFilter) return false;
+      if (q && !t.name.toLowerCase().includes(q) && !t.slug.includes(q)) return false;
+      return true;
+    });
+  }, [state.tierList, search, tierFilter]);
+
+  if (!open) {
+    return (
+      <div className="fixed right-3 top-[8%] z-40 pointer-events-auto">
+        <button
+          type="button"
+          onClick={() => postAction('setChampTierOpen', { value: true })}
+          className="group inline-flex items-center gap-2 rounded-xl border border-indigo-400/45 bg-[#0D101B]/92 px-3 py-1.5 text-[11px] font-bold text-white shadow-[0_10px_28px_rgba(0,0,0,0.65),0_0_16px_rgba(99,102,241,0.22)] backdrop-blur-md transition-all hover:border-indigo-300/80 hover:bg-[#13182A]/95 cursor-pointer"
+        >
+          <Trophy className="size-3.5 text-amber-300 shrink-0" />
+          <span>{modeLabel}</span>
+          <ChevronRight className="size-3 text-indigo-300 transition-transform group-hover:translate-x-0.5" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed right-3 top-[7%] bottom-[8%] z-40 w-[292px] max-h-[82vh] flex flex-col pointer-events-auto">
+      <GlassCard
+        surface="overlay"
+        className="flex h-full flex-col overflow-hidden border-indigo-400/35 bg-[#0B0E18]/94 shadow-[0_18px_48px_rgba(0,0,0,0.78)]"
+      >
+        <div className="flex items-center justify-between gap-2 border-b border-white/[0.08] px-3 py-2.5 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <Trophy className="size-3.5 text-amber-300 shrink-0" />
+            <div className="min-w-0">
+              <div className="truncate text-xs font-bold text-white leading-tight">{modeLabel}</div>
+              <div className="text-[9px] text-zinc-400 leading-tight">
+                {isArena ? 'Top-4 WR · Pick · Ban' : 'Click any champ to inspect build'}
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => postAction('setChampTierOpen', { value: false })}
+            className="flex size-6 items-center justify-center rounded-lg border border-white/10 bg-white/[0.05] text-zinc-300 hover:bg-white/[0.14] hover:text-white cursor-pointer shrink-0"
+            title="Close Tier List (Esc)"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+
+        <div className="space-y-2 border-b border-white/[0.07] px-3 py-2 shrink-0">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3 -translate-y-1/2 text-zinc-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search champion…"
+              className="w-full rounded-lg border border-white/12 bg-black/45 py-1.5 pl-7 pr-2.5 text-[11px] text-white placeholder:text-zinc-500 focus:border-indigo-400 focus:outline-none"
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-1.5">
+            <div className="flex items-center gap-1">
+              {(['ALL', 'S+', 'S', 'A'] as const).map((tf) => (
+                <button
+                  key={tf}
+                  type="button"
+                  onClick={() => setTierFilter(tf)}
+                  className={cn(
+                    'rounded-md px-2 py-0.5 text-[10px] font-bold transition-colors cursor-pointer',
+                    tierFilter === tf
+                      ? 'bg-indigo-500 text-white'
+                      : 'bg-white/[0.05] text-zinc-400 hover:text-white'
+                  )}
+                >
+                  {tf === 'ALL' ? 'All' : tf}
+                </button>
+              ))}
+            </div>
+            <span className="font-mono-tech text-[9px] text-zinc-400 tabular-nums">
+              {rows.length} picks
+            </span>
+          </div>
+
+          {isSR && (
+            <div className="grid grid-cols-6 gap-1">
+              {CS_ROLES.map((r) => {
+                const active = (state.settings.tierRole || 'ALL').toUpperCase() === r.key;
+                return (
+                  <button
+                    key={r.key}
+                    type="button"
+                    onClick={() => postAction('setTierFilter', { role: r.key })}
+                    className={cn(
+                      'rounded-md py-1 text-[9px] font-bold uppercase transition-colors cursor-pointer',
+                      active
+                        ? 'bg-indigo-500/90 text-white'
+                        : 'bg-white/[0.04] text-zinc-400 hover:text-white'
+                    )}
+                  >
+                    {r.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="flex-1 overflow-y-auto divide-y divide-white/[0.05] px-1.5 py-1">
+          {rows.length === 0 ? (
+            <div className="py-10 text-center text-[11px] text-zinc-400">
+              {state.tierList.length === 0 ? 'Loading live tier list…' : 'No matching champions'}
+            </div>
+          ) : (
+            rows.slice(0, 70).map((row, idx) => {
+              const isSelected = state.selected?.slug === row.slug;
+              return (
+                <button
+                  key={`${row.slug}-${row.role}-${idx}`}
+                  type="button"
+                  onClick={() =>
+                    postAction('selectChampion', {
+                      slug: row.slug,
+                      role: isSR ? row.role : '',
+                    })
+                  }
+                  className={cn(
+                    'flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left transition-colors cursor-pointer',
+                    isSelected
+                      ? 'bg-indigo-500/20 ring-1 ring-inset ring-indigo-400/45'
+                      : 'hover:bg-white/[0.06]'
+                  )}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-5 text-center font-mono-tech text-[10px] font-bold text-zinc-500 tabular-nums shrink-0">
+                      {row.rank || idx + 1}
+                    </span>
+                    {row.icon && (
+                      <div className="size-6 rounded-md border border-white/15 overflow-hidden bg-black/50 shrink-0">
+                        <img
+                          src={iconUrl(row.icon)}
+                          alt={row.name}
+                          className="size-full object-cover scale-[1.14]"
+                        />
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1 min-w-0">
+                        <span className="truncate text-[11px] font-semibold text-white">{row.name}</span>
+                        {row.patchTag && (
+                          <span
+                            className={cn(
+                              'rounded px-1 py-0.25 text-[7px] font-extrabold uppercase leading-none shrink-0',
+                              row.patchTag === 'buff'
+                                ? 'bg-emerald-500/25 text-emerald-300'
+                                : row.patchTag === 'nerf'
+                                  ? 'bg-rose-500/25 text-rose-300'
+                                  : 'bg-amber-500/25 text-amber-200'
+                            )}
+                          >
+                            {row.patchTag === 'buff' ? '▲' : row.patchTag === 'nerf' ? '▼' : '~'}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[9px] text-zinc-400 tabular-nums leading-tight">
+                        {isSR && row.role ? `${row.role} · ` : ''}
+                        PR {fmtPct(row.pickRate)}
+                        {(isArena || isSR) && row.banRate > 0 ? ` · Ban ${fmtPct(row.banRate)}` : ''}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <TierBadge tier={row.tier} size="xs" dark />
+                    <span
+                      className={cn(
+                        'w-10 text-right font-mono-tech text-[10px] font-bold tabular-nums',
+                        row.winRate >= 52
+                          ? 'text-indigo-300'
+                          : row.winRate < 48.5
+                            ? 'text-rose-300'
+                            : 'text-zinc-200'
+                      )}
+                    >
+                      {fmtPct(row.winRate)}
+                    </span>
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </GlassCard>
+    </div>
+  );
 }
 
 export function OverlayView({ state }: { state: AppState }) {
@@ -1705,6 +1940,9 @@ export function OverlayView({ state }: { state: AppState }) {
           </DraggableSlot>
         );
       })()}
+
+      {/* CHAMP SELECT LIVE TIER LIST DRAWER (Top-right toggle pill -> searchable, cursor-aware drawer!) */}
+      {showChampSelect && (!editing || pScene === 'bench') && <ChampSelectTierDrawer state={state} />}
 
       {showAugments && (
         <>

@@ -205,10 +205,10 @@ namespace MayhemCompanion {
     Height = r.Height * sy;
     lastRect = key;
    }
-   bool wantInteractive = app.IsOverlayEditing || app.IsTabInteractive || app.InGameSheet || app.OverlayDragging;
-   // CRITICAL: On Tab hold, keep WS_EX_NOACTIVATE (wantActivate = false) so League keeps keyboard focus (ZERO lag, ZERO Tab scroll)
-   // while Background alpha=1 + ~WS_EX_TRANSPARENT still allows instant mouse dragging!
-   bool wantActivate = app.InGameSheet || app.Editing;
+   bool wantInteractive = app.IsOverlayEditing || app.IsTabInteractive || app.IsChampSelectInteractive || app.InGameSheet || app.OverlayDragging;
+   // CRITICAL: On Tab hold (or collapsed Champ Select pill hover), keep WS_EX_NOACTIVATE (wantActivate = false) so League keeps keyboard focus;
+   // activate only for Alt+G sheet, persistent Edit mode, or when hovering the OPEN Champ Select Tier List drawer (so Search typing works!).
+   bool wantActivate = app.InGameSheet || app.Editing || (app.IsChampSelectInteractive && app.ChampTierOpen);
    if (lastInteractive != wantInteractive || lastActivate != wantActivate) {
     SetInteraction(wantInteractive, wantActivate);
    }
@@ -219,11 +219,13 @@ namespace MayhemCompanion {
   readonly WebView2 web;
   Border splashCover;
   Task<CoreWebView2Environment> webEnvTask;
-  bool webReady, splashDismissed, closing, pollBusy, ocrBusy, selectionBusy, tabHeld, tabInteractive, tabSuppressed, manualModeOverride;
-  public bool HubActive, Preview, Editing, OverlayVisible = true, PrivateMode, InGameSheet, OverlayDragging;
+  bool webReady, splashDismissed, closing, pollBusy, ocrBusy, selectionBusy, tabHeld, tabInteractive, champSelectInteractive, tabSuppressed, manualModeOverride;
+  public bool HubActive, Preview, Editing, OverlayVisible = true, PrivateMode, InGameSheet, OverlayDragging, ChampTierOpen;
   public string InGameSheetTab = "build", PreviewScene = "";
   public bool IsOverlayEditing { get { return Editing || tabHeld; } }
   public bool IsTabInteractive { get { return tabInteractive; } }
+  public bool IsChampSelectInteractive { get { return champSelectInteractive; } }
+  public bool IsAugmentMode { get { return ActiveMode == "MAYHEM" || ActiveMode == "ARENA"; } }
   public string UiDistDir { get { return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ui-dist"); } }
 
   public readonly GameBridge Bridge = new GameBridge();
@@ -381,8 +383,8 @@ namespace MayhemCompanion {
      await Poll();
      BootProgress = 86; BootStage = "Syncing Tier List & Patch Notes…"; PushState();
      await RefreshTierList(false);
-     // Quietly pre-warm ARAM and SR Tier Lists so Champ Select winrates are available at 0ms when entering any queue
-     foreach (var warmMode in new[] { "ARAM", "SR" }) {
+     // Quietly pre-warm Arena, ARAM, and SR Tier Lists so Champ Select Tier List & winrates are available at 0ms when entering any queue
+     foreach (var warmMode in new[] { "ARENA", "ARAM", "SR" }) {
       if (warmMode == ActiveMode) continue;
       string wm = warmMode;
       var _w = MultiModeParser.LoadTierList(wm, "ALL", Config.TierElo, Champions, false).ContinueWith(t => {
@@ -619,7 +621,7 @@ namespace MayhemCompanion {
      PushState();
     }
     ocrTimer.Interval = TimeSpan.FromMilliseconds((offerSession.Visible || lastRawHitCount >= 1) ? 55 : 100);
-    bool allowOcr = Game.InGame && Config.Ocr && Config.Connected && !HubActive && !InGameSheet && !IsOverlayEditing && !ocrBusy && (Game.Mayhem || Config.OcrAllModes);
+    bool allowOcr = Game.InGame && Config.Ocr && Config.Connected && !HubActive && !InGameSheet && !IsOverlayEditing && !ocrBusy && (Game.Mayhem || Game.ModeKey == "ARENA" || Config.OcrAllModes);
     if (!allowOcr || Game.ModeKey == "") return;
     await ReadAugments(false);
    };
@@ -664,6 +666,7 @@ namespace MayhemCompanion {
    bool edgeSheet = KeyEdge(KeyToVk(Config.HotkeySheet, 0x47)), edgeL = KeyEdge(0x4C), edgeH = KeyEdge(0x48), edgeScan = KeyEdge(KeyToVk(Config.HotkeyScan, 0x41)), edgeOverlay = KeyEdge(KeyToVk(Config.HotkeyOverlay, 0x4D)), edgeEdit = KeyEdge(KeyToVk(Config.HotkeyEdit, 0x4F)), edgeF9 = KeyEdge(0x78), edgeEsc = KeyEdge(0x1B);
    if (edgeEsc && inLeagueOrApp) {
     if (InGameSheet) { CloseInGameSheet(true); return; }
+    if (ChampTierOpen) { ChampTierOpen = false; if (overlay != null) overlay.Sync(); PushState(); return; }
     if (HubActive && Native.OurWindow(fg)) { DismissHub(true); return; }
    }
    if (edgeF9 && inLeagueOrApp) { FireHotkey("Build", false); return; }
@@ -747,7 +750,7 @@ namespace MayhemCompanion {
     && (Native.SameApplication(Native.GetForegroundWindow(), Game.Window) || Native.OurWindow(Native.GetForegroundWindow()));
    bool nextEdit = editDown && !tabSuppressed && allowed;
 
-   // Bare Tab (without Ctrl): allow clicking overlay buttons (RED/BLUE jungle clear, Spell Tracker)
+   // Bare Tab (without Ctrl): allow clicking overlay buttons (RED/BLUE jungle clear, Build HUD)
    // when hovering their corner, while keeping the center League Tab scoreboard 100% click-through!
    bool nextTabClick = false;
    if (tabKey && !ctrl && allowed && Game.InGame && !Editing && Game.Window != IntPtr.Zero) {
@@ -764,6 +767,36 @@ namespace MayhemCompanion {
     }
    }
 
+   // Champ Select Tier List Drawer: cursor-aware interactive hit-zone on the right edge of Champ Select!
+   // Moving cursor onto the pill or open drawer makes it clickable/searchable; moving back onto League's champ grid restores 100% click-through in <40ms!
+   bool inChampSelectSurface = (Game.InSelection && !Game.InGame && Game.ModeKey != "") || (Preview && PreviewScene == "bench");
+   if (!inChampSelectSurface && ChampTierOpen) { ChampTierOpen = false; PushState(); }
+   bool nextChampClick = false;
+   if (inChampSelectSurface && allowed && !tabHeld && (!Editing || PreviewScene == "bench")) {
+    Native.Point pt;
+    if (Native.GetCursorPos(out pt)) {
+     Native.Rect r;
+     IntPtr win = Game.Window != IntPtr.Zero && Native.IsWindow(Game.Window) ? Game.Window : Native.Target(false);
+     if (win != IntPtr.Zero && Native.IsWindowVisible(win) && !Native.IsIconic(win)) {
+      r = Native.Bounds(win);
+     } else if (Preview) {
+      var screen = System.Windows.Forms.Screen.FromHandle(handle).Bounds;
+      r = new Native.Rect { Left = screen.Left, Top = screen.Top, Right = screen.Right, Bottom = screen.Bottom };
+     } else {
+      r = new Native.Rect();
+     }
+     if (r.Width >= 400 && r.Height >= 250) {
+      double rx = (pt.X - r.Left) / (double)r.Width;
+      double ry = (pt.Y - r.Top) / (double)r.Height;
+      if (ChampTierOpen) {
+       nextChampClick = rx >= 0.72 && rx <= 1.0 && ry >= 0.05 && ry <= 0.94;
+      } else {
+       nextChampClick = rx >= 0.82 && rx <= 1.0 && ry >= 0.05 && ry <= 0.16;
+      }
+     }
+    }
+   }
+
    bool changed = false;
    if (nextEdit != tabHeld && (nextEdit || !OverlayDragging)) {
     tabHeld = nextEdit;
@@ -771,6 +804,10 @@ namespace MayhemCompanion {
    }
    if (nextTabClick != tabInteractive) {
     tabInteractive = nextTabClick;
+    changed = true;
+   }
+   if (nextChampClick != champSelectInteractive) {
+    champSelectInteractive = nextChampClick;
     changed = true;
    }
    if (!changed) return;
@@ -874,7 +911,7 @@ namespace MayhemCompanion {
   }
 
   void EnforceModeView() {
-   if (ActiveMode != "MAYHEM") {
+   if (!IsAugmentMode) {
     if (View == "Augments") View = "TierList";
     if (InGameSheetTab == "augments") InGameSheetTab = "build";
    }
@@ -956,7 +993,7 @@ namespace MayhemCompanion {
     string targetRole = ActiveMode == "SR" ? (!String.IsNullOrEmpty(ActiveRole) ? ActiveRole : DetectedRole) : "";
     var data = await MultiModeParser.LoadChampionMode(c, ActiveMode, targetRole, Config.TierElo, force || refreshedThisLaunch.Add(ActiveMode + ":" + c.Slug + ":" + targetRole + ":" + Config.TierElo), Bridge.Items, Champions);
     if (closing || ticket != generation) return;
-    if (ActiveMode != "MAYHEM" && data.Augments.Count == 0 && prevModeData != null && prevModeData.ChampionSlug == c.Slug && prevModeData.Augments.Count > 0) data.Augments = prevModeData.Augments;
+    if (!IsAugmentMode && data.Augments.Count == 0 && prevModeData != null && prevModeData.ChampionSlug == c.Slug && prevModeData.Augments.Count > 0) data.Augments = prevModeData.Augments;
     data.ChampionSlug = c.Slug;
     ModeData = data;
     if (ActiveMode == "SR" && !String.IsNullOrEmpty(data.ActiveRole)) ActiveRole = data.ActiveRole;
@@ -984,8 +1021,9 @@ namespace MayhemCompanion {
     string bestName = kv.Value[kv.Value.Count - 1];
     if (!names.Add(GameBridge.Norm(bestName))) continue;
     string rar; MultiModeParser.AugmentRarityById.TryGetValue(kv.Key, out rar);
+    string cdIcon; MultiModeParser.AugmentIconById.TryGetValue(kv.Key, out cdIcon);
     seenIds.Add(kv.Key);
-    ModeData.Augments.Add(new Stat { Id = kv.Key, Name = bestName, Icon = "/icons/augments/" + kv.Key + ".png", Games = 0, Rate = 0, Rarity = TierLogic.RarityKey(rar), Pick = "—" });
+    ModeData.Augments.Add(new Stat { Id = kv.Key, Name = bestName, Icon = !String.IsNullOrEmpty(cdIcon) ? cdIcon : ("/icons/augments/" + kv.Key + ".png"), Games = 0, Rate = 0, Rarity = TierLogic.RarityKey(rar), Pick = "—" });
    }
   }
 
@@ -1126,19 +1164,22 @@ namespace MayhemCompanion {
    loadoutAttempt = DateTime.UtcNow;
    try {
     if (Game.InSelection) {
-     if (Config.AutoSpells && ModeData.Spells.Count > 0) {
+     if (Config.AutoSpells && ActiveMode != "ARENA" && ModeData.Spells.Count > 0) {
       try { await Bridge.ApplySpells(Selected.AssetKey, SpellPlan.Pair(ModeData.Spells[0].Name), Config.FlashKey); } catch { Bridge.SpellStatus = "Spell update unavailable"; }
      }
-     if (Config.AutoRunes && ActiveMode != "MAYHEM" && ModeData.Runes != null) {
+     if (Config.AutoRunes && !IsAugmentMode && ModeData.Runes != null) {
       try { await Bridge.ApplyRunesAuto(Selected.AssetKey, ActiveMode, ActiveRole, ModeData.Runes); } catch { Bridge.RuneStatus = "Rune update unavailable"; }
      }
      // Auto-Export Shop Item Set during Champ Select (League loads custom item sets at game start, not mid-game!)
      if (Config.AutoExportShop) {
       try {
        var coreIds = ModeData.Items.Where(x => x.Id > 0).Select(x => x.Id).Take(6).ToList();
+       var starterOrPrism = ActiveMode == "ARENA" && ModeData.PrismaticItems.Count > 0
+        ? ModeData.PrismaticItems.Select(x => x.Id).ToList()
+        : ModeData.Starters.Select(x => x.Id).ToList();
        await Bridge.ApplyShopAuto(
         Selected.Name, ChampionIdOf(Selected), ActiveMode, ActiveMode == "SR" ? ActiveRole : "",
-        ModeData.Starters.Select(x => x.Id).ToList(),
+        starterOrPrism,
         coreIds,
         ModeData.Boots.Select(x => x.Id).ToList(),
         ModeData.BestItems.Select(x => x.Id).ToList()
@@ -1392,9 +1433,9 @@ namespace MayhemCompanion {
    var otherAllies = allies.Where(a => a != null && !String.Equals(a.Slug, candidate.Slug, StringComparison.OrdinalIgnoreCase)).ToList();
    if (otherAllies.Count == 0) return info;
 
-   // Layer 1: Exact ally duo synergy winrate from real Mayhem Best Teammates data
+   // Layer 1: Exact ally duo synergy winrate from real Mayhem / Arena Best Teammates data
    List<Stat> mates = null;
-   if (Selected != null && String.Equals(Selected.Slug, candidate.Slug, StringComparison.OrdinalIgnoreCase) && ActiveMode == "MAYHEM" && ModeData.Teammates.Count > 0) {
+   if (Selected != null && String.Equals(Selected.Slug, candidate.Slug, StringComparison.OrdinalIgnoreCase) && IsAugmentMode && ModeData.Teammates.Count > 0) {
     mates = ModeData.Teammates;
    } else {
     lock (MultiModeParser.ChampTeammatesBySlug) {
@@ -1481,8 +1522,9 @@ namespace MayhemCompanion {
    var rarities = Preview
     ? new List<string> { "Gold", "Prismatic" }
     : offerSession.Choices.Where(x => x != null).Select(x => TierLogic.RarityKey(x.Rarity)).Where(r => r != "").Distinct().ToList();
+   int minAugGames = ActiveMode == "ARENA" ? 30 : 100;
    foreach (string r in rarities) {
-    var list = ModeData.Augments.Where(x => x.Games >= 100 && !chosenAugments.Contains(x.Id) && TierLogic.RarityKey(x.Rarity) == r)
+    var list = ModeData.Augments.Where(x => x.Games >= minAugGames && !chosenAugments.Contains(x.Id) && TierLogic.RarityKey(x.Rarity) == r)
      .OrderByDescending(x => Recommendations.Score(x, Selected == null ? 50 : Selected.Win, Preference(x)) + SynergyBonus(x))
      .ThenByDescending(x => x.Games).Take(5).Select(x => SerializeStat(x, bestOffer)).ToList();
     if (list.Count > 0) topMap[r] = list;
@@ -1495,7 +1537,7 @@ namespace MayhemCompanion {
 
    var offeredList = new List<object>();
    var previewAugments = Preview && PreviewScene == "augments"
-    ? ModeData.Augments.OrderByDescending(x => x.Games >= 100).Take(previewAugmentCount).ToArray()
+    ? ModeData.Augments.OrderByDescending(x => x.Games >= minAugGames).Take(previewAugmentCount).ToArray()
     : null;
    int slotCount = previewAugments != null ? previewAugments.Length : offerSession.Choices.Length;
    for (int i = 0; i < slotCount; i++) {
@@ -1507,7 +1549,7 @@ namespace MayhemCompanion {
    object inspectedItemObj = null;
    if (inspectedItemId > 0) {
     Dictionary<string, object> d; ActiveItemsMap().TryGetValue(inspectedItemId, out d);
-    var st = ModeData.Items.Concat(ModeData.BestItems).Concat(ModeData.Boots).FirstOrDefault(x => x.Id == inspectedItemId);
+    var st = ModeData.Items.Concat(ModeData.PrismaticItems).Concat(ModeData.BestItems).Concat(ModeData.Boots).FirstOrDefault(x => x.Id == inspectedItemId);
     var copy = d != null ? ItemCopy.Parse(Json.S(d, "description")) : new ItemCopy();
     var comps = d != null ? Json.A(d, "from").Select(Json.ToInt).Where(x => x > 0).Select(cid => new { id = cid, name = ItemName(cid), price = Price(cid) }).ToArray() : new object[0];
     inspectedItemObj = new {
@@ -1646,6 +1688,7 @@ namespace MayhemCompanion {
     previewScene = PreviewScene, previewAugmentCount = previewAugmentCount,
     editing = IsOverlayEditing,
     overlayVisible = OverlayVisible,
+    champTierOpen = ChampTierOpen,
     augmentsVisible = offerSession.Visible,
     refreshingOffers = offerSession.Refreshing,
     connectionText = ConnectionText,
@@ -1695,7 +1738,7 @@ namespace MayhemCompanion {
        double matchupWr = 0;
        if (isLaneOpp && pc != null) {
         var mu = ModeData.Matchups.FirstOrDefault(m => GameBridge.Norm(m.Name) == GameBridge.Norm(pc.Name));
-        if (mu == null && ActiveMode != "MAYHEM")
+        if (mu == null && !IsAugmentMode)
          mu = ModeData.Teammates.FirstOrDefault(m => GameBridge.Norm(m.Name) == GameBridge.Norm(pc.Name));
         if (mu != null) matchupWr = mu.Rate;
        }
@@ -1720,6 +1763,7 @@ namespace MayhemCompanion {
      return new { stat = SerializeStat(step.Stat), role = step.Role, reason = step.Reason, shortTip = step.ShortTip, synergyTag = step.SynergyTag, synergyTone = step.SynergyTone, pickRate = step.PickRate, isBoots = step.IsBoots, totalGold = total, remainingGold = rem, affordable = idx == 0 && Game.InGame && Game.Gold >= 0 && rem > 0 && Game.Gold >= rem, components = comps };
     }).ToArray(),
     starters = ModeData.Starters.Select(s => SerializeStat(s)).ToArray(),
+    prismaticItems = ModeData.PrismaticItems.Select(s => SerializeStat(s)).ToArray(),
     boots = ModeData.Boots.Select(s => SerializeStat(s)).ToArray(),
     spells = ModeData.Spells.Select(s => SerializeStat(s)).ToArray(),
     bestItems = ModeData.BestItems.Where(s => !ModeData.Items.Take(6).Any(i => i.Name == s.Name)).Take(4).Select(s => SerializeStat(s)).ToArray(),
@@ -1827,11 +1871,17 @@ namespace MayhemCompanion {
       if (overlay != null) overlay.Sync();
       break;
      case "togglePrivate": PrivateMode = !PrivateMode; PushState(); break;
+     case "setChampTierOpen":
+      ChampTierOpen = msg.ContainsKey("value") && Convert.ToBoolean(msg["value"]);
+      if (overlay != null) overlay.Sync();
+      PushState();
+      break;
      case "setMode":
       string m = Json.S(msg, "mode");
-      if (m == "MAYHEM" || m == "ARAM" || m == "SR") {
+      if (m == "MAYHEM" || m == "ARENA" || m == "ARAM" || m == "SR") {
        ActiveMode = m; manualModeOverride = true; EnforceModeView();
-       TierList = new List<TierListEntry>();
+       List<TierListEntry> cachedTl;
+       TierList = tierListByMode.TryGetValue(m, out cachedTl) && cachedTl != null ? cachedTl : new List<TierListEntry>();
        var _tl = RefreshTierList(false);
        if (Selected != null) await SelectChampion(Selected, false); else PushState();
       }

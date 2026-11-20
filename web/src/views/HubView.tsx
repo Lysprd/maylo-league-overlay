@@ -95,6 +95,7 @@ const ELO_OPTIONS = [
 
 const MODE_OPTIONS: { value: GameModeKey; label: string; icon: React.ReactNode }[] = [
   { value: 'MAYHEM', label: 'Mayhem', icon: <Sparkles className="size-3" /> },
+  { value: 'ARENA', label: 'Arena', icon: <Crown className="size-3" /> },
   { value: 'ARAM', label: 'ARAM', icon: <Flame className="size-3" /> },
   { value: 'SR', label: 'Ranked SR', icon: <Shield className="size-3" /> },
 ];
@@ -603,12 +604,14 @@ export function HubView({ state }: { state: AppState }) {
 
   const isDark = state.settings.theme === 'dark';
   const isMayhem = state.activeMode === 'MAYHEM';
+  const isArena = state.activeMode === 'ARENA';
+  const hasAugments = isMayhem || isArena;
   const isSR = state.activeMode === 'SR';
   const selected = state.selected;
   const game = state.game;
   const unsupportedMatch = (game.inGame || game.inSelection) && game.modeKey === '';
   const rawView = state.view || 'Dashboard';
-  const normalizedView = !isMayhem && rawView === 'Augments' ? 'TierList' : rawView;
+  const normalizedView = !hasAugments && rawView === 'Augments' ? 'TierList' : rawView;
   // If user enters Build without a selected champion, cleanly show the full Champions grid!
   const view = normalizedView === 'Build' && !selected ? 'Library' : normalizedView;
   const tutorialOpen = replayTutorial || (state.settings.onboardingSeen === false && !dismissedTutorial);
@@ -671,21 +674,21 @@ export function HubView({ state }: { state: AppState }) {
   const navItems = useMemo(() => {
     const items = [
       { id: 'Dashboard', label: 'Overview', icon: LayoutGrid },
-      { id: 'TierList', label: isSR ? 'Tier List' : isMayhem ? 'Mayhem Meta' : 'ARAM Tier List', icon: Trophy },
+      { id: 'TierList', label: isSR ? 'Tier List' : isMayhem ? 'Mayhem Meta' : isArena ? 'Arena Meta' : 'ARAM Tier List', icon: Trophy },
       { id: 'Library', label: 'Champions', icon: Swords },
     ];
-    if (isMayhem) {
+    if (hasAugments) {
       items.push({ id: 'Augments', label: 'Augments', icon: Sparkles });
     }
     items.push(
       { id: 'PatchNotes', label: state.patchNotes?.version ? `Patch ${state.patchNotes.version}` : 'Patch Notes', icon: Flame },
       { id: 'Live', label: 'Live game', icon: Activity },
       { id: 'History', label: 'Match history', icon: History },
-      { id: 'Synergies', label: isMayhem ? 'Synergies' : 'Matchups', icon: Link2 },
+      { id: 'Synergies', label: isArena ? 'Duo Synergies' : isMayhem ? 'Synergies' : 'Matchups', icon: Link2 },
       { id: 'Notes', label: 'Notes', icon: FileText }
     );
     return items;
-  }, [isMayhem, isSR, state.patchNotes?.version]);
+  }, [isMayhem, isArena, hasAugments, isSR, state.patchNotes?.version]);
 
   const filteredTierList = useMemo(() => {
     const q = tierSearch.trim().toLowerCase();
@@ -740,7 +743,7 @@ export function HubView({ state }: { state: AppState }) {
     );
   }, [state.allAugments, augSearch, augRarity]);
 
-  const activeModeLabel = isMayhem ? 'ARAM Mayhem' : isSR ? 'Ranked SR' : 'ARAM';
+  const activeModeLabel = isMayhem ? 'ARAM Mayhem' : isArena ? 'Arena' : isSR ? 'Ranked SR' : 'ARAM';
 
   const modeHistory = useMemo(() => {
     return (state.history || []).filter((m) => {
@@ -749,6 +752,7 @@ export function HubView({ state }: { state: AppState }) {
       const isAramMatch = !isMayhemMatch && (m.queue === 450 || m.queue === 720 || modeStr === 'ARAM');
       const isArenaMatch = m.queue === 1700 || m.queue === 1710 || modeStr === 'CHERRY';
       if (state.activeMode === 'MAYHEM') return isMayhemMatch;
+      if (state.activeMode === 'ARENA') return isArenaMatch;
       if (state.activeMode === 'ARAM') return isAramMatch;
       return !isMayhemMatch && !isAramMatch && !isArenaMatch;
     });
@@ -1386,12 +1390,16 @@ export function HubView({ state }: { state: AppState }) {
                         ? `Ranked Solo/Duo Tier List`
                         : isMayhem
                           ? 'ARAM Mayhem Tier List'
-                          : 'ARAM Tier List'}
+                          : isArena
+                            ? 'Arena 2v2 Tier List'
+                            : 'ARAM Tier List'}
                     </h2>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">
                       {isSR
                         ? `Live OP.GG data · Click any champion to open its role-specific build & skill order`
-                        : `Click any champion to inspect optimal build path & live stats`}
+                        : isArena
+                          ? `Live OP.GG Arena data · Top-4 Win Rate, Pick & Ban rates · Click any champion for Augments & Prismatic Items`
+                          : `Click any champion to inspect optimal build path & live stats`}
                     </p>
                   </div>
                   <div className="relative min-w-[200px] max-w-xs flex-1">
@@ -1454,16 +1462,18 @@ export function HubView({ state }: { state: AppState }) {
                             'grid items-center gap-4 px-5 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400 bg-zinc-50/80 dark:bg-white/[0.02]',
                             isSR
                               ? 'grid-cols-[44px_minmax(180px,1.5fr)_76px_64px_86px_86px_86px_112px]'
-                              : 'grid-cols-[44px_minmax(220px,1.8fr)_76px_110px_110px]'
+                              : isArena
+                                ? 'grid-cols-[44px_minmax(210px,1.8fr)_76px_100px_100px_100px]'
+                                : 'grid-cols-[44px_minmax(220px,1.8fr)_76px_110px_110px]'
                           )}
                         >
                           <div className="text-center">#</div>
                           <div>Champion</div>
                           {isSR && <div className="text-center">Role</div>}
                           <div className="text-center">Tier</div>
-                          <div className="text-right">Win Rate</div>
+                          <div className="text-right">{isArena ? 'Top 4 %' : 'Win Rate'}</div>
                           <div className="text-right">Pick Rate</div>
-                          {isSR && <div className="text-right">Ban Rate</div>}
+                          {(isSR || isArena) && <div className="text-right">Ban Rate</div>}
                           {isSR && <div className="text-right">Counters</div>}
                         </div>
 
@@ -1482,7 +1492,9 @@ export function HubView({ state }: { state: AppState }) {
                               'grid w-full items-center gap-4 px-5 py-2.5 text-left transition-colors hover:bg-zinc-50 dark:hover:bg-white/[0.035] cursor-pointer',
                               isSR
                                 ? 'grid-cols-[44px_minmax(180px,1.5fr)_76px_64px_86px_86px_86px_112px]'
-                                : 'grid-cols-[44px_minmax(220px,1.8fr)_76px_110px_110px]'
+                                : isArena
+                                  ? 'grid-cols-[44px_minmax(210px,1.8fr)_76px_100px_100px_100px]'
+                                  : 'grid-cols-[44px_minmax(220px,1.8fr)_76px_110px_110px]'
                             )}
                           >
                             <div className="flex flex-col items-center justify-center text-xs font-semibold text-zinc-400 tabular-nums leading-tight">
@@ -1538,7 +1550,7 @@ export function HubView({ state }: { state: AppState }) {
                             <div className="text-right text-xs text-zinc-500 dark:text-zinc-400 tabular-nums">
                               {fmtPct(row.pickRate)}
                             </div>
-                            {isSR && (
+                            {(isSR || isArena) && (
                               <div className="text-right text-xs text-zinc-500 dark:text-zinc-400 tabular-nums">
                                 {fmtPct(row.banRate)}
                               </div>
@@ -1683,9 +1695,11 @@ export function HubView({ state }: { state: AppState }) {
                         <span>
                           {state.activeMode === 'MAYHEM'
                             ? 'ARAM Mayhem'
-                            : state.activeMode === 'ARAM'
-                              ? 'ARAM'
-                              : "Summoner's Rift"}
+                            : state.activeMode === 'ARENA'
+                              ? 'Arena 2v2'
+                              : state.activeMode === 'ARAM'
+                                ? 'ARAM'
+                                : "Summoner's Rift"}
                         </span>
                       ),
                       sub: state.modeSource || 'Auto-detected',
@@ -1838,7 +1852,7 @@ export function HubView({ state }: { state: AppState }) {
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <h2 className="text-sm font-semibold text-zinc-900 dark:text-white">
-                        Top Tier Champions · {isSR ? 'Ranked SR' : isMayhem ? 'ARAM Mayhem' : 'ARAM'}
+                        Top Tier Champions · {activeModeLabel}
                       </h2>
                       <p className="text-xs text-zinc-500 dark:text-zinc-400">
                         Click any champion to inspect build path, runes, and skill level-up order
@@ -2126,13 +2140,20 @@ export function HubView({ state }: { state: AppState }) {
                   </div>
                 </GlassCard>
 
-                {/* Starters / Boots / Spells / Situational */}
+                {/* Starters / Prismatic Items / Boots / Spells / Situational */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {[
-                    { title: 'Starters', items: state.starters.slice(0, 4), inspectable: true },
-                    { title: 'Boots', items: state.boots.slice(0, 4), inspectable: true },
-                    { title: 'Summoner Spells', items: state.spells.slice(0, 4), inspectable: false },
-                  ].map((group) => (
+                  {(isArena
+                    ? [
+                        { title: 'Prismatic Items', items: (state.prismaticItems || []).slice(0, 5), inspectable: true },
+                        { title: 'Boots', items: state.boots.slice(0, 4), inspectable: true },
+                        { title: 'Situational Items', items: state.bestItems.slice(0, 5), inspectable: true },
+                      ]
+                    : [
+                        { title: 'Starters', items: state.starters.slice(0, 4), inspectable: true },
+                        { title: 'Boots', items: state.boots.slice(0, 4), inspectable: true },
+                        { title: 'Summoner Spells', items: state.spells.slice(0, 4), inspectable: false },
+                      ]
+                  ).map((group) => (
                     <GlassCard key={group.title} surface="hub" className="p-4">
                       <div className="flex items-center justify-between gap-2 mb-3">
                         <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
@@ -2209,8 +2230,8 @@ export function HubView({ state }: { state: AppState }) {
                   <GameLengthScalingCard points={state.gameLengths} />
                 )}
 
-                {/* Clickable Top Augments Preview (ONLY in Mayhem mode!) */}
-                {isMayhem && state.allAugments.length > 0 && (
+                {/* Clickable Top Augments Preview (Mayhem & Arena!) */}
+                {hasAugments && state.allAugments.length > 0 && (
                   <GlassCard surface="hub" className="p-5">
                     <div className="flex items-center justify-between mb-3.5">
                       <div>
@@ -2325,7 +2346,7 @@ export function HubView({ state }: { state: AppState }) {
                       Choose a Champion First
                     </h3>
                     <p className="mx-auto max-w-sm text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-                      Select any champion to inspect champion-specific ARAM Mayhem augment win rates, ratings, and best combo synergies.
+                      Select any champion to inspect champion-specific {isArena ? 'Arena 2v2' : 'ARAM Mayhem'} augment win rates, ratings, and best synergies.
                     </p>
                     <Button size="sm" variant="primary" onClick={() => postAction('setView', { view: 'Library' })}>
                       Browse Champions
@@ -2871,10 +2892,10 @@ export function HubView({ state }: { state: AppState }) {
               <GlassCard surface="hub" className="p-10 text-center space-y-3 swiss-grid-bg">
                 <SwissDraftEmptyIllustration variant="synergies" />
                 <h3 className="font-display text-base font-bold text-zinc-900 dark:text-white">
-                  {isMayhem ? 'Champion Synergies & Combos' : 'Teammates & Matchups'}
+                  {isArena ? 'Arena Duo Synergies' : isMayhem ? 'Champion Synergies & Combos' : 'Teammates & Matchups'}
                 </h3>
                 <p className="mx-auto max-w-sm text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-                  Select a champion first to inspect {isMayhem ? 'synergies, matchups, and augment combos' : 'teammates and tough lane matchups'}.
+                  Select a champion first to inspect {isArena ? 'top 2v2 duo partners and Top-4 synergy rates' : isMayhem ? 'synergies, matchups, and augment combos' : 'teammates and tough lane matchups'}.
                 </p>
                 <Button size="sm" variant="primary" onClick={() => postAction('setView', { view: 'Library' })}>
                   Browse Champions
@@ -2893,38 +2914,49 @@ export function HubView({ state }: { state: AppState }) {
               for (const a of state.allAugments) {
                 augLookup.set(normKey(a.name), a);
               }
-              const cols = [
-                {
-                  key: 'teammates',
-                  title: isMayhem ? 'Best Teammates' : 'Strong Against',
-                  subtitle: isMayhem ? 'Highest win rate allies' : 'Favorable lane matchups',
-                  kind: 'champion' as const,
-                  tone: 'good' as const,
-                  list: state.teammates,
-                },
-                {
-                  key: 'matchups',
-                  title: 'Tough Matchups',
-                  subtitle: isMayhem ? 'Hardest enemy picks' : 'Counter picks to watch out for',
-                  kind: 'champion' as const,
-                  tone: 'tough' as const,
-                  list: state.matchups,
-                },
-                ...(isMayhem
-                  ? [
-                      {
-                        key: 'combos',
-                        title: 'Augment Combos',
-                        subtitle: 'Best 2-augment synergies',
-                        kind: 'combo' as const,
-                        tone: 'combo' as const,
-                        list: state.combos,
-                      },
-                    ]
-                  : []),
-              ];
+              const cols = isArena
+                ? [
+                    {
+                      key: 'teammates',
+                      title: 'Best Arena Duo Partners',
+                      subtitle: 'Highest Top-4 win rate 2v2 partners',
+                      kind: 'champion' as const,
+                      tone: 'good' as const,
+                      list: state.teammates,
+                    },
+                  ]
+                : [
+                    {
+                      key: 'teammates',
+                      title: isMayhem ? 'Best Teammates' : 'Strong Against',
+                      subtitle: isMayhem ? 'Highest win rate allies' : 'Favorable lane matchups',
+                      kind: 'champion' as const,
+                      tone: 'good' as const,
+                      list: state.teammates,
+                    },
+                    {
+                      key: 'matchups',
+                      title: 'Tough Matchups',
+                      subtitle: isMayhem ? 'Hardest enemy picks' : 'Counter picks to watch out for',
+                      kind: 'champion' as const,
+                      tone: 'tough' as const,
+                      list: state.matchups,
+                    },
+                    ...(isMayhem
+                      ? [
+                          {
+                            key: 'combos',
+                            title: 'Augment Combos',
+                            subtitle: 'Best 2-augment synergies',
+                            kind: 'combo' as const,
+                            tone: 'combo' as const,
+                            list: state.combos,
+                          },
+                        ]
+                      : []),
+                  ];
               return (
-                <div className={cn('grid grid-cols-1 gap-4', isMayhem ? 'lg:grid-cols-3' : 'lg:grid-cols-2')}>
+                <div className={cn('grid grid-cols-1 gap-4', isArena ? 'lg:grid-cols-1 max-w-2xl' : isMayhem ? 'lg:grid-cols-3' : 'lg:grid-cols-2')}>
                   {cols.map((col) => (
                     <GlassCard key={col.key} surface="hub" className="p-4 flex flex-col">
                       <div className="flex items-center justify-between gap-2 mb-3.5 pb-2.5 border-b border-zinc-200/70 dark:border-white/[0.06]">
@@ -3123,7 +3155,13 @@ export function HubView({ state }: { state: AppState }) {
               const allEntries = pn?.entries || [];
               const modeKey = state.activeMode || 'SR';
               const modeLabel =
-                modeKey === 'MAYHEM' ? 'ARAM Mayhem' : modeKey === 'ARAM' ? 'ARAM' : 'Ranked SR';
+                modeKey === 'MAYHEM'
+                  ? 'ARAM Mayhem'
+                  : modeKey === 'ARENA'
+                    ? 'Arena 2v2'
+                    : modeKey === 'ARAM'
+                      ? 'ARAM'
+                      : 'Ranked SR';
               const modeEntries = allEntries.filter((e) => e.mode === modeKey);
 
               const allCats = [
