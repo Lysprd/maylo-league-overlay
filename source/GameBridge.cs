@@ -52,7 +52,7 @@ namespace MayhemCompanion {
 
  public partial class GameBridge {
   public string Lockfile = "", SpellStatus = "Waiting for champion select", RuneStatus = "Waiting for champion select", ShopStatus = "";
-  string auth = "", localBase = "", spellSelection = "", runeSelection = "", shopSelection = "", lastChampion = "", lastAssignedRole = "";
+  string auth = "", localBase = "", spellSelection = "", runeSelection = "", shopSelection = "", lastChampion = "", lastAssignedRole = "", lastChampSelectDebugKey = "";
   DateTime lastFind = DateTime.MinValue, lastMiss = DateTime.MinValue, nextLiveProbe = DateTime.MinValue, lastAccept = DateTime.MinValue;
   bool staticReady, lastMayhem;
   Task staticTask;
@@ -81,13 +81,15 @@ namespace MayhemCompanion {
     case 450: case 720: return "ARAM";
     case 400: case 420: case 430: case 440: case 480: case 490: case 700:
     case 830: case 840: case 850: case 870: case 880: case 890:
+    case 2000: case 2010: case 2020:
     case 3100: case 3110: case 3120: case 3130: case 3140: return "SR";
     case 1700: case 1710: return "";
    }
-   // Explicit ARAM Mayhem (KIWI) and Practice Tool modes work across Riot queue ID rotations.
+   // Explicit ARAM Mayhem (KIWI) and Practice Tool / Tutorial modes work across Riot queue ID rotations.
    if (String.Equals(mode, "KIWI", StringComparison.OrdinalIgnoreCase) ||
        String.Equals(mode, "MAYHEM", StringComparison.OrdinalIgnoreCase)) return "MAYHEM";
-   if (String.Equals(mode, "PRACTICETOOL", StringComparison.OrdinalIgnoreCase)) return "SR";
+   if (String.Equals(mode, "PRACTICETOOL", StringComparison.OrdinalIgnoreCase) ||
+       (mode != null && mode.StartsWith("TUTORIAL", StringComparison.OrdinalIgnoreCase))) return "SR";
    // Published queue IDs take precedence over a generic map mode such as CLASSIC.
    if (queueId > 0) return "";
    if (mayhem || IsMayhemMode(mode)) return "MAYHEM";
@@ -109,17 +111,40 @@ namespace MayhemCompanion {
     case 720: return "ARAM Clash";
     case 830: case 840: case 850: case 870: case 880: case 890: return "Co-op vs. AI";
     case 1700: case 1710: return "Arena";
+    case 3140: return "Practice Tool";
    }
    if (modeKey == "MAYHEM") return "ARAM Mayhem";
-   if (modeKey == "ARAM") return "ARAM";
+   if (modeKey == "ARAM") return queueId < 0 ? "Custom ARAM" : "ARAM";
    if (modeKey == "SR") {
     if (String.Equals(mode, "SWIFTPLAY", StringComparison.OrdinalIgnoreCase)) return "Swiftplay";
     if (String.Equals(mode, "PRACTICETOOL", StringComparison.OrdinalIgnoreCase)) return "Practice Tool";
+    if (queueId < 0 || (queueId >= 3100 && queueId <= 3130)) return "Custom Game";
     return "Summoner's Rift";
    }
    if (String.Equals(mode, "CHERRY", StringComparison.OrdinalIgnoreCase)) return "Arena";
    if (String.Equals(mode, "JADE", StringComparison.OrdinalIgnoreCase)) return "League Classic";
    return "Unsupported mode";
+  }
+
+  static void ApplyFlowSession(GameSnapshot snapshot, Dictionary<string, object> flow, bool preserveExistingMode) {
+   if (snapshot == null || flow == null) return;
+   var gd = flow.ContainsKey("gameData") ? Json.D(flow["gameData"]) : null;
+   var q = gd != null && gd.ContainsKey("queue") ? Json.D(gd["queue"]) : null;
+   var map = flow.ContainsKey("map") ? Json.D(flow["map"]) : null;
+   if (q != null) snapshot.QueueId = Json.I(q, "id");
+   string qMode = q != null ? Json.S(q, "gameMode") : "";
+   string mapMode = map != null ? Json.S(map, "gameMode") : "";
+   string qType = q != null ? Json.S(q, "type") : "";
+   bool isCustom = gd != null && Json.S(gd, "isCustomGame").Equals("true", StringComparison.OrdinalIgnoreCase);
+   int mapId = map != null ? Json.I(map, "id") : 0;
+   string resolved = qMode != "" ? qMode : mapMode;
+   if (resolved == "" && qType.IndexOf("PRACTICE", StringComparison.OrdinalIgnoreCase) >= 0) resolved = "PRACTICETOOL";
+   if (resolved == "" && (isCustom || snapshot.QueueId <= 0)) {
+    if (mapId == 12) resolved = "ARAM";
+    else if (mapId == 11) resolved = "CLASSIC";
+   }
+   if (resolved != "" && (!preserveExistingMode || snapshot.Mode == "")) snapshot.Mode = resolved;
+   snapshot.Mayhem |= IsMayhemMode(resolved, snapshot.QueueId) || IsMayhemMode(snapshot.Mode, snapshot.QueueId);
   }
 
   public static async Task<string> Request(string method, string url, string authorization = null, string jsonBody = null) {
@@ -342,18 +367,17 @@ namespace MayhemCompanion {
      snapshot.Gold = active != null && active.ContainsKey("currentGold") ? Convert.ToDouble(active["currentGold"], System.Globalization.CultureInfo.InvariantCulture) : -1;
      foreach (var i in Json.A(me, "items")) snapshot.Owned.Add(Json.I(Json.D(i), "itemID"));
      var data = game.ContainsKey("gameData") ? Json.D(game["gameData"]) : null;
-     snapshot.Mode = Json.S(data, "gameMode"); snapshot.Mayhem = IsMayhemMode(snapshot.Mode);
+     snapshot.Mode = Json.S(data, "gameMode");
+     if (snapshot.Mode == "" && data != null) {
+      int mapNum = Json.I(data, "mapNumber");
+      if (mapNum == 12) snapshot.Mode = "ARAM";
+      else if (mapNum == 11) snapshot.Mode = "CLASSIC";
+     }
+     snapshot.Mayhem = IsMayhemMode(snapshot.Mode);
      try {
       await LoadStatic();
       var flow = Json.Serializer().Deserialize<Dictionary<string, object>>(await LcuGet("/lol-gameflow/v1/session"));
-      var gd = flow != null && flow.ContainsKey("gameData") ? Json.D(flow["gameData"]) : null;
-      var q = gd != null && gd.ContainsKey("queue") ? Json.D(gd["queue"]) : null;
-      if (q != null) {
-       snapshot.QueueId = Json.I(q, "id");
-       string qMode = Json.S(q, "gameMode");
-       if (qMode != "" && snapshot.Mode == "") snapshot.Mode = qMode;
-       snapshot.Mayhem |= IsMayhemMode(qMode, snapshot.QueueId);
-      }
+      ApplyFlowSession(snapshot, flow, true);
      } catch { }
      if (snapshot.QueueId == 0 && (snapshot.Mode == "" || snapshot.Mode == "ARAM")) snapshot.Mayhem |= lastMayhem;
      snapshot.Live = LiveParser.Parse(game, snapshot.ModeKey, snapshot.QueueId);
@@ -377,6 +401,7 @@ namespace MayhemCompanion {
     var session = Json.Serializer().Deserialize<Dictionary<string, object>>(await LcuGet("/lol-champ-select/v1/session"));
     int cell = session != null && session.ContainsKey("localPlayerCellId") ? Json.I(session, "localPlayerCellId") : -1;
     int selfId = 0;
+    Dictionary<string, object> meCell = null;
     foreach (var v in Json.A(session, "myTeam")) {
      var d = Json.D(v); if (d == null) continue;
      int id = Json.I(d, "championId");
@@ -384,55 +409,112 @@ namespace MayhemCompanion {
      int effectiveId = id > 0 ? id : intent;
      if (effectiveId > 0) snapshot.Team.Add(effectiveId);
      if (Json.I(d, "cellId") == cell) {
+      meCell = d;
       selfId = effectiveId;
       if (ChampionNames.ContainsKey(effectiveId)) snapshot.Champion = ChampionNames[effectiveId];
       string pos = MultiModeParser.NormalizeRole(Json.S(d, "assignedPosition"));
       if (pos != "") { snapshot.AssignedRole = pos; lastAssignedRole = pos; }
      }
     }
-    foreach (var v in Json.A(session, "benchChampions")) {
-     var bd = Json.D(v); if (bd == null) continue;
-     int bcid = Json.I(bd, "championId");
-     if (bcid <= 0) continue;
-     if (!snapshot.Bench.Contains(bcid)) snapshot.Bench.Add(bcid);
-     if (Json.S(bd, "isPriority").Equals("true", StringComparison.OrdinalIgnoreCase) && !snapshot.PriorityCards.Contains(bcid)) {
-      snapshot.PriorityCards.Add(bcid);
+    Action<object, bool> addBenchOrCard = (obj, forceCard) => {
+     int bcid = 0;
+     bool prio = forceCard;
+     var bd = Json.D(obj);
+     if (bd != null) {
+      bcid = Json.I(bd, "championId");
+      if (bcid <= 0) bcid = Json.I(bd, "id");
+      if (Json.S(bd, "isPriority").Equals("true", StringComparison.OrdinalIgnoreCase)) prio = true;
+     } else {
+      bcid = Json.ToInt(obj);
      }
-    }
+     if (bcid <= 0 || !ChampionNames.ContainsKey(bcid)) return;
+     if (!snapshot.Bench.Contains(bcid)) snapshot.Bench.Add(bcid);
+     if (prio && !snapshot.PriorityCards.Contains(bcid)) snapshot.PriorityCards.Add(bcid);
+    };
+    foreach (var v in Json.A(session, "benchChampions")) addBenchOrCard(v, false);
+    foreach (var v in Json.A(session, "benchChampionIds")) addBenchOrCard(v, false);
+    // Inspect any card/choice/subset fields on session or local player cell (ARAM / ARAM Mayhem Champion Cards)
+    Action<Dictionary<string, object>> scanCardKeys = dict => {
+     if (dict == null) return;
+     foreach (var kv in dict) {
+      string kl = (kv.Key ?? "").ToLowerInvariant();
+      if (!(kl.Contains("card") || kl.Contains("choice") || kl.Contains("option") || kl.Contains("subset"))) continue;
+      foreach (var item in Json.Array(kv.Value)) addBenchOrCard(item, true);
+     }
+    };
+    scanCardKeys(session);
+    scanCardKeys(meCell);
+
     int selected = SelectionResolver.Champion(session, 0);
     if (selected > 0) selfId = selected;
     if (ChampionNames.ContainsKey(selected)) snapshot.Champion = ChampionNames[selected];
     snapshot.InSelection = true;
     try {
      var flow = Json.Serializer().Deserialize<Dictionary<string, object>>(await LcuGet("/lol-gameflow/v1/session"));
-     var gd = flow != null && flow.ContainsKey("gameData") ? Json.D(flow["gameData"]) : null;
-     var q = gd != null && gd.ContainsKey("queue") ? Json.D(gd["queue"]) : null;
-     snapshot.Mode = Json.S(q, "gameMode");
-     snapshot.QueueId = Json.I(q, "id");
-     snapshot.Mayhem = IsMayhemMode(snapshot.Mode, snapshot.QueueId);
+     ApplyFlowSession(snapshot, flow, false);
     } catch { }
     if (!snapshot.Mayhem && snapshot.Mode == "" && snapshot.Bench.Count > 0) snapshot.Mode = "ARAM";
-    // Capture ARAM / ARAM Mayhem Champion Cards during the opening flip window if bench hasn't populated yet
-    if ((snapshot.Mayhem || snapshot.Mode == "ARAM" || snapshot.QueueId == 2400 || snapshot.QueueId == 3270 || snapshot.QueueId == 450) && snapshot.PriorityCards.Count == 0 && snapshot.Bench.Count <= 2) {
-     try {
-      var pickable = Json.Serializer().DeserializeObject(await LcuGet("/lol-champ-select/v1/pickable-champion-ids")) as object[];
-      if (pickable != null && pickable.Length >= 2 && pickable.Length <= 4) {
-       foreach (var item in pickable) {
-        int pid = Json.ToInt(item);
-        if (pid <= 0 || pid == selfId) continue;
-        if (!snapshot.PriorityCards.Contains(pid)) snapshot.PriorityCards.Add(pid);
-        if (!snapshot.Bench.Contains(pid)) snapshot.Bench.Add(pid);
+
+    // Capture ARAM / ARAM Mayhem Champion Cards from subset/pickable endpoints during the opening flip window
+    int subsetCount = -1, pickableCount = -1;
+    if (snapshot.Mayhem || snapshot.Mode == "ARAM" || snapshot.QueueId == 2400 || snapshot.QueueId == 3270 || snapshot.QueueId == 450) {
+     if (snapshot.PriorityCards.Count == 0) {
+      try {
+       var subset = Json.Serializer().DeserializeObject(await LcuGet("/lol-champ-select/v1/subset-champion-list")) as object[];
+       subsetCount = subset == null ? 0 : subset.Length;
+       if (subset != null && subset.Length >= 1 && subset.Length <= 6) {
+        foreach (var item in subset) addBenchOrCard(item, true);
        }
-      }
-     } catch { }
+      } catch { }
+     }
+     if (snapshot.PriorityCards.Count == 0) {
+      try {
+       var pickable = Json.Serializer().DeserializeObject(await LcuGet("/lol-champ-select/v1/pickable-champion-ids")) as object[];
+       pickableCount = pickable == null ? 0 : pickable.Length;
+       if (pickable != null && pickable.Length >= 1 && pickable.Length <= 6) {
+        foreach (var item in pickable) addBenchOrCard(item, true);
+       }
+      } catch { }
+     }
     }
+
+    // Write a tiny non-PII structural snapshot once per champ select to diagnose Riot ARAM card fields
+    try {
+     string dbgKey = Json.S(session, "gameId") + ":" + snapshot.QueueId + ":" + snapshot.Bench.Count + ":" + snapshot.PriorityCards.Count;
+     if (dbgKey != lastChampSelectDebugKey) {
+      lastChampSelectDebugKey = dbgKey;
+      Directory.CreateDirectory(WebCache.Root);
+      var dbgObj = new {
+       ts = DateTime.UtcNow.ToString("o"),
+       mode = snapshot.Mode,
+       queueId = snapshot.QueueId,
+       modeKey = snapshot.ModeKey,
+       selfId = selfId,
+       bench = snapshot.Bench.ToArray(),
+       priorityCards = snapshot.PriorityCards.ToArray(),
+       subsetCount = subsetCount,
+       pickableCount = pickableCount,
+       sessionKeys = session != null ? session.Keys.ToArray() : new string[0],
+       meKeys = meCell != null ? meCell.Keys.ToArray() : new string[0],
+       benchRaw = Json.A(session, "benchChampions").Take(5).ToArray(),
+       timerPhase = session != null && session.ContainsKey("timer") ? Json.S(Json.D(session["timer"]), "phase") : ""
+      };
+      File.WriteAllText(Path.Combine(WebCache.Root, "champselect-debug.json"), Json.Serializer().Serialize(dbgObj), Encoding.UTF8);
+     }
+    } catch { }
    }
    if (phase == "Lobby") {
     lastChampion = ""; lastAssignedRole = ""; lastMayhem = false;
     try {
      var lobby = Json.Serializer().Deserialize<Dictionary<string, object>>(await LcuGet("/lol-lobby/v2/lobby"));
      var config = lobby != null && lobby.ContainsKey("gameConfig") ? Json.D(lobby["gameConfig"]) : null;
-     snapshot.Mode = Json.S(config, "gameMode"); snapshot.QueueId = Json.I(config, "queueId"); snapshot.Mayhem = IsMayhemMode(snapshot.Mode, snapshot.QueueId);
+     snapshot.Mode = Json.S(config, "gameMode"); snapshot.QueueId = Json.I(config, "queueId");
+     if (snapshot.Mode == "" && config != null) {
+      int mid = Json.I(config, "mapId");
+      if (mid == 12) snapshot.Mode = "ARAM";
+      else if (mid == 11) snapshot.Mode = "CLASSIC";
+     }
+     snapshot.Mayhem = IsMayhemMode(snapshot.Mode, snapshot.QueueId);
     } catch { }
    }
    if (phase == "None" || phase == "EndOfGame" || phase == "PreEndOfGame" || phase == "WaitingForStats") {
@@ -443,9 +525,7 @@ namespace MayhemCompanion {
     snapshot.Window = Native.Target(true); snapshot.InGame = snapshot.Window != IntPtr.Zero; snapshot.Champion = lastChampion;
     try {
      var flow = Json.Serializer().Deserialize<Dictionary<string, object>>(await LcuGet("/lol-gameflow/v1/session"));
-     var gd = flow != null && flow.ContainsKey("gameData") ? Json.D(flow["gameData"]) : null;
-     var q = gd != null && gd.ContainsKey("queue") ? Json.D(gd["queue"]) : null;
-     snapshot.Mode = Json.S(q, "gameMode"); snapshot.QueueId = Json.I(q, "id"); snapshot.Mayhem = IsMayhemMode(snapshot.Mode, snapshot.QueueId);
+     ApplyFlowSession(snapshot, flow, false);
     } catch { snapshot.Mayhem = lastMayhem && snapshot.Mode == ""; }
    }
    if (snapshot.Champion != "") lastChampion = snapshot.Champion;

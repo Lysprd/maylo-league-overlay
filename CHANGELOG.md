@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.0-beta.15
+- **Full Practice Tool & Custom Game support:** Reads `map.gameMode`, `map.id` (`11` = Summoner's Rift, `12` = ARAM), `queue.type`, `isCustomGame`, and `LiveClientData.mapNumber` when `queue.gameMode` is empty or `queueId <= 0` (`-1`, `0`, `2000`–`2020`, `3100`–`3140`), eliminating `"Unsupported mode"` in Practice Tool and Custom SR / ARAM / Mayhem lobbies.
+- **Exhaustive ARAM / Mayhem Champion Cards capture:** Reads `benchChampions` (objects and ints), `benchChampionIds`, `subset-champion-list`, `pickable-champion-ids`, and any card/choice/subset keys on the session or local player cell, plus resets Champ Select tracking cleanly on entry so Champion Cards appear immediately with Win Rate and Team Synergy.
+
 ## v0.1.0-beta.14
 - **Critical overlay fix for ARAM Mayhem (queue `3270`) & Practice/Custom SR (`3100`/`3110`/`3140`):** `DetectModeKey` previously rejected Riot's new live ARAM Mayhem queue ID `3270` (`KIWI`) and SR Practice/Custom queues (`3100`/`3110`/`3140`) as unsupported, hiding the entire overlay, Champ Select ribbon, and augment OCR. Both explicit queue IDs and `KIWI` / `PRACTICETOOL` modes are now recognized reliably across Riot queue rotations.
 

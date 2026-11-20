@@ -75,6 +75,9 @@ namespace MayhemCompanion {
         GameBridge.DetectModeKey("KIWI", 3270, false) == "MAYHEM" &&
         GameBridge.DetectModeKey("CLASSIC", 3100, false) == "SR" &&
         GameBridge.DetectModeKey("PRACTICETOOL", 3140, false) == "SR" &&
+        GameBridge.DetectModeKey("PRACTICETOOL", -1, false) == "SR" &&
+        GameBridge.DetectModeKey("CLASSIC", -1, false) == "SR" &&
+        GameBridge.DetectModeKey("ARAM", -1, false) == "ARAM" &&
         GameBridge.DetectModeKey("ARAM", 720, false) == "ARAM" &&
         GameBridge.DetectModeKey("CLASSIC", 1700, true) == "" &&
         GameBridge.DetectModeKey("CHERRY", 0, false) == "" &&

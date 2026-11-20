@@ -972,6 +972,7 @@ namespace MayhemCompanion {
      // Entering a real Champ Select or Game ALWAYS adapts to the actual match mode & role!
      manualModeOverride = false;
      manualRoleOverride = false;
+     displayedClientChampion = "";
     }
 
     bool inQueue = Game.Phase == "Matchmaking" || Game.Phase == "ReadyCheck";
@@ -1462,7 +1463,7 @@ namespace MayhemCompanion {
     : new ChampSynergyInfo();
    double selEffWin = Selected == null ? 0 : Math.Round(selBaseWin + selSyn.Bonus, 1);
 
-   var rawBench = (Preview ? Champions.Take(6) : Game.Bench.Select(FromId).Where(c => c != null))
+   var rawBench = (Preview ? Champions.Take(6) : Game.PriorityCards.Concat(Game.Bench).Select(FromId).Where(c => c != null))
     .GroupBy(c => c.Slug).Select(g => g.First()).ToList();
    var benchRanked = rawBench.Select(c => {
     var be = modeEntryFor(c);
