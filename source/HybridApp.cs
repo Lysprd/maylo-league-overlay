@@ -348,6 +348,7 @@ namespace MayhemCompanion {
     if (hs != null) hs.AddHook(WndHook);
     RegisterAppHotkeys();
    };
+   Activated += (s, e) => { if (!closing) GitHubUpdater.CheckOnActivate(); };
 
     Loaded += async (s, e) => {
     GitHubUpdater.StatusChanged += () => {

@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.1.0-beta.10
+
+- Detect new GitHub Releases within ~2 minutes (or immediately when focusing maylo) using conditional HTTP `ETag` (`304 Not Modified`) polling with zero extra API rate-limit usage.
+- Add an unmistakable **Update Ready** card with a 1-click **Restart & Update** button right in the sidebar footer (alongside the topbar pill and Settings) as soon as an update is downloaded and SHA-256 verified.
+
 ## v0.1.0-beta.9
 
 - Add a live **Patch Notes (Buff / Nerf)** tab covering Champions, ARAM Mayhem Augments, Items, and Systems (auto-localized FR/EN) plus `BUFF` / `NERF` / `ADJ` badges across Tier List, Champions, Build, Champ Select Bench Bar, and `Alt+G`.

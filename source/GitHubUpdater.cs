@@ -26,6 +26,9 @@ namespace MayhemCompanion {
   static readonly SemaphoreSlim checkGate = new SemaphoreSlim(1, 1);
   static readonly object statusLock = new object();
   static UpdateSnapshot currentStatus = new UpdateSnapshot();
+  static string cachedRepoFullName;
+  static string releasesEtag;
+  static DateTime lastActivateCheckUtc = DateTime.MinValue;
   public static event Action StatusChanged;
 
   public static UpdateSnapshot GetStatus() {
@@ -88,8 +91,21 @@ namespace MayhemCompanion {
     return;
    }
    using (var client = CreateClient()) {
-    await CheckLocked(root, client, CancellationToken.None);
+    await CheckLocked(root, client, CancellationToken.None, true);
    }
+  }
+
+  public static void CheckOnActivate() {
+   string root = InstallStore.InstalledRoot();
+   if (root == null) return;
+   var now = DateTime.UtcNow;
+   if ((now - lastActivateCheckUtc).TotalSeconds < 45) return;
+   lastActivateCheckUtc = now;
+   var _ = Task.Run(async () => {
+    using (var client = CreateClient()) {
+     await CheckLocked(root, client, CancellationToken.None, false);
+    }
+   });
   }
 
   static HttpClient CreateClient() {
@@ -102,32 +118,35 @@ namespace MayhemCompanion {
 
   static async Task Run(string root, CancellationToken cancellation) {
    using (var client = CreateClient()) {
-    var delay = TimeSpan.FromSeconds(8);
+    var delay = TimeSpan.FromSeconds(6);
     while (!cancellation.IsCancellationRequested) {
      try {
       await Task.Delay(delay, cancellation);
-      await CheckLocked(root, client, cancellation);
+      await CheckLocked(root, client, cancellation, false);
      } catch (OperationCanceledException) {
       if (cancellation.IsCancellationRequested) return;
      } catch (Exception ex) {
       System.Diagnostics.Trace.WriteLine("maylo update: " + ex.Message);
      }
-     delay = TimeSpan.FromMinutes(30);
+     // ETag conditional requests (304 Not Modified) do not count against GitHub API rate limits!
+     delay = TimeSpan.FromMinutes(2);
     }
    }
   }
 
-  static async Task CheckLocked(string root, HttpClient client, CancellationToken cancellation) {
+  static async Task CheckLocked(string root, HttpClient client, CancellationToken cancellation, bool force) {
    if (!await checkGate.WaitAsync(0, cancellation)) return;
    try {
-    await Check(root, client, cancellation);
+    await Check(root, client, cancellation, force);
    } catch (Exception ex) {
     if (ex is OperationCanceledException && cancellation.IsCancellationRequested) throw;
     System.Diagnostics.Trace.WriteLine("maylo update: " + ex.Message);
     var pending = PendingVersion(root);
-    SetStatus("error", pending == null ? "" : pending.Text,
-     pending == null ? "Update check failed. Try again from Settings."
-      : "Update check failed. You can still restart to apply v" + pending.Text + ".", pending != null);
+    if (force || pending != null) {
+     SetStatus("error", pending == null ? "" : pending.Text,
+      pending == null ? "Update check failed. Try again from Settings."
+       : "Update check failed. You can still restart to apply v" + pending.Text + ".", pending != null);
+    }
    } finally {
     checkGate.Release();
    }
@@ -167,16 +186,38 @@ namespace MayhemCompanion {
    catch (UnauthorizedAccessException) { return null; }
   }
 
-  static async Task Check(string root, HttpClient client, CancellationToken cancellation) {
+  static async Task Check(string root, HttpClient client, CancellationToken cancellation, bool force) {
    var current = InstallStore.Current(root);
    if (current == null) throw new IOException("The installed version is unavailable.");
-   SetStatus("checking", "", "Checking GitHub Releases…", false);
-   // Resolve the current name through the immutable repository ID before trusting any download URL.
-   var repo = await GetJson<RepositoryIdentity>(client, RepositoryApi, cancellation);
-   if (repo == null || repo.id != RepositoryId || !Regex.IsMatch(repo.full_name ?? "", @"\A[A-Za-z0-9-]+/[A-Za-z0-9_.-]+\z"))
-    throw new IOException("Unexpected GitHub repository identity.");
-   var releases = await GetJson<Release[]>(client, RepositoryApi + "/releases?per_page=30", cancellation);
-   var target = SelectRelease(releases, current, repo.full_name);
+   if (force) SetStatus("checking", "", "Checking GitHub Releases…", false);
+   // Resolve the current repository name once through the immutable repository ID before trusting download URLs.
+   string repoFullName = cachedRepoFullName;
+   if (force || String.IsNullOrEmpty(repoFullName)) {
+    var repo = await GetJson<RepositoryIdentity>(client, RepositoryApi, cancellation);
+    if (repo == null || repo.id != RepositoryId || !Regex.IsMatch(repo.full_name ?? "", @"\A[A-Za-z0-9-]+/[A-Za-z0-9_.-]+\z"))
+     throw new IOException("Unexpected GitHub repository identity.");
+    repoFullName = repo.full_name;
+    cachedRepoFullName = repoFullName;
+   }
+
+   Release[] releases;
+   using (var req = new HttpRequestMessage(HttpMethod.Get, RepositoryApi + "/releases?per_page=15")) {
+    if (!force && !String.IsNullOrEmpty(releasesEtag)) req.Headers.TryAddWithoutValidation("If-None-Match", releasesEtag);
+    using (var response = await client.SendAsync(req, cancellation)) {
+     if (response.StatusCode == System.Net.HttpStatusCode.NotModified) {
+      var pend = PendingVersion(root);
+      if (pend != null)
+       SetStatus("ready", pend.Text, "v" + pend.Text + " is ready — restart maylo to apply.", true);
+      return;
+     }
+     response.EnsureSuccessStatusCode();
+     if (response.Headers.ETag != null) releasesEtag = response.Headers.ETag.Tag;
+     string json = await response.Content.ReadAsStringAsync();
+     releases = new JavaScriptSerializer { MaxJsonLength = 4 * 1024 * 1024 }.Deserialize<Release[]>(json);
+    }
+   }
+
+   var target = SelectRelease(releases ?? new Release[0], current, repoFullName);
    if (target == null) {
     var pending = PendingVersion(root);
     if (pending == null)

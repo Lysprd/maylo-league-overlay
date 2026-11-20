@@ -1051,8 +1051,44 @@ export function HubView({ state }: { state: AppState }) {
             })}
           </div>
 
-          {/* Minimal Account / Overlay Preview Footer */}
+          {/* Minimal Account / Live Update / Overlay Preview Footer */}
           <div className="space-y-2 border-t border-zinc-200/80 dark:border-white/[0.07] pt-3">
+            {(state.update?.state === 'downloading' || state.update?.state === 'ready') && (
+              <div className="rounded-xl border border-indigo-400/40 bg-indigo-500/10 p-2.5 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-indigo-700 dark:text-indigo-200">
+                    {state.update.state === 'downloading' ? (
+                      <RefreshCw className="size-3 animate-spin shrink-0" />
+                    ) : (
+                      <Download className="size-3 shrink-0" />
+                    )}
+                    <span className="truncate">
+                      {state.update.state === 'downloading'
+                        ? `Downloading v${state.update.version}…`
+                        : `Update v${state.update.version}`}
+                    </span>
+                  </span>
+                  {state.update.state === 'ready' && (
+                    <span className="size-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                  )}
+                </div>
+                {state.update.canRestart ? (
+                  <Button
+                    size="xs"
+                    variant="accent"
+                    className="w-full"
+                    onClick={() => postAction('applyUpdateRestart')}
+                  >
+                    <RotateCcw className="size-3" />
+                    Restart &amp; Update
+                  </Button>
+                ) : state.update.state === 'ready' ? (
+                  <div className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                    Ready to apply once match ends
+                  </div>
+                ) : null}
+              </div>
+            )}
             {state.account && (
               <div className="flex items-center gap-2.5 rounded-xl border border-zinc-200/75 dark:border-white/[0.07] bg-zinc-50/80 dark:bg-white/[0.03] px-2.5 py-2">
                 {state.account.profileIconUrl ? (
