@@ -48,18 +48,10 @@ namespace MayhemCompanion {
     using (var cancellation = new CancellationTokenSource()) {
      GitHubUpdater.Start(cancellation.Token);
      try {
-      if (startMinimized && hub.Config.MinimizeToTray) {
-       app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-       hub.Closed += (s, e) => app.Shutdown();
+      if (startMinimized) {
        hub.WindowState = WindowState.Minimized;
-       hub.ShowInTaskbar = false;
-       hub.Show();
-       hub.Hide();
-       hub.ShowInTaskbar = true;
-       app.Run();
-      } else {
-       app.Run(hub);
       }
+      app.Run(hub);
      } finally {
       cancellation.Cancel();
      }
@@ -69,7 +61,6 @@ namespace MayhemCompanion {
    // Mutex is now fully released — launch updated MAYLO.exe cleanly if user clicked Restart to Update!
    if (!String.IsNullOrEmpty(PendingRestartLauncher) && File.Exists(PendingRestartLauncher)) {
     try {
-     InstallStore.UnblockFile(PendingRestartLauncher);
      using (Process.Start(new ProcessStartInfo(PendingRestartLauncher) {
       WorkingDirectory = Path.GetDirectoryName(PendingRestartLauncher),
       UseShellExecute = false

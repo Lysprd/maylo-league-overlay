@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -216,19 +217,32 @@ namespace MayloSetup {
     if (File.Exists(launcher) && current == null) throw new IOException("Choose a folder without another MAYLO.exe.");
     if (current == null || current.CompareTo(release) < 0) {
      InstallStore.Stage(targetDir, release, res, progress);
+     CopyLauncher(asm.Location, launcher);
      InstallStore.Activate(targetDir, release);
-     InstallStore.PruneOldVersions(targetDir);
-    }
-    // Always write MAYLO.exe via CopyCleanFile (never File.Copy!) so browser Mark-of-the-Web
-    // (:Zone.Identifier) is NEVER copied onto the installed launcher, and upgrades refresh MAYLO.exe!
-    try { InstallStore.CopyCleanFile(asm.Location, launcher); }
-    catch { InstallStore.UnblockFile(launcher); }
+    } else if (!File.Exists(launcher)) File.Copy(asm.Location, launcher);
+   }
+  }
+
+  static void CopyLauncher(string source, string launcher) {
+   if (String.Equals(IOPath.GetFullPath(source), IOPath.GetFullPath(launcher), StringComparison.OrdinalIgnoreCase)) return;
+   if (!File.Exists(launcher)) { File.Copy(source, launcher); return; }
+   string copy = launcher + "." + Guid.NewGuid().ToString("N") + ".tmp";
+   try {
+    File.Copy(source, copy);
+    File.Replace(copy, launcher, null);
+   } finally {
+    if (File.Exists(copy)) File.Delete(copy);
    }
   }
 
   public static string InstallForUser(string target, bool desktop, bool startMenu, bool startup, Action<int, string> progress) {
    if (String.IsNullOrWhiteSpace(target) || !IOPath.IsPathRooted(target)) throw new IOException("Choose an absolute install folder.");
    string directory = IOPath.GetFullPath(target.Trim());
+   if (Directory.Exists(directory) && InstallStore.Current(directory) == null &&
+       Directory.GetFileSystemEntries(directory).Any(entry =>
+        !String.Equals(entry, IOPath.Combine(directory, "versions"), StringComparison.OrdinalIgnoreCase) &&
+        !String.Equals(entry, IOPath.Combine(directory, ".install.lock"), StringComparison.OrdinalIgnoreCase)))
+    throw new IOException("Choose an empty folder or the existing maylo installation.");
    Install(directory, progress);
    string exe = IOPath.Combine(directory, InstallStore.Launcher);
    progress(90, "Creating Windows shortcuts…");
@@ -247,7 +261,6 @@ namespace MayloSetup {
   }
 
   public static void LaunchCurrent(string root, string[] args = null) {
-   InstallStore.UnblockFile(IOPath.Combine(root, InstallStore.Launcher));
    using (InstallStore.Lock(root)) {
     var current = InstallStore.Current(root);
     var previous = InstallStore.Current(root, true);
@@ -315,7 +328,6 @@ namespace MayloSetup {
 
   public static void SetStartup(string exePath, bool enabled) {
    try {
-    if (!String.IsNullOrEmpty(exePath)) InstallStore.UnblockFile(exePath);
     using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true)) {
      if (key == null) return;
      if (enabled && !String.IsNullOrEmpty(exePath)) key.SetValue("MAYLO", "\"" + exePath + "\" --autostart");
@@ -488,7 +500,7 @@ namespace MayloSetup {
    if (args.Length > 0 && args[0] == "--uninstall") {
     try {
      string temp = IOPath.Combine(IOPath.GetTempPath(), "MAYLO-uninstall-" + Guid.NewGuid().ToString("N") + ".exe");
-     InstallStore.CopyCleanFile(Assembly.GetExecutingAssembly().Location, temp);
+     File.Copy(Assembly.GetExecutingAssembly().Location, temp);
      using (Process.Start(new ProcessStartInfo(temp, "--remove-installed") { UseShellExecute = false })) { }
      return 0;
     } catch (Exception ex) {

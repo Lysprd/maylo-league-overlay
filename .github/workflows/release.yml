@@ -57,6 +57,14 @@ jobs:
             if (!($existing | ConvertFrom-Json).isDraft) { throw 'This release already exists' }
           } else {
             $releaseArgs = @('release', 'create', $tag, '--target', $env:GITHUB_SHA, '--draft', '--generate-notes', '--title', "maylo $tag")
+            $heading = [regex]::Escape("## $tag")
+            $notes = [regex]::Match((Get-Content CHANGELOG.md -Raw), "(?ms)^$heading\r?\n(.*?)(?=^## |\z)").Groups[1].Value.Trim()
+            if ($notes) {
+              $releaseArgs = $releaseArgs | Where-Object { $_ -ne '--generate-notes' }
+              $notesPath = Join-Path $env:RUNNER_TEMP 'maylo-release-notes.md'
+              Set-Content -LiteralPath $notesPath -Value $notes -Encoding utf8
+              $releaseArgs += @('--notes-file', $notesPath)
+            }
             if ($env:MAYLO_VERSION.Contains('-beta.')) { $releaseArgs += '--prerelease' }
             gh @releaseArgs
             if ($LASTEXITCODE) { throw 'Could not create draft' }

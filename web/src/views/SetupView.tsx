@@ -9,7 +9,7 @@ import { Status } from '@/components/ui/status';
 import { postAction } from '@/lib/bridge';
 
 type SetupMessage =
-  | { type: 'setupPath'; path: string }
+  | { type: 'setupPath'; path: string; startup?: boolean }
   | { type: 'setupProgress'; percent: number; label: string }
   | { type: 'setupDone'; path: string }
   | { type: 'setupError'; message: string };
@@ -36,7 +36,12 @@ export function SetupView() {
     const receive = (event: { data: unknown }) => {
       const message = event.data as SetupMessage;
       switch (message?.type) {
-        case 'setupPath': setPath(message.path); break;
+        case 'setupPath': {
+          setPath(message.path);
+          const { startup } = message;
+          if (typeof startup === 'boolean') setChoices(current => ({ ...current, startup }));
+          break;
+        }
         case 'setupProgress':
           setPhase('installing');
           setProgress({ percent: message.percent, label: message.label });

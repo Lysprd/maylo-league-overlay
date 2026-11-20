@@ -3,7 +3,6 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 
 namespace MayloRelease {
@@ -39,50 +38,16 @@ namespace MayloRelease {
   public const string Payload = "MAYLO-win-x64.zip";
   const long SizeLimit = 64 * 1024 * 1024;
 
-  [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-  static extern bool DeleteFile(string lpFileName);
-
-  /// <summary>
-  /// Removes NTFS Mark of the Web (:Zone.Identifier) so Windows Startup and shortcuts
-  /// never block automatic launch with "Open File - Security Warning".
-  /// </summary>
-  public static void UnblockFile(string path) {
-   if (String.IsNullOrWhiteSpace(path)) return;
-   try { DeleteFile(path + ":Zone.Identifier"); } catch { }
-  }
-
-  /// <summary>
-  /// Copies only the primary file data stream (never NTFS Alternate Data Streams such as
-  /// :Zone.Identifier) and atomically replaces the destination file.
-  /// </summary>
-  public static void CopyCleanFile(string source, string destination) {
-   string fullSrc = Path.GetFullPath(source);
-   string fullDst = Path.GetFullPath(destination);
-   if (String.Equals(fullSrc, fullDst, StringComparison.OrdinalIgnoreCase)) {
-    UnblockFile(fullDst);
-    return;
-   }
-   Directory.CreateDirectory(Path.GetDirectoryName(fullDst));
-   string temp = fullDst + "." + Guid.NewGuid().ToString("N").Substring(0, 8) + ".tmp";
+  public static bool StartupEnabled(string executable) {
    try {
-    using (var input = new FileStream(fullSrc, FileMode.Open, FileAccess.Read, FileShare.Read))
-    using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None)) {
-     input.CopyTo(output);
+    using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run")) {
+     var value = key == null ? null : key.GetValue("MAYLO") as string;
+     var command = "\"" + executable + "\"";
+     return String.Equals(value, command, StringComparison.OrdinalIgnoreCase) ||
+      String.Equals(value, command + " --autostart", StringComparison.OrdinalIgnoreCase);
     }
-    UnblockFile(temp);
-    if (File.Exists(fullDst)) {
-     try { File.Replace(temp, fullDst, null); }
-     catch {
-      File.Delete(fullDst);
-      File.Move(temp, fullDst);
-     }
-    } else {
-     File.Move(temp, fullDst);
-    }
-    UnblockFile(fullDst);
-   } finally {
-    try { if (File.Exists(temp)) File.Delete(temp); } catch { }
-   }
+   } catch (UnauthorizedAccessException) { return false; }
+   catch (System.Security.SecurityException) { return false; }
   }
 
   public static string Versions(string root) { return Path.Combine(root, "versions"); }
@@ -149,6 +114,9 @@ namespace MayloRelease {
      string name = Path.GetFileName(dir);
      if (ReleaseVersion.Parse(name) == null || keep.Contains(name)) continue;
      if ((File.GetAttributes(dir) & FileAttributes.ReparsePoint) != 0) continue;
+     var installed = ReadVersion(Path.Combine(dir, "version.txt"));
+     if (installed == null || installed.Text != name ||
+         !File.Exists(Path.Combine(dir, App))) continue;
      try { Directory.Delete(dir, true); } catch { }
     }
    } catch { }
@@ -174,7 +142,6 @@ namespace MayloRelease {
      Directory.CreateDirectory(Path.GetDirectoryName(dest));
      using (var input = entry.Open())
      using (var output = new FileStream(dest, FileMode.CreateNew)) input.CopyTo(output);
-     UnblockFile(dest);
      done++;
      if (progress != null) progress(15 + (done * 70 / zip.Entries.Count), "Installing " + entry.Name + "…");
     }
@@ -188,7 +155,6 @@ namespace MayloRelease {
    if (Directory.Exists(final)) {
     CheckDirectory(final);
     ValidatePayload(final, release);
-    UnblockFile(Path.Combine(final, App));
     return;
    }
 
@@ -218,7 +184,6 @@ namespace MayloRelease {
 
   public static Process Launch(string root, ReleaseVersion release, string[] args = null) {
    var exe = AppPath(root, release);
-   UnblockFile(exe);
    var psi = new ProcessStartInfo(exe) {
     WorkingDirectory = Path.GetDirectoryName(exe),
     UseShellExecute = false

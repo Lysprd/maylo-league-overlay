@@ -44,7 +44,7 @@ The Hub shows recent matches, champion stats and tier lists.
 
 1. Download the setup executable from [GitHub Releases](https://github.com/Lysprd/maylo-league-overlay/releases). If WebView2 is missing, setup offers to open the [official runtime download page](https://developer.microsoft.com/microsoft-edge/webview2/).
 2. Open maylo from its shortcut and use **Borderless** video mode in League for the overlay.
-3. maylo downloads updates in the background, verifies their SHA-256 digest, clears Mark-of-the-Web prompts for silent Windows startup, and offers a 1-click **Restart & Apply** button when ready. Your settings carry over.
+3. maylo downloads updates in the background and verifies their SHA-256 digest. Use **Restart & Apply** after leaving the game, or reopen maylo later. Your settings carry over.
 
 <p align="center">
   <img src="docs/media/installer-demo-rounded.gif" width="900" alt="The maylo installer shows shortcut options, installation progress and the completion screen" />

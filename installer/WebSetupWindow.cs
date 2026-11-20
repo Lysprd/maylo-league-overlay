@@ -1,4 +1,5 @@
 using System;
+using MayloRelease;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -146,14 +147,21 @@ namespace MayloSetup {
    if (message == null) return;
    switch (Text(message, "type")) {
     case "setupReady":
-     if (ready.TrySetResult(true))
-      Send(new { type = "setupPath", path = capture == null ? InstallerEngine.GetInstalledDir() : CapturePath });
+     if (ready.TrySetResult(true)) {
+      var path = capture == null ? InstallerEngine.GetInstalledDir() : CapturePath;
+      var startup = capture == null && InstallStore.StartupEnabled(Path.Combine(path, InstallStore.Launcher));
+      Send(new { type = "setupPath", path, startup });
+     }
      break;
     case "setupClose":
      if (!installing && capture == null) Close();
      break;
     case "setupBrowse":
-     if (!installing && installedExe == null && capture == null) Browse(Text(message, "path"));
+     if (!installing && installedExe == null && capture == null) {
+      try { Browse(Text(message, "path")); }
+      catch (IOException ex) { Send(new { type = "setupError", message = ex.Message }); }
+      catch (UnauthorizedAccessException ex) { Send(new { type = "setupError", message = ex.Message }); }
+     }
      break;
     case "setupInstall":
      if (!installing && installedExe == null && capture == null) await Install(message);
@@ -180,10 +188,10 @@ namespace MayloSetup {
     SelectedPath = Directory.Exists(path) ? path : InstallerEngine.GetInstalledDir()
    }) {
     if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK && !String.IsNullOrWhiteSpace(dialog.SelectedPath)) {
-     string chosen = dialog.SelectedPath.TrimEnd('\\');
+     string chosen = Path.GetFullPath(dialog.SelectedPath);
      bool hasOtherFiles = Directory.Exists(chosen) && Directory.GetFileSystemEntries(chosen).Length > 0
       && !File.Exists(Path.Combine(chosen, MayloRelease.InstallStore.Launcher));
-     if (hasOtherFiles && !chosen.EndsWith("\\MAYLO", StringComparison.OrdinalIgnoreCase)) {
+     if (hasOtherFiles && !chosen.TrimEnd('\\').EndsWith("\\MAYLO", StringComparison.OrdinalIgnoreCase)) {
       chosen = Path.Combine(chosen, "MAYLO");
      }
      Send(new { type = "setupPath", path = chosen });
@@ -216,7 +224,6 @@ namespace MayloSetup {
 
   void Launch() {
    try {
-    MayloRelease.InstallStore.UnblockFile(installedExe);
     using (Process.Start(new ProcessStartInfo(installedExe) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(installedExe) })) { }
     Close();
    } catch (Exception ex) {

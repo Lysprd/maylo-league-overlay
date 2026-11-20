@@ -298,18 +298,7 @@ namespace MayhemCompanion {
     if (loaded != null) Config = loaded;
    } catch { }
    SanitizeConfig();
-   // Self-heal Mark-of-the-Web (:Zone.Identifier) on installed MAYLO.exe & current MAYLO-Hub.exe
-   // so Windows Startup never prompts "Voulez-vous exécuter ce logiciel ?" even for upgraded installs!
-   if (!diagnostics) {
-    try {
-     MayloRelease.InstallStore.UnblockFile(System.Reflection.Assembly.GetExecutingAssembly().Location);
-     var installedRoot = MayloRelease.InstallStore.InstalledRoot();
-     if (installedRoot != null) {
-      MayloRelease.InstallStore.UnblockFile(Path.Combine(installedRoot, MayloRelease.InstallStore.Launcher));
-     }
-     if (Config.LaunchWithWindows) SetStartupRegistry(true);
-    } catch { }
-   }
+   if (!diagnostics) Config.LaunchWithWindows = MayloRelease.InstallStore.StartupEnabled(StartupExecutable());
    // Reset stale pre-v14 overlay panel coordinates once (flush edge-to-edge layout!)
    if (Config.LayoutVersion < 14) {
     Config.Panels.Clear();
@@ -371,6 +360,7 @@ namespace MayhemCompanion {
      overlay = new HybridOverlayWindow(this);
      overlay.Show();
      SetupTray();
+     if (startMinimized && Config.MinimizeToTray && tray != null) Hide();
      StartTimers();
      BootProgress = 52; BootStage = "Loading Riot Data Dragon & Meta…"; PushState();
      await LoadHome(true);
@@ -469,16 +459,18 @@ namespace MayhemCompanion {
    foreach (var entry in map) hotkeyRegistered[entry.Item3] = Native.RegisterHotKey(handle, entry.Item1, 0x4001, (uint)entry.Item2);
   }
 
+  static string StartupExecutable() {
+   var root = MayloRelease.InstallStore.InstalledRoot();
+   return root == null ? System.Reflection.Assembly.GetExecutingAssembly().Location
+    : Path.Combine(root, MayloRelease.InstallStore.Launcher);
+  }
+
   public static void SetStartupRegistry(bool enabled) {
    try {
     using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true)) {
      if (key == null) return;
-     var installRoot = MayloRelease.InstallStore.InstalledRoot();
-     string launcher = installRoot == null ? System.Reflection.Assembly.GetExecutingAssembly().Location
-      : Path.Combine(installRoot, MayloRelease.InstallStore.Launcher);
      if (enabled) {
-      MayloRelease.InstallStore.UnblockFile(launcher);
-      key.SetValue("MAYLO", "\"" + launcher + "\" --autostart");
+      key.SetValue("MAYLO", "\"" + StartupExecutable() + "\" --autostart");
      } else if (key.GetValue("MAYLO") != null) key.DeleteValue("MAYLO", false);
     }
    } catch { }
@@ -534,10 +526,10 @@ namespace MayhemCompanion {
      Visible = true
     };
     var menu = new System.Windows.Forms.ContextMenuStrip();
-    menu.Items.Add("Open maylo", null, (s, e) => Dispatcher.Invoke(() => { Show(); WindowState = WindowState.Normal; Native.ForceForeground(handle); }));
+    menu.Items.Add("Open maylo", null, (s, e) => Dispatcher.Invoke(() => { ShowInTaskbar = true; Show(); WindowState = WindowState.Normal; Native.ForceForeground(handle); }));
     menu.Items.Add("Quit maylo", null, (s, e) => Dispatcher.Invoke(() => { realQuit = true; Close(); }));
     tray.ContextMenuStrip = menu;
-    tray.DoubleClick += (s, e) => Dispatcher.Invoke(() => { Show(); WindowState = WindowState.Normal; Native.ForceForeground(handle); });
+    tray.DoubleClick += (s, e) => Dispatcher.Invoke(() => { ShowInTaskbar = true; Show(); WindowState = WindowState.Normal; Native.ForceForeground(handle); });
    } catch { }
   }
 
@@ -1304,6 +1296,7 @@ namespace MayhemCompanion {
    };
    var selMode = modeEntryFor(Selected);
 
+   var updateStatus = GitHubUpdater.GetStatus();
    var payload = new {
     version = MayloRelease.BuildInfo.Version,
     ddVersion = MultiModeParser.DDragonVersion,
@@ -1445,10 +1438,11 @@ namespace MayhemCompanion {
     inspectedItem = inspectedItemObj,
     inspectedAugment = inspectedAugObj,
     update = new {
-     state = GitHubUpdater.GetStatus().State,
-     version = GitHubUpdater.GetStatus().Version,
-     message = GitHubUpdater.GetStatus().Message,
-     canRestart = GitHubUpdater.GetStatus().CanRestart
+     state = updateStatus.State,
+     version = updateStatus.Version,
+     message = updateStatus.CanRestart && (Game.InGame || Game.InSelection)
+      ? "Update ready. You can restart after leaving the game." : updateStatus.Message,
+     canRestart = updateStatus.CanRestart && !Game.InGame && !Game.InSelection
     }
    };
    return Json.Serializer().Serialize(payload);
@@ -1700,7 +1694,7 @@ namespace MayhemCompanion {
       break;
      case "applyUpdateRestart":
       var upRoot = MayloRelease.InstallStore.InstalledRoot();
-      if (upRoot != null) {
+      if (upRoot != null && !Game.InGame && !Game.InSelection && GitHubUpdater.GetStatus().CanRestart) {
        Program.PendingRestartLauncher = Path.Combine(upRoot, MayloRelease.InstallStore.Launcher);
        realQuit = true;
        Close();
