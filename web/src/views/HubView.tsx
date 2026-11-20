@@ -952,9 +952,9 @@ export function HubView({ state }: { state: AppState }) {
             title={state.pinned ? 'Unpin window (Always on Top ON)' : 'Pin maylo above League window'}
             onClick={() => postAction('togglePin')}
             className={cn(
-              'flex size-8 items-center justify-center rounded-lg cursor-pointer transition-colors',
+              'flex size-8 items-center justify-center rounded-lg cursor-pointer transition-all duration-150 active:scale-90',
               state.pinned
-                ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300'
+                ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 ring-1 ring-inset ring-indigo-400/35'
                 : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/[0.07] dark:hover:text-white'
             )}
           >
@@ -962,9 +962,14 @@ export function HubView({ state }: { state: AppState }) {
           </button>
           <button
             type="button"
-            title="Toggle private mode"
+            title={state.privateMode ? 'Private mode ON (click to show names)' : 'Toggle private mode'}
             onClick={() => postAction('togglePrivate')}
-            className="flex size-8 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/[0.07] dark:hover:text-white cursor-pointer"
+            className={cn(
+              'flex size-8 items-center justify-center rounded-lg cursor-pointer transition-all duration-150 active:scale-90',
+              state.privateMode
+                ? 'bg-amber-500/15 text-amber-600 dark:text-amber-300 ring-1 ring-inset ring-amber-400/35'
+                : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/[0.07] dark:hover:text-white'
+            )}
           >
             {state.privateMode ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
           </button>
@@ -975,7 +980,7 @@ export function HubView({ state }: { state: AppState }) {
               setThemeTransitionOrigin(e.clientX, e.clientY);
               postAction('updateSetting', { key: 'theme', value: isDark ? 'light' : 'dark' });
             }}
-            className="flex size-8 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/[0.07] dark:hover:text-white cursor-pointer"
+            className="flex size-8 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/[0.07] dark:hover:text-white transition-all duration-150 active:scale-90 cursor-pointer"
           >
             {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
           </button>
@@ -983,7 +988,7 @@ export function HubView({ state }: { state: AppState }) {
             type="button"
             title="Keyboard shortcuts"
             onClick={() => setModal('shortcuts')}
-            className="flex size-8 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/[0.07] dark:hover:text-white cursor-pointer"
+            className="flex size-8 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/[0.07] dark:hover:text-white transition-all duration-150 active:scale-90 cursor-pointer"
           >
             <Keyboard className="size-4" />
           </button>
@@ -991,7 +996,7 @@ export function HubView({ state }: { state: AppState }) {
             type="button"
             title="Settings"
             onClick={() => setModal('settings')}
-            className="flex size-8 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/[0.07] dark:hover:text-white cursor-pointer"
+            className="flex size-8 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/[0.07] dark:hover:text-white transition-all duration-150 active:scale-90 cursor-pointer"
           >
             <Settings className="size-4" />
           </button>
@@ -1055,7 +1060,7 @@ export function HubView({ state }: { state: AppState }) {
                   type="button"
                   onClick={onClickNav}
                   className={cn(
-                    'relative flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-medium transition-colors duration-150 cursor-pointer',
+                    'relative flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-medium transition-all duration-150 active:scale-[0.985] cursor-pointer',
                     active
                       ? 'text-white dark:text-zinc-950'
                       : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100/85 dark:hover:bg-white/[0.05] hover:text-zinc-900 dark:hover:text-zinc-100'
@@ -1178,19 +1183,30 @@ export function HubView({ state }: { state: AppState }) {
           </div>
         </aside>
 
-        {/* MAIN CONTENT */}
-        <main className="flex-1 overflow-y-auto">
+        {/* MAIN CONTENT (with delicate mode-aware top ambient wash) */}
+        <main className="relative flex-1 overflow-y-auto">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none fixed inset-x-0 top-12 h-64 transition-opacity duration-500"
+            style={{
+              background: isArena
+                ? 'radial-gradient(ellipse 55% 80% at 55% 0%, rgba(245, 158, 11, 0.08), transparent 72%)'
+                : state.activeMode === 'ARAM'
+                  ? 'radial-gradient(ellipse 55% 80% at 55% 0%, rgba(14, 165, 233, 0.08), transparent 72%)'
+                  : 'radial-gradient(ellipse 55% 80% at 55% 0%, rgba(99, 102, 241, 0.09), transparent 72%)',
+            }}
+          />
           <motion.div
-            key={`${view}-${selected?.slug || 'none'}`}
+            key={`${view}-${selected?.slug || 'none'}-${state.activeMode}`}
             initial={{ opacity: 0, y: 7 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.24, ease: SWISS_EASE }}
-            className="mx-auto max-w-[1160px] px-6 py-5 space-y-5"
+            transition={{ duration: 0.22, ease: SWISS_EASE }}
+            className="relative z-10 mx-auto max-w-[1160px] px-6 py-5 space-y-5"
           >
             {/* CHAMPION HERO BANNER (with Back Arrow to All Champions!) */}
             {['Build', 'Augments', 'Synergies', 'Notes'].includes(view) && selected && (
               <GlassCard surface="hub" spotlight className="p-5 swiss-grid-bg">
-                <BorderBeam tone="indigo" />
+                <BorderBeam tone={isArena ? 'gold' : state.activeMode === 'ARAM' ? 'sky' : 'indigo'} />
                 <div className="flex flex-wrap lg:flex-nowrap items-center justify-between gap-4">
                   <div className="flex items-center gap-3.5 min-w-0 flex-1">
                     {view === 'Build' && (
@@ -1223,7 +1239,7 @@ export function HubView({ state }: { state: AppState }) {
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-zinc-500 dark:text-zinc-400 tabular-nums">
                         <span>
-                          WR{' '}
+                          {isArena ? 'Top 4' : 'WR'}{' '}
                           <strong className="text-zinc-900 dark:text-zinc-100">
                             {fmtPct(selected.win)}
                           </strong>
@@ -1318,19 +1334,24 @@ export function HubView({ state }: { state: AppState }) {
                         </>
                       )}
 
-                      {/* 1-Click Auto-Import Toggles (Runes / Shop / Spells) */}
+                      {/* 1-Click Auto-Import Toggles (mode-aware: Arena uses Shop + Prismatic/Augments, no runes/spells!) */}
                       <div className="flex flex-wrap items-center gap-1.5">
-                        {[
-                          { key: 'autoRunes', label: 'Auto-Runes', on: state.settings.autoRunes },
-                          { key: 'autoExportShop', label: 'Auto-Shop', on: state.settings.autoExportShop },
-                          { key: 'autoSpells', label: 'Auto-Spells', on: state.settings.autoSpells },
-                        ].map((tg) => (
+                        {(isArena
+                          ? [{ key: 'autoExportShop', label: 'Auto-Shop', on: state.settings.autoExportShop }]
+                          : [
+                              ...(!isMayhem
+                                ? [{ key: 'autoRunes', label: 'Auto-Runes', on: state.settings.autoRunes }]
+                                : []),
+                              { key: 'autoExportShop', label: 'Auto-Shop', on: state.settings.autoExportShop },
+                              { key: 'autoSpells', label: 'Auto-Spells', on: state.settings.autoSpells },
+                            ]
+                        ).map((tg) => (
                           <button
                             key={tg.key}
                             type="button"
                             onClick={() => postAction('updateSetting', { key: tg.key, value: !tg.on })}
                             className={cn(
-                              'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-semibold leading-none transition-all cursor-pointer',
+                              'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-semibold leading-none transition-all active:scale-[0.97] cursor-pointer',
                               tg.on
                                 ? 'border-indigo-400/50 bg-indigo-500/14 text-indigo-700 dark:text-indigo-200'
                                 : 'border-zinc-200 dark:border-white/10 bg-zinc-100/70 dark:bg-white/[0.03] text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200'
@@ -1338,7 +1359,7 @@ export function HubView({ state }: { state: AppState }) {
                           >
                             <span
                               className={cn(
-                                'size-1.5 rounded-full',
+                                'size-1.5 rounded-full transition-colors',
                                 tg.on ? 'bg-indigo-500 dark:bg-indigo-400' : 'bg-zinc-400 dark:bg-zinc-600'
                               )}
                             />
@@ -1346,29 +1367,37 @@ export function HubView({ state }: { state: AppState }) {
                             <span className="text-[10px] opacity-80">{tg.on ? 'ON' : 'OFF'}</span>
                           </button>
                         ))}
+                        {isArena && (
+                          <span className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/35 bg-amber-500/10 px-2.5 py-1.5 text-[11px] font-semibold leading-none text-amber-700 dark:text-amber-300">
+                            <Sparkles className="size-3 shrink-0" />
+                            <span>Prismatic &amp; Augments OCR Ready</span>
+                          </span>
+                        )}
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className="text-zinc-400">Flash Key</span>
-                      <div className="inline-flex rounded-lg border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/[0.04] p-0.5">
-                        {(['D', 'F'] as const).map((k) => (
-                          <button
-                            key={k}
-                            type="button"
-                            onClick={() => postAction('setFlashKey', { key: k })}
-                            className={cn(
-                              'w-7 rounded-md py-0.5 text-xs font-bold transition-colors cursor-pointer',
-                              state.settings.flashKey === k
-                                ? 'bg-indigo-600 text-white'
-                                : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                            )}
-                          >
-                            {k}
-                          </button>
-                        ))}
+                    {!isArena && (
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="text-zinc-400">Flash Key</span>
+                        <div className="inline-flex rounded-lg border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/[0.04] p-0.5">
+                          {(['D', 'F'] as const).map((k) => (
+                            <button
+                              key={k}
+                              type="button"
+                              onClick={() => postAction('setFlashKey', { key: k })}
+                              className={cn(
+                                'w-7 rounded-md py-0.5 text-xs font-bold transition-all active:scale-95 cursor-pointer',
+                                state.settings.flashKey === k
+                                  ? 'bg-indigo-600 text-white shadow-xs'
+                                  : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                              )}
+                            >
+                              {k}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 )}
 
@@ -1603,7 +1632,7 @@ export function HubView({ state }: { state: AppState }) {
               <div className="space-y-5">
                 {/* Summoner Profile + Recent W/L Form Banner */}
                 <GlassCard surface="hub" spotlight className="relative p-5 swiss-grid-bg">
-                  <BorderBeam tone="indigo" />
+                  <BorderBeam tone={isArena ? 'gold' : state.activeMode === 'ARAM' ? 'sky' : 'indigo'} />
                   <div className="relative z-10 flex flex-wrap items-center justify-between gap-4">
                     <div className="flex items-center gap-3.5 min-w-0">
                       {state.account?.profileIconUrl ? (
@@ -1731,8 +1760,10 @@ export function HubView({ state }: { state: AppState }) {
                     },
                     {
                       code: '04',
-                      label: 'Auto-Loadout',
-                      node: (
+                      label: isArena ? 'Arena Companion' : 'Auto-Loadout',
+                      node: isArena ? (
+                        <span>{state.settings.autoExportShop ? 'Shop + OCR' : 'OCR Active'}</span>
+                      ) : (
                         <span>
                           {state.settings.autoRunes && state.settings.autoExportShop
                             ? 'Runes + Shop'
@@ -1743,7 +1774,9 @@ export function HubView({ state }: { state: AppState }) {
                                 : 'Manual'}
                         </span>
                       ),
-                      sub: `Flash on ${state.settings.flashKey || 'F'} · Spells ${state.settings.autoSpells ? 'ON' : 'OFF'}`,
+                      sub: isArena
+                        ? `Augment OCR ${state.settings.ocr ? 'ON' : 'OFF'} · Prismatic & Duos`
+                        : `Flash on ${state.settings.flashKey || 'F'} · Spells ${state.settings.autoSpells ? 'ON' : 'OFF'}`,
                       icon: Zap,
                     },
                   ].map((kpi) => {
@@ -1836,7 +1869,7 @@ export function HubView({ state }: { state: AppState }) {
                                   >
                                     {fmtPct(wr)}
                                   </div>
-                                  <div className="text-[10px] text-zinc-400">{ch.games} games</div>
+                                  <div className="text-[10px] text-zinc-400">{ch.games} {ch.games === 1 ? 'game' : 'games'}</div>
                                 </div>
                               </button>
                             );
@@ -1872,20 +1905,20 @@ export function HubView({ state }: { state: AppState }) {
                         key={`${c.slug}-${c.role}`}
                         type="button"
                         onClick={() => postAction('selectChampion', { slug: c.slug, role: c.role, view: 'Build' })}
-                        className="flex items-center justify-between gap-3 rounded-xl border border-zinc-200/80 dark:border-white/[0.07] bg-zinc-50/70 dark:bg-white/[0.025] p-3 text-left transition-all hover:border-indigo-400/50 hover:bg-white dark:hover:bg-white/[0.05] cursor-pointer"
+                        className="group flex items-center justify-between gap-3 rounded-xl border border-zinc-200/80 dark:border-white/[0.07] bg-zinc-50/70 dark:bg-white/[0.025] p-3 text-left transition-all duration-150 hover:-translate-y-0.5 hover:border-indigo-400/55 hover:bg-white dark:hover:bg-white/[0.055] hover:shadow-sm dark:hover:shadow-[0_10px_24px_-10px_rgba(0,0,0,0.6)] active:scale-[0.985] cursor-pointer"
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
                           <ChampAvatar
                             src={c.icon}
                             alt={c.name}
-                            className="size-9 rounded-lg border border-zinc-200 dark:border-white/12"
+                            className="size-9 rounded-lg border border-zinc-200 dark:border-white/12 transition-transform duration-200 group-hover:scale-105"
                           />
                           <div className="min-w-0">
                             <div className="truncate text-xs font-semibold text-zinc-900 dark:text-zinc-100">
                               {c.name}
                             </div>
                             <div className="text-[11px] text-zinc-500 dark:text-zinc-400 tabular-nums">
-                              {fmtPct(c.win)} WR{c.role ? ` · ${c.role}` : ''}
+                              {fmtPct(c.win)} {isArena ? 'Top 4' : 'WR'}{c.role ? ` · ${c.role}` : ''}
                             </div>
                           </div>
                         </div>
@@ -2067,10 +2100,10 @@ export function HubView({ state }: { state: AppState }) {
                         type="button"
                         onClick={() => postAction('inspectItem', { id: step.stat.id })}
                         className={cn(
-                          'flex flex-col justify-between rounded-xl border p-4 text-left transition-all cursor-pointer',
+                          'group flex flex-col justify-between rounded-xl border p-4 text-left transition-all duration-150 hover:-translate-y-0.5 active:scale-[0.99] cursor-pointer',
                           idx === 0
-                            ? 'border-indigo-400/60 bg-indigo-50/50 dark:bg-indigo-500/[0.09] hover:border-indigo-400'
-                            : 'border-zinc-200/80 dark:border-white/[0.08] bg-zinc-50/50 dark:bg-white/[0.025] hover:border-zinc-300 dark:hover:border-white/20'
+                            ? 'border-indigo-400/60 bg-indigo-50/50 dark:bg-indigo-500/[0.09] hover:border-indigo-400 hover:shadow-[0_10px_28px_-12px_rgba(99,102,241,0.45)]'
+                            : 'border-zinc-200/80 dark:border-white/[0.08] bg-zinc-50/50 dark:bg-white/[0.025] hover:border-zinc-300 dark:hover:border-white/20 hover:shadow-sm dark:hover:shadow-[0_10px_24px_-12px_rgba(0,0,0,0.6)]'
                         )}
                       >
                         <div className="flex items-center justify-between gap-2 mb-2.5">
@@ -2153,11 +2186,25 @@ export function HubView({ state }: { state: AppState }) {
                         { title: 'Boots', items: state.boots.slice(0, 4), inspectable: true },
                         { title: 'Summoner Spells', items: state.spells.slice(0, 4), inspectable: false },
                       ]
-                  ).map((group) => (
-                    <GlassCard key={group.title} surface="hub" className="p-4">
+                  ).map((group) => {
+                    const isPrismaticGroup = group.title === 'Prismatic Items';
+                    return (
+                    <GlassCard
+                      key={group.title}
+                      surface="hub"
+                      highlight={isPrismaticGroup ? 'purple' : 'none'}
+                      className="p-4"
+                    >
+                      {isPrismaticGroup && (
+                        <div className="prismatic-top-rim pointer-events-none absolute inset-x-0 top-0 h-[2px]" />
+                      )}
                       <div className="flex items-center justify-between gap-2 mb-3">
-                        <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                          {group.title}
+                        <h3 className={cn(
+                          'text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5',
+                          isPrismaticGroup ? 'text-purple-600 dark:text-purple-300' : 'text-zinc-400'
+                        )}>
+                          {isPrismaticGroup && <Sparkles className="size-3.5 text-amber-400" />}
+                          <span>{group.title}</span>
                         </h3>
                         {group.title === 'Summoner Spells' && (
                           <div className="inline-flex items-center gap-1 text-[10px]">
@@ -2222,7 +2269,8 @@ export function HubView({ state }: { state: AppState }) {
                         )}
                       </div>
                     </GlassCard>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {/* Early / Mid / Late Game Scaling Curve */}
@@ -4152,13 +4200,13 @@ export function HubView({ state }: { state: AppState }) {
                   checked={state.settings.showBuildOverlay}
                   onChange={(v) => postAction('updateSetting', { key: 'showBuildOverlay', value: v })}
                   label="Build Guide HUD"
-                  description="Summoner’s Rift, ARAM and Mayhem · next purchase, components and gold remaining"
+                  description="Summoner’s Rift, ARAM, Arena and Mayhem · next purchase, components and gold remaining"
                 />
                 <Switch
                   checked={state.settings.showPerfStrip}
                   onChange={(v) => postAction('updateSetting', { key: 'showPerfStrip', value: v })}
                   label="Live CS/min & Performance Strip"
-                  description="Summoner’s Rift, ARAM and Mayhem · CS/min, KDA and kill participation"
+                  description="Summoner’s Rift, ARAM, Arena and Mayhem · CS/min, KDA and kill participation"
                 />
                 <Switch
                   checked={state.settings.showJungleWidget}
@@ -4223,7 +4271,7 @@ export function HubView({ state }: { state: AppState }) {
                   checked={state.settings.showRerollBar}
                   onChange={(v) => postAction('updateSetting', { key: 'showRerollBar', value: v })}
                   label="Reroll Reference Bar"
-                  description="Mayhem · recommended reroll targets while choosing an augment"
+                  description="Mayhem & Arena · recommended reroll targets while choosing an augment"
                 />
                 <Switch
                   checked={state.settings.showBenchBar}

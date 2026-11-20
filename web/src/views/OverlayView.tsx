@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   Check,
   ChevronRight,
@@ -290,13 +290,26 @@ function AugmentBadgeCard({
         ? 'bg-amber-500/20 text-amber-200 border-amber-400/40'
         : 'bg-zinc-500/20 text-zinc-200 border-zinc-400/35';
 
+  const topBarClass =
+    rarity === 'PRISMATIC'
+      ? 'prismatic-top-rim'
+      : rarity === 'GOLD'
+        ? 'bg-gradient-to-r from-transparent via-amber-400/80 to-transparent'
+        : 'bg-gradient-to-r from-transparent via-zinc-300/45 to-transparent';
+
   return (
+    <motion.div
+      initial={{ opacity: 0, y: 6, scale: 0.96 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+    >
     <GlassCard
       surface="overlay"
       highlight={best ? 'gold' : rarity === 'PRISMATIC' ? 'purple' : 'none'}
       style={{ width, zoom: scale }}
       className="px-2.5 py-2.5 transition-none"
     >
+      <div className={cn('pointer-events-none absolute inset-x-0 top-0 h-[2px]', topBarClass)} />
       {/* Top Row: Rarity + Best Pick + Tier */}
       <div className="flex flex-wrap items-center justify-between gap-1.5">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -412,6 +425,7 @@ function AugmentBadgeCard({
         </div>
       )}
     </GlassCard>
+    </motion.div>
   );
 }
 
@@ -1305,28 +1319,41 @@ function ChampSelectTierDrawer({ state }: { state: AppState }) {
     });
   }, [state.tierList, search, tierFilter]);
 
-  if (!open) {
-    return (
-      <div className="fixed right-3 top-[8%] z-40 pointer-events-auto">
-        <button
-          type="button"
-          onClick={() => postAction('setChampTierOpen', { value: true })}
-          className="group inline-flex items-center gap-2 rounded-xl border border-indigo-400/45 bg-[#0D101B]/92 px-3 py-1.5 text-[11px] font-bold text-white shadow-[0_10px_28px_rgba(0,0,0,0.65),0_0_16px_rgba(99,102,241,0.22)] backdrop-blur-md transition-all hover:border-indigo-300/80 hover:bg-[#13182A]/95 cursor-pointer"
-        >
-          <Trophy className="size-3.5 text-amber-300 shrink-0" />
-          <span>{modeLabel}</span>
-          <ChevronRight className="size-3 text-indigo-300 transition-transform group-hover:translate-x-0.5" />
-        </button>
-      </div>
-    );
-  }
-
   return (
-    <div className="fixed right-3 top-[7%] bottom-[8%] z-40 w-[292px] max-h-[82vh] flex flex-col pointer-events-auto">
-      <GlassCard
-        surface="overlay"
-        className="flex h-full flex-col overflow-hidden border-indigo-400/35 bg-[#0B0E18]/94 shadow-[0_18px_48px_rgba(0,0,0,0.78)]"
-      >
+    <AnimatePresence mode="wait">
+      {!open ? (
+        <motion.div
+          key="cs-tier-pill"
+          initial={{ opacity: 0, x: 14, scale: 0.95 }}
+          animate={{ opacity: 1, x: 0, scale: 1 }}
+          exit={{ opacity: 0, x: 12, scale: 0.95 }}
+          transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+          className="fixed right-3 top-[13%] z-40 pointer-events-auto"
+        >
+          <button
+            type="button"
+            onClick={() => postAction('setChampTierOpen', { value: true })}
+            className="group inline-flex items-center gap-2 rounded-xl border border-indigo-400/50 bg-[#0D101B]/94 px-3 py-1.5 text-[11px] font-bold text-white shadow-[0_12px_30px_rgba(0,0,0,0.68),0_0_18px_rgba(99,102,241,0.24)] backdrop-blur-md transition-all duration-150 hover:border-indigo-300/85 hover:bg-[#141A2E]/96 active:scale-95 cursor-pointer"
+          >
+            <Trophy className="size-3.5 text-amber-300 shrink-0 transition-transform duration-150 group-hover:scale-110" />
+            <span>{modeLabel}</span>
+            <ChevronRight className="size-3 text-indigo-300 transition-transform duration-150 group-hover:translate-x-0.5" />
+          </button>
+        </motion.div>
+      ) : (
+        <motion.div
+          key="cs-tier-drawer"
+          initial={{ opacity: 0, x: 26, scale: 0.97 }}
+          animate={{ opacity: 1, x: 0, scale: 1 }}
+          exit={{ opacity: 0, x: 22, scale: 0.97 }}
+          transition={{ type: 'spring', stiffness: 420, damping: 32, mass: 0.7 }}
+          className="fixed right-3 top-[12%] bottom-[8%] z-40 w-[292px] max-h-[78vh] flex flex-col pointer-events-auto"
+        >
+          <GlassCard
+            surface="overlay"
+            highlight={isArena ? 'gold' : 'accent'}
+            className="flex h-full flex-col overflow-hidden bg-[#0B0E18]/95 shadow-[0_22px_54px_rgba(0,0,0,0.82)]"
+          >
         <div className="flex items-center justify-between gap-2 border-b border-white/[0.08] px-3 py-2.5 shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <Trophy className="size-3.5 text-amber-300 shrink-0" />
@@ -1490,7 +1517,9 @@ function ChampSelectTierDrawer({ state }: { state: AppState }) {
           )}
         </div>
       </GlassCard>
-    </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -1722,19 +1751,25 @@ export function OverlayView({ state }: { state: AppState }) {
             const displayWin = card.effectiveWin > 0 ? card.effectiveWin : card.win;
             const topPct = Math.max(12, Math.min(92, (card.y + 0.044) * 100));
             return (
-              <div
+              <motion.div
                 key={`${card.slug}-${card.x.toFixed(2)}`}
+                initial={{ opacity: 0, y: 6, scale: 0.94 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
                 className="pointer-events-none fixed -translate-x-1/2"
                 style={{ left: `${card.x * 100}vw`, top: `${topPct}vh`, zoom: scale }}
               >
                 <div
                   className={cn(
-                    'flex flex-col items-center gap-1 rounded-xl border px-2.5 py-1.5 shadow-[0_10px_28px_rgba(0,0,0,0.72)] backdrop-blur-md whitespace-nowrap',
+                    'relative overflow-hidden flex flex-col items-center gap-1 rounded-xl border px-2.5 py-1.5 shadow-[0_10px_28px_rgba(0,0,0,0.72)] backdrop-blur-md whitespace-nowrap',
                     best
-                      ? 'border-amber-400/75 bg-[#12131C]/95 shadow-[0_0_22px_rgba(251,191,36,0.28)]'
-                      : 'border-white/15 bg-[#0E1017]/92'
+                      ? 'border-amber-400/80 bg-[#12131C]/96 shadow-[0_0_24px_rgba(251,191,36,0.3)]'
+                      : 'border-white/15 bg-[#0E1017]/93'
                   )}
                 >
+                  {best && (
+                    <div className="pointer-events-none absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-amber-300/90 to-transparent" />
+                  )}
                   <div className="flex items-center gap-1.5">
                     {best && (
                       <span className="inline-flex items-center gap-0.5 rounded bg-amber-400/20 border border-amber-400/50 px-1.5 py-0.5 text-[8.5px] font-extrabold uppercase tracking-wider text-amber-200 leading-none">
@@ -1784,7 +1819,7 @@ export function OverlayView({ state }: { state: AppState }) {
                     </span>
                   )}
                 </div>
-              </div>
+              </motion.div>
             );
           })}
         </div>

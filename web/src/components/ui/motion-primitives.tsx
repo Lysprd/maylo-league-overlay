@@ -13,26 +13,28 @@ export function BorderBeam({
   tone = 'indigo',
 }: {
   className?: string;
-  tone?: 'indigo' | 'gold';
+  tone?: 'indigo' | 'gold' | 'sky';
 }) {
   const grad =
     tone === 'gold'
-      ? 'conic-gradient(from 0deg, transparent 0deg, transparent 285deg, rgba(251,191,36,0.55) 335deg, rgba(245,158,11,0.9) 355deg, transparent 360deg)'
-      : 'conic-gradient(from 0deg, transparent 0deg, transparent 285deg, rgba(99,102,241,0.45) 332deg, rgba(129,140,248,0.92) 355deg, transparent 360deg)';
+      ? 'conic-gradient(from 0deg, transparent 0deg, transparent 288deg, rgba(251,191,36,0.45) 334deg, rgba(245,158,11,0.88) 355deg, transparent 360deg)'
+      : tone === 'sky'
+        ? 'conic-gradient(from 0deg, transparent 0deg, transparent 288deg, rgba(56,189,248,0.45) 334deg, rgba(14,165,233,0.88) 355deg, transparent 360deg)'
+        : 'conic-gradient(from 0deg, transparent 0deg, transparent 288deg, rgba(99,102,241,0.42) 334deg, rgba(129,140,248,0.88) 355deg, transparent 360deg)';
 
   return (
     <div
       aria-hidden="true"
-      className={cn('pointer-events-none absolute -inset-px overflow-hidden rounded-[inherit]', className)}
+      className={cn('pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]', className)}
       style={{
-        padding: '1.5px',
+        padding: '1px',
         WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
         WebkitMaskComposite: 'xor',
         maskComposite: 'exclude',
       }}
     >
       <div
-        className="border-beam-conic absolute -inset-[100%] opacity-80"
+        className="border-beam-conic absolute -inset-[100%] opacity-65"
         style={{ background: grad }}
       />
     </div>

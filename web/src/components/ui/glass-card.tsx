@@ -18,7 +18,8 @@ export function GlassCard({
   onMouseLeave,
   ...props
 }: GlassCardProps) {
-  const [spot, setSpot] = useState<{ x: number; y: number } | null>(null);
+  const [spot, setSpot] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [hovering, setHovering] = useState(false);
   const isOverlay = surface === 'overlay';
 
   const borderClass =
@@ -27,25 +28,26 @@ export function GlassCard({
       : highlight === 'gold'
         ? 'border-amber-400/70 shadow-[0_0_24px_-6px_rgba(251,191,36,0.35)]'
         : highlight === 'purple'
-          ? 'border-purple-400/65 shadow-[0_0_22px_-6px_rgba(192,132,252,0.35)]'
+          ? 'border-purple-400/65 shadow-[0_0_24px_-6px_rgba(192,132,252,0.38)]'
           : isOverlay
-            ? 'border-white/[0.11] shadow-[0_14px_34px_rgba(0,0,0,0.52)]'
-            : 'border-zinc-200/85 dark:border-white/[0.08] shadow-[0_1px_2px_rgba(0,0,0,0.03)]';
+            ? 'border-white/[0.12] shadow-[0_16px_38px_rgba(0,0,0,0.58)]'
+            : 'border-zinc-200/85 dark:border-white/[0.08] shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_-14px_rgba(15,23,42,0.07)] dark:shadow-[0_2px_10px_rgba(0,0,0,0.28)]';
 
   const bgClass = isOverlay
     ? highlight === 'gold'
       ? 'bg-[#141418]/94 backdrop-blur-xl text-zinc-50'
-      : 'bg-[#0F1015]/92 backdrop-blur-xl text-zinc-50'
+      : 'bg-[#0E1017]/93 backdrop-blur-xl text-zinc-50'
     : highlight === 'accent'
       ? 'bg-indigo-50/50 dark:bg-[#171926]/95'
       : highlight === 'gold'
         ? 'bg-amber-50/50 dark:bg-[#1A1814]/95'
-        : 'bg-white dark:bg-[#14151B]';
+        : 'bg-white dark:bg-[#13141B]';
 
   const handleMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (spotlight) {
       const r = e.currentTarget.getBoundingClientRect();
       setSpot({ x: e.clientX - r.left, y: e.clientY - r.top });
+      if (!hovering) setHovering(true);
     }
     onMouseMove?.(e);
   };
@@ -54,7 +56,7 @@ export function GlassCard({
     <div
       onMouseMove={handleMove}
       onMouseLeave={(e) => {
-        if (spotlight) setSpot(null);
+        if (spotlight) setHovering(false);
         onMouseLeave?.(e);
       }}
       className={cn(
@@ -66,15 +68,20 @@ export function GlassCard({
       {...props}
     >
       {/* Subtle top specular rim */}
-      {isOverlay && (
+      {isOverlay ? (
         <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent" />
+      ) : (
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-zinc-900/[0.04] dark:via-white/[0.08] to-transparent" />
       )}
-      {/* Interactive 21st.dev radial spotlight */}
-      {spotlight && spot && (
+      {/* Interactive 21st.dev radial spotlight (silky opacity fade) */}
+      {spotlight && (
         <div
-          className="pointer-events-none absolute -inset-px opacity-100 transition-opacity duration-300"
+          className={cn(
+            'pointer-events-none absolute -inset-px transition-opacity duration-300',
+            hovering ? 'opacity-100' : 'opacity-0'
+          )}
           style={{
-            background: `radial-gradient(240px circle at ${spot.x}px ${spot.y}px, rgba(129, 140, 248, 0.11), transparent 70%)`,
+            background: `radial-gradient(260px circle at ${spot.x}px ${spot.y}px, rgba(129, 140, 248, 0.11), transparent 72%)`,
           }}
         />
       )}

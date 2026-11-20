@@ -789,9 +789,9 @@ namespace MayhemCompanion {
       double rx = (pt.X - r.Left) / (double)r.Width;
       double ry = (pt.Y - r.Top) / (double)r.Height;
       if (ChampTierOpen) {
-       nextChampClick = rx >= 0.72 && rx <= 1.0 && ry >= 0.05 && ry <= 0.94;
+       nextChampClick = rx >= 0.72 && rx <= 1.0 && ry >= 0.10 && ry <= 0.94;
       } else {
-       nextChampClick = rx >= 0.82 && rx <= 1.0 && ry >= 0.05 && ry <= 0.16;
+       nextChampClick = rx >= 0.82 && rx <= 1.0 && ry >= 0.11 && ry <= 0.21;
       }
      }
     }

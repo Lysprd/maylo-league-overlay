@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.0-beta.6
+- **Deep UI, UX & Animation Polish Pass:**
+  - **Eliminated `BorderBeam` double-curve seams everywhere:** Flush `inset-0` 1px perimeter mask with mode-matched luminous tones (**Gold** in Arena, **Sky** in ARAM, **Indigo** in Mayhem & Ranked SR) + subtle mode-aware top ambient wash across the Hub.
+  - **Tactile spring micro-interactions:** Upgraded `Switch` to a Framer Motion spring knob with subtle active glow, added `active:scale` press feedback & specular highlights on `Button` and topbar actions (with active indicator on Private Mode), silky hover fade on `GlassCard` radial spotlights, and hover-lift micro-animations on Top Champions & Build cards.
+  - **Distinct `S+` Tier Badge & Prismatic Iridescent Rims:** Gave `S+` a prestigious luminous gold gradient distinct from `S`, added iridescent `.prismatic-top-rim` accents on Arena Prismatic Items cards & Prismatic Augment overlay badges, and added rarity-coded top accents (Prismatic / Gold / Silver) on Augment badges.
+  - **Overlay Motion Choreography:** Added `AnimatePresence` spring slide-in transitions for the Champ Select Tier List Drawer & pill toggle, snappy pop-in motion for Floating Champion Cards & In-Game Augment badges, and Arena-specific Build/Overview ergonomics (hiding irrelevant Runes/Spells/Flash controls in Arena, showing `Top 4` labels & `Shop + OCR` KPI).
+
 ## v0.2.0-beta.5
 - **Full Arena 2v2 (`CHERRY` / Queue `1700`) Mode:**
   - Dedicated **Arena** topbar mode tab alongside Mayhem, ARAM, and Ranked SR, with automatic queue detection (`1700`, `1710`, `CHERRY`, Custom Arena) and mode-scoped Overview, Match History, and Arena Patch Notes.
