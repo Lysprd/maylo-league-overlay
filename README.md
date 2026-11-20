@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/media/cover.webp" width="960" alt="maylo mascot and champion build screen in the app’s dark theme" />
+  <img src="docs/media/maylo-cover.webp" width="960" alt="maylo mascot and champion build screen in the app’s dark theme" />
 </p>
 
 <h1 align="center">maylo — League of Legends overlay &amp; build companion</h1>
@@ -21,7 +21,7 @@
 maylo reads English and French augment titles and places stats above the matching cards. This simulated offer shows how a fourth badge appears while the first three stay in place.
 
 <p align="center">
-  <img src="docs/media/augments.gif" width="900" alt="The maylo overlay recognizes a fourth augment in a simulated ARAM Mayhem offer" />
+  <img src="docs/media/overlay-demo.gif" width="900" alt="The maylo overlay recognizes a fourth augment in a simulated ARAM Mayhem offer" />
 </p>
 
 **Alt+G** opens the in-game sheet, **Alt+O** lets you move widgets, and **Alt+A** rescans the offer.
@@ -31,13 +31,13 @@ maylo reads English and French augment titles and places stats above the matchin
 Open a champion’s build to see runes, skill order and item suggestions that adapt to your inventory and opponents.
 
 <p align="center">
-  <img src="docs/media/build.webp" width="900" alt="The maylo champion build view with Briar’s runes, loadout options and skill order" />
+  <img src="docs/media/champion-builds.webp" width="900" alt="The maylo champion build view with Briar’s runes, loadout options and skill order" />
 </p>
 
 The Hub shows recent matches, champion stats and tier lists.
 
 <p align="center">
-  <img src="docs/media/hub.webp" width="900" alt="The maylo Hub showing recent results, performance trends and top champions" />
+  <img src="docs/media/match-overview.webp" width="900" alt="The maylo Hub showing recent results, performance trends and top champions" />
 </p>
 
 ## Install on Windows
@@ -47,7 +47,7 @@ The Hub shows recent matches, champion stats and tier lists.
 3. maylo downloads updates in the background, verifies their SHA-256 digest and applies them at the next launch. Your settings carry over.
 
 <p align="center">
-  <img src="docs/media/setup.gif" width="900" alt="The maylo installer shows shortcut options, installation progress and the completion screen" />
+  <img src="docs/media/installer-demo.gif" width="900" alt="The maylo installer shows shortcut options, installation progress and the completion screen" />
 </p>
 
 For portable use, extract the entire ZIP and run `MAYLO-Hub.exe`. The portable ZIP is updated manually.
