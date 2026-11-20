@@ -1,0 +1,295 @@
+using System;
+using System.Linq;
+using System.Collections.Generic;
+namespace MayhemCompanion {
+ public class BuildStep {
+  public Stat Stat;
+  public string Reason, ShortTip, Role;
+  public string SynergyTag = "", SynergyTone = ""; // e.g. "CORE SYNERGY", "ANTI-HEAL", "ANTI-TANK", "VS HEAVY AP", "AUGMENT FIT"
+  public double Score, PickRate;
+  public bool Owned, IsBoots;
+ }
+
+ public class ComponentStatus { public int Id; public bool Owned; }
+
+ public class EnemyThreatProfile {
+  public bool HeavyAD, HeavyAP, NeedsAntiHeal, NeedsAntiTank;
+  public int AdCount, ApCount, TankCount, HealerCount;
+  public List<string> Tags = new List<string>();
+ }
+
+ public static class EnemyCompAnalyzer {
+  static readonly HashSet<string> Healers = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+   "aatrox", "soraka", "drmundo", "vladimir", "briar", "warwick", "sylas", "swain", "yuumi",
+   "zac", "kayn", "fiora", "irelia", "olaf", "sona", "nami", "milio", "illaoi", "renekton",
+   "volibear", "maokai", "belveth", "samira", "nilah", "senna", "seraphine", "taric"
+  };
+  static readonly HashSet<string> Tanks = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+   "ornn", "sion", "malphite", "chogath", "drmundo", "zac", "amumu", "sejuani", "maokai",
+   "shen", "ksante", "tahmkench", "skarner", "rammus", "nautilus", "leona", "braum", "alistar",
+   "poppy", "galio", "volibear", "mordekaiser", "urgot", "nasus", "rell", "thresh"
+  };
+  static readonly HashSet<string> ApChamps = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+   "ahri", "akali", "anivia", "annie", "aurelionsol", "aurora", "azir", "brand", "cassiopeia",
+   "diana", "ekko", "elise", "evelynn", "fiddlesticks", "fizz", "gwen", "heimerdinger", "hwei",
+   "karthus", "kassadin", "katarina", "kennen", "leblanc", "lillia", "lissandra", "lux",
+   "malzahar", "mel", "mordekaiser", "morgana", "neeko", "nidalee", "orianna", "rumble", "ryze",
+   "seraphine", "singed", "swain", "sylas", "syndra", "taliyah", "teemo", "twistedfate",
+   "veigar", "velkoz", "vex", "viktor", "vladimir", "xerath", "ziggs", "zoe", "zyra"
+  };
+  static readonly HashSet<string> AdChamps = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+   "aatrox", "ambessa", "aphelios", "ashe", "belveth", "briar", "caitlyn", "camille", "corki",
+   "darius", "draven", "ezreal", "fiora", "gangplank", "garen", "gnar", "graves", "hecarim",
+   "illaoi", "irelia", "jarvaniv", "jax", "jayce", "jhin", "jinx", "kaisa", "kalista", "kayn",
+   "khazix", "kindred", "kled", "leesin", "lucian", "masteryi", "missfortune", "naafiri",
+   "nilah", "nocturne", "olaf", "pantheon", "pyke", "qiyana", "quinn", "reksai", "renekton",
+   "rengar", "riven", "samira", "senna", "sett", "shaco", "sivir", "smolder", "talon",
+   "tristana", "trundle", "tryndamere", "twitch", "urgot", "varus", "vayne", "vi", "viego",
+   "monkeyking", "wukong", "xayah", "xinzhao", "yasuo", "yone", "yorick", "yunara", "zed", "zeri"
+  };
+
+  public static EnemyThreatProfile Analyze(LiveSummary live, Func<int, string[]> categories) {
+   var p = new EnemyThreatProfile();
+   if (live == null || live.Players == null || live.Players.Count == 0) return p;
+   var me = live.Players.FirstOrDefault(x => x.Me);
+   string myTeam = me != null ? me.Team : "ORDER";
+   var enemies = live.Players.Where(x => !String.IsNullOrEmpty(x.Team) && x.Team != myTeam).ToList();
+   if (enemies.Count == 0) return p;
+
+   foreach (var e in enemies) {
+    string norm = GameBridge.Norm(e.Champion);
+    if (Healers.Contains(norm)) p.HealerCount++;
+    bool isTank = Tanks.Contains(norm);
+    bool isAp = ApChamps.Contains(norm);
+    bool isAd = AdChamps.Contains(norm);
+
+    int armorItems = 0, apItems = 0, adItems = 0;
+    if (categories != null && e.Items != null) {
+     foreach (int id in e.Items) {
+      var cats = categories(id);
+      if (cats.Contains("Armor") || cats.Contains("Health")) armorItems++;
+      if (cats.Contains("SpellDamage")) apItems++;
+      if (cats.Contains("Damage") || cats.Contains("CriticalStrike")) adItems++;
+     }
+    }
+    if (isTank || armorItems >= 2) p.TankCount++;
+    if (isAp || apItems >= 2) p.ApCount++;
+    else if (isAd || adItems >= 2) p.AdCount++;
+   }
+
+   p.HeavyAD = p.AdCount >= 3 && p.AdCount > p.ApCount;
+   p.HeavyAP = p.ApCount >= 3 && p.ApCount > p.AdCount;
+   p.NeedsAntiHeal = p.HealerCount >= 1;
+   p.NeedsAntiTank = p.TankCount >= 2;
+   if (p.HeavyAD) p.Tags.Add("Heavy AD");
+   if (p.HeavyAP) p.Tags.Add("Heavy AP");
+   if (p.NeedsAntiHeal) p.Tags.Add("Anti-Heal");
+   if (p.NeedsAntiTank) p.Tags.Add("Anti-Tank");
+   return p;
+  }
+ }
+
+ public static class Recommendations {
+  public static double Score(Stat stat, double baseline, int preference = 0) { if (stat == null) return Double.NegativeInfinity; return baseline + (stat.Rate - baseline) * stat.Games / (stat.Games + 250.0) + preference * 8; }
+  public static Stat Best(IEnumerable<Stat> offered, double baseline, Func<Stat, int> preference, Func<Stat, double> bonus = null) { return offered.Where(x => x != null && x.Games >= 100).OrderByDescending(x => Score(x, baseline, preference(x)) + (bonus == null ? 0 : bonus(x))).ThenByDescending(x => x.Games).FirstOrDefault(); }
+ }
+
+ public static class BuildPlanner {
+  static readonly HashSet<int> AntiHealIds = new HashSet<int> { 3033, 3165, 3075, 6609, 3123, 3916, 3076 };
+  static readonly HashSet<int> AntiTankIds = new HashSet<int> { 3036, 3033, 3071, 3153, 3135, 3137, 6653, 3124, 6694, 4633 };
+
+  public static int Canonical(int id) { return id >= 220000 && id < 230000 ? id % 10000 : id; }
+
+  public static List<BuildStep> Plan(
+   IEnumerable<Stat> source,
+   IEnumerable<int> inventory,
+   IEnumerable<int> boots,
+   double baseline,
+   Func<int, string[]> categories,
+   string focus,
+   IEnumerable<string> themes,
+   IEnumerable<CoreBuildPath> corePaths = null,
+   EnemyThreatProfile threats = null,
+   Func<int, string> itemNameLookup = null) {
+
+   var owned = new HashSet<int>(inventory.Select(Canonical));
+   var bootSet = new HashSet<int>(boots.Select(Canonical));
+   bool ownsBoots = owned.Any(bootSet.Contains);
+   var ownedCategories = new HashSet<string>(inventory.SelectMany(categories));
+   var themesSet = new HashSet<string>(themes ?? new string[0]);
+   var focusCategories = new Dictionary<string, string[]> {
+    { "On-hit", new[] { "AttackSpeed", "OnHit" } },
+    { "Critical strike", new[] { "CriticalStrike", "Damage" } },
+    { "Ability power", new[] { "SpellDamage", "AbilityHaste" } },
+    { "Survival", new[] { "Health", "Armor", "SpellBlock", "MagicResist" } }
+   };
+
+   // 1. Dynamic Core Branch Locking: if the player already owns 1+ core items, lock onto the strongest matching OP.GG 3-item core path!
+   CoreBuildPath matchedBranch = null;
+   int matchedAnchorId = 0;
+   if (corePaths != null) {
+    var ownedNonBoots = owned.Where(id => !bootSet.Contains(id)).ToList();
+    if (ownedNonBoots.Count > 0) {
+     matchedBranch = corePaths
+      .Where(p => p.Ids != null && p.Ids.Count >= 2 && p.Ids.Any(id => ownedNonBoots.Contains(Canonical(id))))
+      .OrderByDescending(p => p.Ids.Count(id => ownedNonBoots.Contains(Canonical(id))))
+      .ThenByDescending(p => p.PickRate * 0.7 + (p.WinRate - 50.0) * 1.5)
+      .FirstOrDefault();
+     if (matchedBranch != null) matchedAnchorId = matchedBranch.Ids.FirstOrDefault(id => ownedNonBoots.Contains(Canonical(id)));
+    }
+   }
+   string anchorName = matchedAnchorId > 0 && itemNameLookup != null ? itemNameLookup(matchedAnchorId) : "";
+
+   var result = new List<BuildStep>();
+   int nonBootOwned = owned.Count(id => !bootSet.Contains(id));
+   foreach (var stat in source.Where(x => x.Id > 0).GroupBy(x => Canonical(x.Id)).Select(g => g.OrderBy(x => x.CoreSlot == 0 ? 9 : x.CoreSlot).First())) {
+    int cid = Canonical(stat.Id);
+    if (owned.Contains(cid)) continue;
+    if (bootSet.Contains(cid) && ownsBoots) continue;
+    double pick = Parser.Number(stat.Pick);
+    double evidence = pick / (pick + 8);
+    double score = baseline + (stat.Rate - baseline) * evidence + Math.Log(1 + Math.Max(0, pick));
+    if (stat.CoreSlot == 1) score += 14.0;
+    else if (stat.CoreSlot == 2) score += 9.5;
+    else if (stat.CoreSlot == 3) score += 5.5;
+    else if (stat.CoreSlot >= 4 && nonBootOwned < 3) score -= 6.0;
+
+    var cats = categories(stat.Id);
+    double delta = stat.Rate - baseline;
+    var reasons = new List<string>();
+    string shortTip = "", synTag = "", synTone = "";
+
+    // Dynamic Core Path Synergy!
+    if (matchedBranch != null && matchedBranch.Ids.Any(id => Canonical(id) == cid)) {
+     score += 12.0;
+     synTag = "CORE SYNERGY";
+     synTone = "indigo";
+     reasons.Add(anchorName != "" ? ("Core synergy w/ " + anchorName) : "Matches your active core path");
+     shortTip = "Core path synergy";
+    }
+
+    // Enemy Comp Live Adaptation!
+    if (threats != null) {
+     if (threats.NeedsAntiHeal && AntiHealIds.Contains(cid)) {
+      score += 5.5;
+      if (synTag == "") { synTag = "ANTI-HEAL"; synTone = "rose"; }
+      reasons.Add("Counters enemy healing");
+     }
+     if (threats.NeedsAntiTank && AntiTankIds.Contains(cid)) {
+      score += 5.0;
+      if (synTag == "") { synTag = "ANTI-TANK"; synTone = "gold"; }
+      reasons.Add("Shreds enemy tanks (" + threats.TankCount + " tanks)");
+     }
+     if (threats.HeavyAD && (cid == 3047 || cats.Contains("Armor"))) {
+      score += (cid == 3047 ? 6.0 : 3.5);
+      if (synTag == "") { synTag = "VS HEAVY AD"; synTone = "gold"; }
+      reasons.Add("Strong vs heavy AD (" + threats.AdCount + " AD)");
+     }
+     if (threats.HeavyAP && (cid == 3111 || cats.Contains("SpellBlock") || cats.Contains("MagicResist"))) {
+      score += (cid == 3111 ? 6.0 : 3.5);
+      if (synTag == "") { synTag = "VS HEAVY AP"; synTone = "sky"; }
+      reasons.Add("Strong vs heavy AP (" + threats.ApCount + " AP)");
+     }
+    }
+
+    if (focusCategories.ContainsKey(focus) && cats.Intersect(focusCategories[focus]).Any()) { score += 4; reasons.Add(focus + " focus"); shortTip = focus + " core"; }
+    if (themesSet.Contains("kCrit") && cats.Contains("CriticalStrike")) {
+     score += 3.2; reasons.Add("fits crit augment");
+     if (synTag == "") { synTag = "AUGMENT FIT"; synTone = "teal"; }
+     if (shortTip == "") shortTip = "Fits Crit augment";
+    }
+    if (themesSet.Contains("kAttackSpeed") && cats.Any(x => x == "AttackSpeed" || x == "OnHit")) {
+     score += 3.0; reasons.Add("fits on-hit/AS augment");
+     if (synTag == "") { synTag = "AUGMENT FIT"; synTone = "teal"; }
+     if (shortTip == "") shortTip = "Fits AS / On-hit augment";
+    }
+    if (themesSet.Contains("kAP") && cats.Any(x => x == "SpellDamage" || x == "MagicPenetration")) {
+     score += 2.6; reasons.Add("fits AP/spell augment");
+     if (synTag == "") { synTag = "AUGMENT FIT"; synTone = "teal"; }
+     if (shortTip == "") shortTip = "Fits AP augment";
+    }
+    if (themesSet.Contains("kHaste") && cats.Any(x => x == "AbilityHaste" || x == "CooldownReduction")) {
+     score += 2.4; reasons.Add("fits haste augment");
+     if (synTag == "") { synTag = "AUGMENT FIT"; synTone = "teal"; }
+     if (shortTip == "") shortTip = "Fits Haste augment";
+    }
+    if (themesSet.Contains("kHealShield") && cats.Any(x => x == "LifeSteal" || x == "SpellVamp" || x == "HealthRegen")) {
+     score += 2.6; reasons.Add("fits heal/shield augment");
+     if (synTag == "") { synTag = "AUGMENT FIT"; synTone = "teal"; }
+     if (shortTip == "") shortTip = "Fits Heal/Shield augment";
+    }
+    if (themesSet.Contains("kSpeed") && cats.Any(x => x == "AttackSpeed" || x == "NonbootsMovement")) {
+     score += 2.2; reasons.Add("fits speed augment");
+     if (synTag == "") { synTag = "AUGMENT FIT"; synTone = "teal"; }
+     if (shortTip == "") shortTip = "Fits Speed augment";
+    }
+    if (themesSet.Contains("kResilience") && cats.Any(x => x == "Health" || x == "Armor" || x == "SpellBlock" || x == "MagicResist")) {
+     score += 2.4; reasons.Add("fits resilience augment");
+     if (synTag == "") { synTag = "AUGMENT FIT"; synTone = "teal"; }
+     if (shortTip == "") shortTip = "Fits Tank augment";
+    }
+    if (cats.Intersect(ownedCategories).Any() && synTag == "") { score += .8; reasons.Add("synergizes w/ owned"); if (shortTip == "") shortTip = "Synergizes w/ build"; }
+
+    if (reasons.Count == 0) {
+     if (stat.CoreSlot == 1) { reasons.Add("Core 1st item rush"); shortTip = "Core 1st rush"; }
+     else if (stat.CoreSlot == 2) { reasons.Add("Core 2nd item power spike"); shortTip = "2nd core spike"; }
+     else if (stat.CoreSlot == 3) { reasons.Add("Core 3rd item finisher"); shortTip = "3rd core spike"; }
+     else if (stat.CoreSlot >= 4) { reasons.Add("Late-game situational spike"); shortTip = "Late situational"; }
+     else if (pick >= 35 && delta >= 1.5) { reasons.Add("Core staple · high win & pick"); shortTip = "Core staple"; }
+     else if (pick >= 25) { reasons.Add("Most popular core item"); shortTip = "Popular core"; }
+     else if (delta >= 3) { reasons.Add("High win rate (+" + delta.ToString("0.0") + "% vs avg)"); shortTip = "High WR spike"; }
+     else { reasons.Add("Solid situational pickup"); shortTip = "Situational fit"; }
+    } else if (delta >= 2) { reasons.Add("+" + delta.ToString("0.0") + "% vs champ avg"); }
+
+    bool isBoot = bootSet.Contains(cid);
+    result.Add(new BuildStep {
+     Stat = stat, Score = score, PickRate = pick, IsBoots = isBoot,
+     Reason = String.Join(" · ", reasons),
+     ShortTip = shortTip != "" ? shortTip : "Core pick",
+     SynergyTag = synTag, SynergyTone = synTone
+    });
+   }
+
+   var ranked = result.OrderByDescending(x => x.Score).ToList();
+   int slotsLeft = Math.Max(0, 6 - owned.Count);
+   var chosen = ranked.Where(x => !x.IsBoots).Take(slotsLeft).ToList();
+   if (!ownsBoots && slotsLeft > 0) {
+    // Prefer enemy-adapted boots (Steelcaps vs Heavy AD / Mercury's vs Heavy AP) if present!
+    var boot = ranked.Where(x => x.IsBoots)
+     .OrderByDescending(x => x.SynergyTag != "" ? 1 : 0)
+     .ThenByDescending(x => x.PickRate)
+     .ThenByDescending(x => x.Stat.Rate)
+     .FirstOrDefault();
+    if (boot != null) {
+     if (boot.SynergyTag == "") {
+      boot.Reason = "Popular boots · adapt vs heavy AD/AP or CC";
+      boot.ShortTip = "Popular boots · adapt";
+     }
+     int at = Math.Min(chosen.Count >= 2 ? 2 : 1, chosen.Count);
+     chosen.Insert(at, boot);
+    }
+   }
+   var finalPath = chosen.Take(slotsLeft).ToList();
+   for (int i = 0; i < finalPath.Count; i++) {
+    if (i == 0) finalPath[i].Role = finalPath[i].IsBoots ? "NEXT · BOOTS" : "NEXT BUY";
+    else if (finalPath[i].IsBoots) finalPath[i].Role = "BOOTS";
+    else if (i <= 2) finalPath[i].Role = "CORE " + (i + 1);
+    else finalPath[i].Role = "STEP " + (i + 1);
+   }
+   return finalPath;
+  }
+
+  public static int RemainingCost(int target, IEnumerable<int> inventory, Dictionary<int, Dictionary<string, object>> items) { Dictionary<string, object> item; if (!items.TryGetValue(target, out item)) return 0; var counts = inventory.Select(Canonical).GroupBy(x => x).ToDictionary(g => g.Key, g => g.Count()); int credit = 0; foreach (int child in Json.A(item, "from").Select(Json.ToInt).Where(x => x > 0)) credit += ComponentCredit(child, counts, items, new HashSet<int>()); return Math.Max(0, Json.I(item, "priceTotal") - credit); }
+  static int ComponentCredit(int id, Dictionary<int, int> counts, Dictionary<int, Dictionary<string, object>> items, HashSet<int> path) { Dictionary<string, object> item; if (!items.TryGetValue(id, out item) || path.Contains(id)) return 0; if (counts.ContainsKey(Canonical(id)) && counts[Canonical(id)] > 0) { counts[Canonical(id)]--; return Json.I(item, "priceTotal"); } var next = new HashSet<int>(path) { id }; return Json.A(item, "from").Select(Json.ToInt).Where(x => x > 0).Sum(child => ComponentCredit(child, counts, items, next)); }
+  public static List<ComponentStatus> Components(int target, IEnumerable<int> inventory, Dictionary<int, Dictionary<string, object>> items) {
+   var list = new List<ComponentStatus>(); Dictionary<string, object> item; if (!items.TryGetValue(target, out item)) return list;
+   var counts = inventory.Select(Canonical).GroupBy(x => x).ToDictionary(g => g.Key, g => g.Count());
+   foreach (int child in Json.A(item, "from").Select(Json.ToInt).Where(x => x > 0)) {
+    int canon = Canonical(child); bool has = counts.ContainsKey(canon) && counts[canon] > 0;
+    if (has) counts[canon]--;
+    list.Add(new ComponentStatus { Id = child, Owned = has });
+   }
+   return list;
+  }
+ }
+}

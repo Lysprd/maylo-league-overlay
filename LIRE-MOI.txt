@@ -1,0 +1,20 @@
+MAYLO — bêta Windows
+===================
+
+Téléchargement
+https://github.com/Lysprd/MAYLO/releases
+
+Lance l’installateur MAYLO-v…-Setup.exe et ouvre MAYLO depuis son raccourci.
+Les mises à jour sont téléchargées depuis GitHub et activées au prochain lancement.
+Pour l’archive portable, extrais tous les fichiers et lance MAYLO-Hub.exe.
+Windows 10/11 x64 et Microsoft Edge WebView2 Runtime sont requis.
+
+Dans League, sélectionne le mode vidéo Sans bordure pour afficher l’overlay.
+
+Alt+G ou F9   Fiche en jeu
+Ctrl+Tab      Déplacer les widgets pendant le maintien de la touche
+Alt+O         Activer ou désactiver le mode édition de l’overlay
+Alt+A         Relancer le scan des augments
+Alt+M         Afficher ou masquer les overlays
+Alt+L         Statistiques du match
+Échap         Fermer la fiche en jeu

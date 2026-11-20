@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MAYLO</title>
+    <script>
+      (function () {
+        var qs = new URLSearchParams(location.search);
+        var isOverlay = location.hash === '#overlay' || qs.get('surface') === 'overlay';
+        var isLight = !isOverlay && qs.get('theme') === 'light';
+        if (isOverlay) {
+          document.documentElement.classList.add('overlay-mode', 'dark');
+          document.documentElement.style.background = 'transparent';
+        } else if (isLight) {
+          document.documentElement.classList.remove('dark');
+          document.documentElement.style.background = '#F7F8FA';
+        } else {
+          document.documentElement.classList.add('dark');
+          document.documentElement.style.background = '#0B0C10';
+        }
+      })();
+    </script>
+  </head>
+  <body class="antialiased select-none overflow-hidden">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

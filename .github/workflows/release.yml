@@ -1,0 +1,67 @@
+name: Windows release
+on:
+  push:
+    branches: [main]
+    paths: [VERSION, '.github/workflows/release.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: maylo-windows-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Identify version
+        id: version
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          if ($version -cnotmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-beta\.[1-9]\d*)?$') { throw 'Invalid VERSION' }
+          "number=$version" >> $env:GITHUB_OUTPUT
+          $releases = gh release list --limit 1000 --json tagName,isDraft
+          if ($LASTEXITCODE) { throw 'Cannot read releases' }
+          $exists = @($releases | ConvertFrom-Json | Where-Object { $_.tagName -eq "v$version" -and !$_.isDraft }).Count -gt 0
+          "published=$($exists.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
+      - name: Build and test
+        if: steps.version.outputs.published != 'true'
+        shell: pwsh
+        run: |
+          ./scripts/build-release.ps1
+          ./scripts/test-release.ps1
+
+      - name: Publish GitHub release
+        if: steps.version.outputs.published != 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAYLO_VERSION: ${{ steps.version.outputs.number }}
+        run: |
+          $tag = "v$env:MAYLO_VERSION"
+          $existing = gh release view $tag --json isDraft 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            if (!($existing | ConvertFrom-Json).isDraft) { throw 'This release already exists' }
+          } else {
+            $releaseArgs = @('release', 'create', $tag, '--target', $env:GITHUB_SHA, '--draft', '--generate-notes', '--title', "MAYLO $tag")
+            if ($env:MAYLO_VERSION.Contains('-beta.')) { $releaseArgs += '--prerelease' }
+            gh @releaseArgs
+            if ($LASTEXITCODE) { throw 'Could not create draft' }
+          }
+          gh release upload $tag "dist/MAYLO-$tag-Setup.exe" dist/MAYLO-win-x64.zip --clobber
+          if ($LASTEXITCODE) { throw 'Upload failed' }
+          gh release edit $tag --draft=false
+          if ($LASTEXITCODE) { throw 'Could not publish release' }

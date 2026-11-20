@@ -1,0 +1,146 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Inter Variable", "Inter", "Segoe UI Variable Text", system-ui, -apple-system, sans-serif;
+  --font-display: "Space Grotesk Variable", "Space Grotesk", "Inter Variable", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  :root {
+    --font-sans: "Inter Variable", "Inter", "Segoe UI Variable Text", system-ui, -apple-system, sans-serif;
+    --font-display: "Space Grotesk Variable", "Space Grotesk", "Inter Variable", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  }
+
+  html, body, #root {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    font-family: var(--font-sans);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    font-optical-sizing: auto;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
+    letter-spacing: -0.025em;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  html.overlay-mode,
+  html.overlay-mode body,
+  html.overlay-mode #root {
+    background: transparent !important;
+  }
+}
+
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.025em;
+}
+
+.font-mono-tech {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Swiss editorial subtle dot-grid texture */
+.swiss-grid-bg {
+  background-image: radial-gradient(circle, rgba(99, 102, 241, 0.14) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+.dark .swiss-grid-bg {
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.065) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+/* Custom sleek scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.55);
+}
+
+/* 21st.dev Glass Shine subtle shimmer */
+@keyframes shine-sweep {
+  0% { transform: translateX(-120%) skewX(-18deg); }
+  100% { transform: translateX(220%) skewX(-18deg); }
+}
+
+.glass-shine::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+  transform: translateX(-120%) skewX(-18deg);
+  pointer-events: none;
+}
+
+.glass-shine:hover::after {
+  animation: shine-sweep 0.9s ease-out;
+}
+
+/* 21st.dev Border Beam traveling luminous accent */
+@keyframes border-beam-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.border-beam-conic {
+  animation: border-beam-spin 7.5s linear infinite;
+}
+
+@keyframes splash-fade-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes bar-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(260%); }
+}
+
+.splash-enter {
+  animation: splash-fade-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.splash-shimmer {
+  animation: bar-shimmer 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* Native Chromium View Transitions API for silky radial Dark <-> Light reveal (zero muddy cross-fade!) */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+  z-index: 1;
+}
+
+::view-transition-new(root) {
+  z-index: 9999;
+}
