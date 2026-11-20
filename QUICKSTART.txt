@@ -1,7 +1,7 @@
 maylo — Windows beta
 ===================
 
-Download the latest setup at https://github.com/Lysprd/MAYLO/releases.
+Download the latest setup at https://github.com/Lysprd/maylo-league-overlay/releases.
 Run the setup and open maylo from its shortcut. Updates download in the
 background and are applied the next time you open maylo.
 For portable use, extract the entire ZIP and run MAYLO-Hub.exe.

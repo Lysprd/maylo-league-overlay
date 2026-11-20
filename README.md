@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Lysprd/MAYLO/releases"><strong>Download the Windows beta</strong></a>
+  <a href="https://github.com/Lysprd/maylo-league-overlay/releases"><strong>Download the Windows beta</strong></a>
   &nbsp;·&nbsp; <a href="#aram-mayhem-overlay">See the overlay</a>
   &nbsp;·&nbsp; <a href="QUICKSTART.txt">Quick start</a>
 </p>
@@ -42,7 +42,7 @@ The Hub shows recent matches, champion stats and tier lists.
 
 ## Install on Windows
 
-1. Download the setup executable from [GitHub Releases](https://github.com/Lysprd/MAYLO/releases). If WebView2 is missing, setup offers to open the [official runtime download page](https://developer.microsoft.com/microsoft-edge/webview2/).
+1. Download the setup executable from [GitHub Releases](https://github.com/Lysprd/maylo-league-overlay/releases). If WebView2 is missing, setup offers to open the [official runtime download page](https://developer.microsoft.com/microsoft-edge/webview2/).
 2. Open maylo from its shortcut and use **Borderless** video mode in League for the overlay.
 3. maylo downloads updates in the background, verifies their SHA-256 digest and applies them at the next launch. Your settings carry over.
 
@@ -66,6 +66,6 @@ Builds are written to `dist/`. The app and installer share React components in `
 
 </details>
 
-[Report an issue](https://github.com/Lysprd/MAYLO/issues) · [MIT license](LICENSE)
+[Report an issue](https://github.com/Lysprd/maylo-league-overlay/issues) · [MIT license](LICENSE)
 
 maylo is an independent project and is not affiliated with Riot Games.
