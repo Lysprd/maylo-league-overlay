@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.0-beta.8
+
+- Fit the restart action in the title bar without overlapping the mode tabs or window controls. Keep the full action label in the sidebar and update settings.
+
 ## v0.2.0-beta.7
 
 - Keep the CS/min and personal-gold HUD on Summoner's Rift. ARAM and Mayhem retain purchase costs and affordability.

@@ -893,9 +893,9 @@ export function HubView({ state }: { state: AppState }) {
       <header
         onMouseDown={onTitleMouseDown}
         onDoubleClick={onTitleDoubleClick}
-        className="flex h-12 shrink-0 items-center justify-between gap-4 border-b border-zinc-200/80 dark:border-white/[0.07] bg-white/90 dark:bg-[#0F1016]/95 px-4 backdrop-blur-md"
+        className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-zinc-200/80 dark:border-white/[0.07] bg-white/90 dark:bg-[#0F1016]/95 px-2.5 backdrop-blur-md lg:gap-4 lg:px-4"
       >
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex shrink-0 items-center gap-2 lg:gap-3">
           <div className="flex items-center gap-2.5 text-zinc-950 dark:text-white">
             <div className="flex size-7 items-center justify-center rounded-lg border border-zinc-200/90 dark:border-white/[0.12] bg-zinc-50 dark:bg-white/[0.04] shadow-2xs">
               <MayloEmblem className="size-5" light={!isDark} interactive />
@@ -918,27 +918,24 @@ export function HubView({ state }: { state: AppState }) {
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0" data-nodrag>
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5 [&>button]:shrink-0" data-nodrag>
           {state.update?.canRestart && (
             <button
               type="button"
               onClick={() => postAction('applyUpdateRestart')}
               title={state.update.message || `Restart maylo to apply v${state.update.version}`}
-              className="update-btn-glow relative overflow-hidden inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 rounded-full border border-indigo-300/60 bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-500 px-3 py-1 text-[11px] font-bold leading-none text-white hover:brightness-110 transition-all cursor-pointer mr-1"
+              aria-label="Restart & Update"
+              className="update-btn-glow relative inline-flex size-8 shrink-0 items-center justify-center gap-1.5 overflow-hidden whitespace-nowrap rounded-lg border border-indigo-300/60 bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-500 text-[11px] font-bold leading-none text-white transition-[filter] hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 cursor-pointer min-[1440px]:w-auto min-[1440px]:px-2.5"
             >
-              <span className="relative flex size-2 shrink-0">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-300 opacity-80" />
-                <span className="relative inline-flex size-2 rounded-full bg-emerald-300" />
-              </span>
-              <Download className="size-3 shrink-0" />
-              <span>Update · Restart</span>
+              <Download aria-hidden="true" className="size-3.5 shrink-0" />
+              <span className="hidden min-[1440px]:inline">Restart &amp; Update</span>
             </button>
           )}
           <Status
             variant={unsupportedMatch ? 'warning' : game.inGame ? 'live' : state.settings.connected ? 'success' : 'default'}
             pulse={game.inGame && !unsupportedMatch}
             title={state.connectionText}
-            className="hidden md:inline-flex mr-1"
+            className="hidden min-w-0 max-w-32 shrink mr-1 md:inline-flex xl:max-w-48 [&>span:last-child]:truncate"
           >
             {unsupportedMatch ? 'Unsupported mode' : game.inGame
               ? `In Game · ${game.live.clock || 'Live'}`
@@ -1036,7 +1033,7 @@ export function HubView({ state }: { state: AppState }) {
       {/* BODY */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* SIDEBAR (Swiss Navigation with 21st.dev sliding active highlight) */}
-        <aside className="flex w-[212px] shrink-0 flex-col justify-between border-r border-zinc-200/80 dark:border-white/[0.07] bg-white dark:bg-[#0E0F15] p-3">
+        <aside className="flex min-h-0 w-[212px] shrink-0 flex-col justify-between gap-3 overflow-y-auto border-r border-zinc-200/80 dark:border-white/[0.07] bg-white dark:bg-[#0E0F15] p-3">
           <div className="space-y-1">
             <div className="font-mono-tech px-2.5 pb-1.5 pt-1 text-[9.5px] font-semibold uppercase tracking-[0.14em] text-zinc-400 dark:text-zinc-500">
               Navigation
@@ -4305,14 +4302,14 @@ export function HubView({ state }: { state: AppState }) {
                   description="Closing the window keeps maylo running quietly in the taskbar tray"
                 />
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-200/80 dark:border-white/[0.08] bg-zinc-50/70 dark:bg-white/[0.025] px-3 py-2.5 mx-2.5">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                  <div className="min-w-0 flex-1 basis-56">
+                    <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
                       <span>Automatic Updates</span>
                       <span className="rounded bg-indigo-500/12 px-1.5 py-0.5 font-mono-tech text-[10px] text-indigo-600 dark:text-indigo-300">
                         v{state.version}
                       </span>
                     </div>
-                    <div className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400 truncate">
+                    <div className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400 break-words">
                       {state.update?.message || 'Checks GitHub Releases automatically with SHA-256 verification'}
                     </div>
                   </div>
