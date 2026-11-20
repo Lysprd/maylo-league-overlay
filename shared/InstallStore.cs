@@ -106,7 +106,7 @@ namespace MayloRelease {
      using (var input = entry.Open())
      using (var output = new FileStream(dest, FileMode.CreateNew)) input.CopyTo(output);
      done++;
-    if (progress != null) progress(15 + (done * 70 / zip.Entries.Count), "Installation de " + entry.Name + "…");
+     if (progress != null) progress(15 + (done * 70 / zip.Entries.Count), "Installing " + entry.Name + "…");
     }
    }
   }

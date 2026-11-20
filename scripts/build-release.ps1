@@ -32,7 +32,7 @@ try {
     & (Join-Path $root 'source\build.ps1') -Destination (Join-Path $files 'MAYLO-Hub.exe')
     Copy-Item -LiteralPath (Join-Path $assets 'maylo.ico'),(Join-Path $assets 'maylo.png') -Destination (Join-Path $files 'assets')
     Get-ChildItem -LiteralPath (Join-Path $root 'lib') -Filter '*.dll' | Copy-Item -Destination $files
-    Copy-Item -LiteralPath (Join-Path $root 'LICENSE'),(Join-Path $root 'LIRE-MOI.txt') -Destination $files
+    Copy-Item -LiteralPath (Join-Path $root 'LICENSE'),(Join-Path $root 'QUICKSTART.txt') -Destination $files
     Set-Content -LiteralPath (Join-Path $files 'version.txt') -Value $version -Encoding ASCII -NoNewline
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $stagedZip = Join-Path $stage 'app.zip'
@@ -42,9 +42,10 @@ try {
     $compilerArgs = @('/nologo','/target:winexe','/platform:x64','/optimize+',
         "/out:$stagedSetup","/win32icon:$assets\maylo.ico","/win32manifest:$root\source\app.manifest",
         "/resource:$stagedZip,maylo-payload.zip","/resource:$assets\maylo.png,maylo.png",
-        '/r:System.dll','/r:System.Core.dll','/r:System.Drawing.dll','/r:System.Windows.Forms.dll','/r:System.IO.Compression.dll','/r:System.IO.Compression.FileSystem.dll','/r:System.Xaml.dll','/r:Microsoft.CSharp.dll',
+        '/r:System.dll','/r:System.Core.dll','/r:System.Drawing.dll','/r:System.Windows.Forms.dll','/r:System.IO.Compression.dll','/r:System.IO.Compression.FileSystem.dll','/r:System.Xaml.dll','/r:System.Web.Extensions.dll','/r:Microsoft.CSharp.dll',
         "/r:$wpf\WindowsBase.dll","/r:$wpf\PresentationCore.dll","/r:$wpf\PresentationFramework.dll",
-        (Join-Path $root 'installer\Setup.cs'),(Join-Path $root 'shared\InstallStore.cs'),(Join-Path $stage 'BuildInfo.cs'))
+        "/r:$root\lib\Microsoft.Web.WebView2.Core.dll","/r:$root\lib\Microsoft.Web.WebView2.Wpf.dll",
+        (Join-Path $root 'installer\Setup.cs'),(Join-Path $root 'installer\WebSetupWindow.cs'),(Join-Path $root 'shared\InstallStore.cs'),(Join-Path $stage 'BuildInfo.cs'))
     & (Join-Path $framework 'csc.exe') @compilerArgs
     if ($LASTEXITCODE -ne 0) { throw 'Installer build failed.' }
     Copy-Item -LiteralPath $stagedZip -Destination $zip -Force

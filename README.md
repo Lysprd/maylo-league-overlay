@@ -1,53 +1,59 @@
 <p align="center">
-  <img src="assets/maylo.png" width="84" alt="Mascotte MAYLO" />
+  <img src="assets/maylo.png" width="84" alt="MAYLO mascot" />
 </p>
 
 <h1 align="center">MAYLO</h1>
 
 <p align="center">
-  <strong>Ton compagnon Windows pour League of Legends</strong><br />
-  Lis tes augments, adapte ton build et garde les bonnes infos sous les yeux pendant la partie.
+  <strong>A Windows companion for League of Legends</strong><br />
+  Recognize your augments, adapt your build and keep match information in view.
 </p>
 
 <p align="center">
-  <a href="https://github.com/Lysprd/MAYLO/releases"><strong>Télécharger la bêta Windows</strong></a>
-  · <a href="#apercus">Voir les aperçus</a>
-  · <a href="https://github.com/Lysprd/MAYLO/issues">Signaler un bug</a>
+  <a href="https://github.com/Lysprd/MAYLO/releases"><strong>Download the Windows beta</strong></a>
+  · <a href="#see-maylo-in-action">See it in action</a>
+  · <a href="https://github.com/Lysprd/MAYLO/issues">Report an issue</a>
 </p>
 
-<p align="center"><code>v0.1.0-beta.1</code> · Windows 10/11 x64 · MIT</p>
+<p align="center"><code>v0.1.0-beta.2</code> · Windows 10/11 x64 · MIT</p>
 
-## Aperçus
+## See MAYLO in action
 
-| Le Hub | Le build du champion |
+<p align="center">
+  <img src="docs/media/setup.gif" width="760" alt="MAYLO setup with the animated mascot, installation options, progress and completion" />
+</p>
+
+| The Hub | Champion builds |
 | --- | --- |
-| ![Vue d’ensemble de MAYLO](docs/media/hub.webp) | ![Build, achats et runes du champion](docs/media/build.webp) |
+| ![MAYLO Hub with champion and match information](docs/media/hub.webp) | ![Champion build, runes and suggested purchases](docs/media/build.webp) |
 
-| Les augments en partie | L’installation Windows |
-| --- | --- |
-| ![Aperçu simulé de trois puis quatre badges d’augments](docs/media/augments.gif) | ![Installateur Windows avec la mascotte MAYLO animée](docs/media/installateur.gif) |
+<p align="center">
+  <img src="docs/media/augments.gif" width="700" alt="Simulated ARAM Mayhem offer where the fourth badge appears without moving the other three" />
+</p>
 
-## En jeu
+## In game
 
-- **ARAM Mayhem** — détection OCR des titres en français et en anglais. Les badges affichent les statistiques au-dessus des cartes reconnues et restent alignés à trois, quatre ou cinq choix.
-- **ARAM et Faille de l’invocateur** — builds par mode, conseils d’achat selon l’inventaire et l’équipe adverse, runes et sorts d’invocateur.
-- **Overlay** — fiche détaillée en jeu, repères de minimap et panneaux déplaçables. **Alt+G** ouvre la fiche, **Alt+O** passe en mode édition et **Alt+A** force un scan des augments.
+- **ARAM Mayhem.** Windows OCR recognizes English and French augment titles. Badges are centered above detected cards in rows of three, four or five.
+- **ARAM and Summoner’s Rift.** Get mode-specific builds, item suggestions based on your inventory and opponents, runes and summoner spells.
+- **In-game overlay.** Open the match sheet with **Alt+G**, edit widget positions with **Alt+O**, or rescan augments with **Alt+A**.
 
-## Installer et mettre à jour
+## Install and update
 
-1. Dans [Releases](https://github.com/Lysprd/MAYLO/releases), télécharge **MAYLO-v…-Setup.exe** et lance-le. L’installation se fait pour ton compte Windows, sans droits administrateur.
-2. Lance MAYLO depuis son raccourci. Dans League, utilise le mode **Sans bordure** pour l’overlay. Si Windows demande WebView2, l’installateur donne accès au [téléchargement Microsoft](https://developer.microsoft.com/microsoft-edge/webview2/).
-3. MAYLO vérifie les releases GitHub en arrière-plan, contrôle le SHA-256 du paquet et active la mise à jour au prochain lancement. Les réglages sont conservés. L’archive portable s’utilise directement avec `MAYLO-Hub.exe` et se met à jour manuellement.
+1. Download **MAYLO-v…-Setup.exe** from [Releases](https://github.com/Lysprd/MAYLO/releases). Setup runs for your Windows user and requires Microsoft Edge WebView2. If it’s missing, setup offers to open the [official runtime download page](https://developer.microsoft.com/microsoft-edge/webview2/).
+2. Launch MAYLO from its shortcut. In League, use **Borderless** video mode for the overlay.
+3. MAYLO checks GitHub for updates in the background, verifies the package’s SHA-256 digest and applies it the next time you open the app. Your settings carry over.
 
-## Contribuer et publier
+For portable use, extract the full ZIP and run `MAYLO-Hub.exe`. Portable copies are updated manually. See the [quick start guide](QUICKSTART.txt) for more shortcuts.
 
-Depuis PowerShell sur Windows, avec Node.js 24 et .NET Framework 4.8.
+## Build and release
+
+Run these commands from PowerShell on Windows with Node.js 24 and .NET Framework 4.8.
 
 ```powershell
 .\scripts\build-release.ps1
 .\scripts\test-release.ps1
 ```
 
-Le build produit le Setup et le ZIP dans `dist/`. Le fichier [VERSION](VERSION) définit la version affichée et les métadonnées Windows. Une nouvelle version dans `main`, par exemple `0.1.0-beta.2`, déclenche la [publication Windows](.github/workflows/release.yml). Une release déjà publiée garde ses fichiers. Les versions stables reçoivent les futures releases stables et les versions bêta suivent aussi les préversions.
+The installer and portable ZIP are written to `dist/`. The app and installer use the same React components and styles in `web/src/`. [VERSION](VERSION) controls the display version and Windows metadata. Changing it on `main` triggers the [Windows release workflow](.github/workflows/release.yml). Beta installations receive pre-releases and stable releases. Stable installations follow stable releases.
 
-MAYLO est un projet indépendant. Il n’est pas affilié à Riot Games. [Licence MIT](LICENSE).
+MAYLO is an independent project and is not affiliated with Riot Games. [MIT license](LICENSE).

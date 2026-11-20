@@ -4,14 +4,12 @@ using System.IO;
 using System.IO.Compression;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
-using System.Windows.Media.Animation;
 using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
@@ -28,6 +26,13 @@ using IOPath = System.IO.Path;
 namespace MayloSetup {
  static class Dwm {
   [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int val, int size);
+
+  public static void ApplyDarkTitleBar(Window window) {
+   IntPtr handle = new WindowInteropHelper(window).Handle;
+   int dark = 1;
+   if (DwmSetWindowAttribute(handle, 20, ref dark, 4) != 0)
+    DwmSetWindowAttribute(handle, 19, ref dark, 4);
+  }
 
   public static void ApplyModernChrome(Window w) {
    WindowChrome.SetWindowChrome(w, new WindowChrome {
@@ -217,6 +222,26 @@ namespace MayloSetup {
    }
   }
 
+  public static string InstallForUser(string target, bool desktop, bool startMenu, bool startup, Action<int, string> progress) {
+   if (String.IsNullOrWhiteSpace(target) || !IOPath.IsPathRooted(target)) throw new IOException("Choose an absolute install folder.");
+   string directory = IOPath.GetFullPath(target.Trim());
+   Install(directory, progress);
+   string exe = IOPath.Combine(directory, InstallStore.Launcher);
+   progress(90, "Creating Windows shortcuts…");
+   if (desktop) {
+    CreateShortcut(IOPath.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "MAYLO.lnk"),
+     exe, directory, "MAYLO · League of Legends companion");
+   }
+   if (startMenu) {
+    string menu = IOPath.Combine(Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "Programs", "MAYLO");
+    CreateShortcut(IOPath.Combine(menu, "MAYLO.lnk"), exe, directory, "MAYLO · League of Legends companion");
+    CreateShortcut(IOPath.Combine(menu, "Uninstall MAYLO.lnk"), exe, directory, "Uninstall MAYLO", "--uninstall");
+   }
+   RegisterUninstall(directory, exe, exe, (int)Math.Max(1024, GetPayloadUncompressedBytes() / 1024));
+   SetStartup(exe, startup);
+   return exe;
+  }
+
   public static void LaunchCurrent(string root) {
    using (InstallStore.Lock(root)) {
     var current = InstallStore.Current(root);
@@ -321,516 +346,6 @@ namespace MayloSetup {
   }
  }
 
- public class SetupWindow : Window {
-  readonly TextBox txtDir;
-  readonly Button btnBrowse, btnInstall, btnCancel;
-  readonly CheckBox chkDesktop, chkStartMenu, chkStartup, chkLaunch;
-  readonly Border progressFill, progressTrack, optionsCard, doneCard;
-  readonly TextBlock lblStatus, lblPct, lblDonePath;
-  string installedExePath = "";
-  bool finished = false;
-  bool installing;
-
-  public SetupWindow(bool diagnostics = false) {
-   Title = "MAYLO — Installation";
-   Width = 560;
-   Height = 616;
-   MaxHeight = Math.Max(300, SystemParameters.WorkArea.Height - 16);
-   WindowStyle = WindowStyle.None;
-   ResizeMode = ResizeMode.NoResize;
-   WindowStartupLocation = WindowStartupLocation.CenterScreen;
-   Background = UiAssets.Brush(11, 12, 16);
-   Foreground = Brushes.White;
-   FontFamily = new FontFamily("Segoe UI");
-   Dwm.ApplyModernChrome(this);
-   Closing += (s, e) => { if (installing) e.Cancel = true; };
-
-   var outer = new Border {
-    Background = UiAssets.Brush(11, 12, 16),
-    BorderBrush = UiAssets.Brush(255, 255, 255, 20),
-    BorderThickness = new Thickness(1),
-    CornerRadius = new CornerRadius(12),
-    ClipToBounds = true
-   };
-
-   var mainGrid = new Grid();
-   mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(3) });    // Top accent bar
-   mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(46) });   // Draggable title bar
-   mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // Body
-   mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });      // Footer
-
-   // 1. Subtle Indigo Top Hairline Accent
-   var topAccent = new Border {
-    Background = new LinearGradientBrush(
-     Color.FromRgb(99, 102, 241),
-     Color.FromRgb(56, 189, 248),
-     new Point(0, 0), new Point(1, 0))
-   };
-   Grid.SetRow(topAccent, 0);
-   mainGrid.Children.Add(topAccent);
-
-   // 2. Draggable Title Bar
-   var titleBar = new Grid { Background = UiAssets.Brush(11, 12, 16, 1) };
-   titleBar.MouseLeftButtonDown += (s, e) => {
-    if (e.ButtonState == MouseButtonState.Pressed) { try { DragMove(); } catch { } }
-   };
-   var titleLeft = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(24, 0, 0, 0) };
-   titleLeft.Children.Add(new TextBlock {
-    Text = "MAYLO POUR WINDOWS",
-    FontFamily = new FontFamily("Consolas"),
-    FontSize = 10,
-    FontWeight = FontWeights.SemiBold,
-    Foreground = UiAssets.Brush(129, 140, 248)
-   });
-   titleBar.Children.Add(titleLeft);
-
-   var winBtns = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
-   var btnMin = MakeCaptionButton("—", UiAssets.Brush(255, 255, 255, 18), UiAssets.Brush(255, 255, 255, 32));
-   btnMin.Click += (s, e) => WindowState = WindowState.Minimized;
-   var btnX = MakeCaptionButton("✕", UiAssets.Brush(239, 68, 68, 200), UiAssets.Brush(220, 38, 38, 230));
-   btnX.Click += (s, e) => Close();
-   winBtns.Children.Add(btnMin);
-   winBtns.Children.Add(btnX);
-   titleBar.Children.Add(winBtns);
-   Grid.SetRow(titleBar, 1);
-   mainGrid.Children.Add(titleBar);
-
-   // 3. Body Container
-   var body = new StackPanel { Margin = new Thickness(26, 4, 26, 12) };
-
-   // Brand Hero Row
-   var hero = new Grid { Margin = new Thickness(14, 12, 14, 12) };
-   hero.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-   hero.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-   var logoTile = new Border {
-    Width = 68, Height = 68,
-    CornerRadius = new CornerRadius(18),
-    Margin = new Thickness(0, 0, 16, 0)
-   };
-   var logoImg = UiAssets.LoadEmbeddedLogo();
-   if (logoImg != null) {
-    logoTile.Child = new Image { Source = logoImg, Stretch = Stretch.Uniform };
-    var floatTransform = new TranslateTransform();
-    logoTile.RenderTransform = floatTransform;
-    if (SystemParameters.ClientAreaAnimation) {
-     var floatAnimation = new DoubleAnimation(3, -5, TimeSpan.FromMilliseconds(1350)) {
-      AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = new SineEase()
-     };
-     Loaded += (s, e) => floatTransform.BeginAnimation(TranslateTransform.YProperty, floatAnimation);
-    }
-   } else {
-    logoTile.Child = new TextBlock { Text = "m", FontSize = 24, FontWeight = FontWeights.Bold, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-   }
-   Grid.SetColumn(logoTile, 0);
-   hero.Children.Add(logoTile);
-
-   var heroText = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-   var brandRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-   brandRow.Children.Add(new TextBlock { Text = "maylo", FontSize = 25, FontWeight = FontWeights.Bold, Foreground = Brushes.White });
-   brandRow.Children.Add(new Border { Width = 1, Height = 16, Background = UiAssets.Brush(255, 255, 255, 35), Margin = new Thickness(11, 2, 11, 0), VerticalAlignment = VerticalAlignment.Center });
-   var verPill = new Border {
-    Background = UiAssets.Brush(99, 102, 241, 38),
-    BorderBrush = UiAssets.Brush(129, 140, 248, 115),
-    BorderThickness = new Thickness(1),
-    CornerRadius = new CornerRadius(6),
-    Padding = new Thickness(7, 2, 7, 2),
-    VerticalAlignment = VerticalAlignment.Center
-   };
-   verPill.Child = new TextBlock { Text = "v" + InstallerEngine.Version, FontFamily = new FontFamily("Consolas"), FontSize = 11, FontWeight = FontWeights.Bold, Foreground = UiAssets.Brush(165, 180, 252) };
-   brandRow.Children.Add(verPill);
-   heroText.Children.Add(brandRow);
-   heroText.Children.Add(new TextBlock {
-    Text = "Ton compagnon pour League of Legends",
-    FontSize = 12,
-    Foreground = UiAssets.Brush(161, 161, 170),
-    Margin = new Thickness(0, 3, 0, 0)
-   });
-   Grid.SetColumn(heroText, 1);
-   hero.Children.Add(heroText);
-   body.Children.Add(new Border {
-    Child = hero, CornerRadius = new CornerRadius(14), BorderThickness = new Thickness(1),
-    BorderBrush = UiAssets.Brush(129, 140, 248, 60), Margin = new Thickness(0, 0, 0, 12),
-    Background = new LinearGradientBrush(Color.FromRgb(33, 31, 65), Color.FromRgb(17, 19, 29), 14)
-   });
-
-   // Readiness Status Pills
-   bool wv2 = InstallerEngine.IsWebView2Installed();
-   long bytes = InstallerEngine.GetPayloadUncompressedBytes();
-   string sizeMb = bytes > 0 ? String.Format(System.Globalization.CultureInfo.InvariantCulture, "{0:0.0} MB", bytes / (1024.0 * 1024.0)) : "~5.0 MB";
-   var pills = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 14) };
-   var runtime = MakeStatusPill(wv2 ? "WebView2 prêt" : "Télécharger WebView2", wv2 ? Color.FromRgb(52, 211, 153) : Color.FromRgb(251, 191, 36));
-   if (!wv2) {
-    runtime.Cursor = Cursors.Hand;
-    runtime.MouseLeftButtonUp += (s, e) => Process.Start(new ProcessStartInfo("https://developer.microsoft.com/microsoft-edge/webview2/") { UseShellExecute = true });
-   }
-   pills.Children.Add(runtime);
-   pills.Children.Add(MakeStatusPill("Mises à jour automatiques", Color.FromRgb(129, 140, 248)));
-   pills.Children.Add(MakeStatusPill(sizeMb, Color.FromRgb(161, 161, 170)));
-   body.Children.Add(pills);
-
-   // Install Path Card
-   var dirCard = new Border {
-    Background = UiAssets.Brush(18, 20, 27),
-    BorderBrush = UiAssets.Brush(255, 255, 255, 16),
-    BorderThickness = new Thickness(1),
-    CornerRadius = new CornerRadius(12),
-    Padding = new Thickness(14, 10, 14, 12),
-    Margin = new Thickness(0, 0, 0, 12)
-   };
-   var dirStack = new StackPanel();
-   dirStack.Children.Add(new TextBlock {
-    Text = "DOSSIER D’INSTALLATION",
-    FontFamily = new FontFamily("Consolas"),
-    FontSize = 10,
-    FontWeight = FontWeights.SemiBold,
-    Foreground = UiAssets.Brush(113, 113, 122),
-    Margin = new Thickness(0, 0, 0, 6)
-   });
-   var dirRow = new Grid();
-   dirRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-   dirRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-   txtDir = new TextBox {
-    Text = diagnostics ? @"%LocalAppData%\MAYLO" : InstallerEngine.GetInstalledDir(),
-    Background = UiAssets.Brush(12, 13, 18),
-    Foreground = UiAssets.Brush(228, 228, 231),
-    BorderBrush = UiAssets.Brush(255, 255, 255, 20),
-    BorderThickness = new Thickness(1),
-    Padding = new Thickness(10, 6, 10, 6),
-    FontFamily = new FontFamily("Consolas"),
-    FontSize = 11.5,
-    VerticalContentAlignment = VerticalAlignment.Center
-   };
-   Grid.SetColumn(txtDir, 0);
-   dirRow.Children.Add(txtDir);
-
-   btnBrowse = new Button {
-    Content = "Parcourir…",
-    Height = 30,
-    Padding = new Thickness(12, 0, 12, 0),
-    Margin = new Thickness(8, 0, 0, 0),
-    Background = UiAssets.Brush(30, 32, 43),
-    Foreground = UiAssets.Brush(228, 228, 231),
-    BorderBrush = UiAssets.Brush(255, 255, 255, 26),
-    BorderThickness = new Thickness(1),
-    FontSize = 11.5,
-    FontWeight = FontWeights.Medium,
-    Cursor = Cursors.Hand,
-    Template = UiAssets.RoundedButtonTemplate(new CornerRadius(7), UiAssets.Brush(42, 45, 59), UiAssets.Brush(52, 56, 72))
-   };
-   btnBrowse.Click += (s, e) => BrowseFolder();
-   Grid.SetColumn(btnBrowse, 1);
-   dirRow.Children.Add(btnBrowse);
-   dirStack.Children.Add(dirRow);
-   dirCard.Child = dirStack;
-   body.Children.Add(dirCard);
-
-   // Options Card
-   optionsCard = new Border {
-    Background = UiAssets.Brush(18, 20, 27),
-    BorderBrush = UiAssets.Brush(255, 255, 255, 16),
-    BorderThickness = new Thickness(1),
-    CornerRadius = new CornerRadius(12),
-    Padding = new Thickness(16, 12, 16, 12)
-   };
-   var opts = new StackPanel();
-   chkDesktop = UiAssets.CreateToggleSwitch(true);
-   chkStartMenu = UiAssets.CreateToggleSwitch(true);
-   chkStartup = UiAssets.CreateToggleSwitch(false);
-   chkLaunch = UiAssets.CreateToggleSwitch(true);
-   opts.Children.Add(MakeOptionRow("Raccourci sur le Bureau", "Accéder à MAYLO en un clic", chkDesktop, true));
-   opts.Children.Add(MakeOptionRow("Menu Démarrer", "Ajouter MAYLO et son raccourci de désinstallation", chkStartMenu, true));
-   opts.Children.Add(MakeOptionRow("Lancer avec Windows", "Ouvrir MAYLO à l’ouverture de ta session", chkStartup, true));
-   opts.Children.Add(MakeOptionRow("Ouvrir après l’installation", "Lancer MAYLO dès que tout est prêt", chkLaunch, false));
-   optionsCard.Child = opts;
-   body.Children.Add(optionsCard);
-
-   // Completion Card (hidden until finished)
-   doneCard = new Border {
-    Visibility = Visibility.Collapsed,
-    Background = UiAssets.Brush(16, 28, 24),
-    BorderBrush = UiAssets.Brush(52, 211, 153, 85),
-    BorderThickness = new Thickness(1),
-    CornerRadius = new CornerRadius(12),
-    Padding = new Thickness(18, 16, 18, 16)
-   };
-   var doneStack = new StackPanel();
-   var doneHead = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-   var okDot = new Border {
-    Width = 24, Height = 24, CornerRadius = new CornerRadius(12),
-    Background = UiAssets.Brush(16, 185, 129, 45),
-    BorderBrush = UiAssets.Brush(52, 211, 153, 160),
-    BorderThickness = new Thickness(1),
-    Margin = new Thickness(0, 0, 10, 0)
-   };
-   okDot.Child = new TextBlock { Text = "✓", Foreground = UiAssets.Brush(52, 211, 153), FontWeight = FontWeights.Bold, FontSize = 13, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-   doneHead.Children.Add(okDot);
-   doneHead.Children.Add(new TextBlock { Text = "MAYLO est prêt à jouer", FontSize = 15, FontWeight = FontWeights.Bold, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center });
-   doneStack.Children.Add(doneHead);
-   lblDonePath = new TextBlock { Text = "", FontFamily = new FontFamily("Consolas"), FontSize = 11, Foreground = UiAssets.Brush(167, 243, 208), Margin = new Thickness(34, 6, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis };
-   doneStack.Children.Add(lblDonePath);
-   doneStack.Children.Add(new TextBlock {
-    Text = "Dans League, maintiens Ctrl+Tab ou utilise Alt+O pour placer tes widgets.",
-    FontSize = 11.5, Foreground = UiAssets.Brush(209, 213, 219), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(34, 8, 0, 0)
-   });
-   doneCard.Child = doneStack;
-   body.Children.Add(doneCard);
-
-   // Progress Strip
-   var progWrap = new StackPanel { Margin = new Thickness(0, 14, 0, 0) };
-   var progLabels = new Grid { Margin = new Thickness(0, 0, 0, 6) };
-   lblStatus = new TextBlock { Text = "Prêt à installer", FontSize = 11.5, Foreground = UiAssets.Brush(161, 161, 170), TextTrimming = TextTrimming.CharacterEllipsis };
-   lblPct = new TextBlock { Text = "0%", FontFamily = new FontFamily("Consolas"), FontSize = 11, FontWeight = FontWeights.Bold, Foreground = UiAssets.Brush(165, 180, 252), HorizontalAlignment = HorizontalAlignment.Right };
-   progLabels.Children.Add(lblStatus);
-   progLabels.Children.Add(lblPct);
-   progWrap.Children.Add(progLabels);
-
-   progressTrack = new Border {
-    Height = 6,
-    CornerRadius = new CornerRadius(3),
-    Background = UiAssets.Brush(32, 34, 44),
-    ClipToBounds = true
-   };
-   progressFill = new Border {
-    Width = 0,
-    Height = 6,
-    CornerRadius = new CornerRadius(3),
-    HorizontalAlignment = HorizontalAlignment.Left,
-    Background = new LinearGradientBrush(Color.FromRgb(99, 102, 241), Color.FromRgb(56, 189, 248), new Point(0, 0), new Point(1, 0))
-   };
-   progressTrack.Child = progressFill;
-   progWrap.Children.Add(progressTrack);
-   body.Children.Add(progWrap);
-
-   var bodyScroll = new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-   Grid.SetRow(bodyScroll, 2);
-   mainGrid.Children.Add(bodyScroll);
-
-   // 4. Footer
-   var footerBar = new Border {
-    Background = UiAssets.Brush(14, 15, 21),
-    BorderBrush = UiAssets.Brush(255, 255, 255, 14),
-    BorderThickness = new Thickness(0, 1, 0, 0),
-    Padding = new Thickness(26, 14, 26, 16)
-   };
-   var footerGrid = new Grid();
-   footerGrid.Children.Add(new TextBlock {
-    Text = "Installation pour cet utilisateur Windows",
-    FontFamily = new FontFamily("Consolas"),
-    FontSize = 10.5,
-    Foreground = UiAssets.Brush(113, 113, 122),
-    VerticalAlignment = VerticalAlignment.Center
-   });
-
-   var btns = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-   btnCancel = new Button {
-    Content = "Annuler",
-    MinWidth = 88, Height = 36,
-    Padding = new Thickness(16, 0, 16, 0),
-    Margin = new Thickness(0, 0, 10, 0),
-    Background = UiAssets.Brush(27, 29, 38),
-    Foreground = UiAssets.Brush(212, 212, 216),
-    BorderBrush = UiAssets.Brush(255, 255, 255, 24),
-    BorderThickness = new Thickness(1),
-    FontSize = 12.5,
-    FontWeight = FontWeights.Medium,
-    Cursor = Cursors.Hand,
-    Template = UiAssets.RoundedButtonTemplate(new CornerRadius(9), UiAssets.Brush(38, 41, 54), UiAssets.Brush(48, 52, 68))
-   };
-   btnCancel.Click += (s, e) => Close();
-
-   btnInstall = new Button {
-    Content = "Installer MAYLO",
-    MinWidth = 148, Height = 36,
-    Padding = new Thickness(18, 0, 18, 0),
-    Background = UiAssets.Brush(99, 102, 241),
-    Foreground = Brushes.White,
-    BorderBrush = UiAssets.Brush(129, 140, 248, 140),
-    BorderThickness = new Thickness(1),
-    FontSize = 12.5,
-    FontWeight = FontWeights.SemiBold,
-    Cursor = Cursors.Hand,
-    Template = UiAssets.RoundedButtonTemplate(new CornerRadius(9), UiAssets.Brush(79, 70, 229), UiAssets.Brush(67, 56, 202))
-   };
-   btnInstall.Click += async (s, e) => {
-    if (finished) {
-     LaunchInstalledAndClose();
-    } else {
-     await RunInstall();
-    }
-   };
-   btns.Children.Add(btnCancel);
-   btns.Children.Add(btnInstall);
-   footerGrid.Children.Add(btns);
-   footerBar.Child = footerGrid;
-   Grid.SetRow(footerBar, 3);
-   mainGrid.Children.Add(footerBar);
-
-   outer.Child = mainGrid;
-   Content = outer;
-  }
-
-  Button MakeCaptionButton(string glyph, SolidColorBrush hoverBg, SolidColorBrush pressBg) {
-   return new Button {
-    Content = glyph,
-    Width = 30, Height = 26,
-    Margin = new Thickness(4, 0, 0, 0),
-    Background = Brushes.Transparent,
-    Foreground = UiAssets.Brush(161, 161, 170),
-    BorderThickness = new Thickness(0),
-    FontSize = 11,
-    Cursor = Cursors.Hand,
-    Template = UiAssets.RoundedButtonTemplate(new CornerRadius(6), hoverBg, pressBg)
-   };
-  }
-
-  Border MakeStatusPill(string text, Color dotColor) {
-   var p = new Border {
-    Background = UiAssets.Brush(20, 22, 30),
-    BorderBrush = UiAssets.Brush(255, 255, 255, 16),
-    BorderThickness = new Thickness(1),
-    CornerRadius = new CornerRadius(99),
-    Padding = new Thickness(9, 4, 10, 4),
-    Margin = new Thickness(0, 0, 7, 0)
-   };
-   var sp = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-   sp.Children.Add(new Ellipse { Width = 6, Height = 6, Fill = new SolidColorBrush(dotColor), Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center });
-   sp.Children.Add(new TextBlock { Text = text, FontSize = 10.5, FontWeight = FontWeights.Medium, Foreground = UiAssets.Brush(212, 212, 216) });
-   p.Child = sp;
-   return p;
-  }
-
-  Border MakeOptionRow(string title, string subtitle, CheckBox toggle, bool bottomBorder) {
-   var row = new Border {
-    BorderBrush = UiAssets.Brush(255, 255, 255, bottomBorder ? (byte)12 : (byte)0),
-    BorderThickness = new Thickness(0, 0, 0, bottomBorder ? 1 : 0),
-    Padding = new Thickness(0, 7, 0, bottomBorder ? 8 : 2)
-   };
-   var g = new Grid();
-   g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-   g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-   var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-   text.Children.Add(new TextBlock { Text = title, FontSize = 12.5, FontWeight = FontWeights.SemiBold, Foreground = UiAssets.Brush(244, 244, 245) });
-   text.Children.Add(new TextBlock { Text = subtitle, FontSize = 11, Foreground = UiAssets.Brush(138, 138, 150), Margin = new Thickness(0, 1, 0, 0) });
-   Grid.SetColumn(text, 0);
-   g.Children.Add(text);
-
-   Grid.SetColumn(toggle, 1);
-   g.Children.Add(toggle);
-   row.Child = g;
-   return row;
-  }
-
-  void BrowseFolder() {
-   using (var dlg = new System.Windows.Forms.FolderBrowserDialog()) {
-    dlg.Description = "Choisir le dossier d’installation de MAYLO";
-    dlg.SelectedPath = Directory.Exists(txtDir.Text) ? txtDir.Text : Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-    if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK && !String.IsNullOrWhiteSpace(dlg.SelectedPath)) {
-     string chosen = dlg.SelectedPath;
-     if (!chosen.EndsWith("MAYLO", StringComparison.OrdinalIgnoreCase)) chosen = IOPath.Combine(chosen, "MAYLO");
-     txtDir.Text = chosen;
-    }
-   }
-  }
-
-  void SetProgress(int pct, string text) {
-   int clamped = Math.Max(0, Math.Min(100, pct));
-   lblStatus.Text = text;
-   lblPct.Text = clamped + "%";
-   double trackW = progressTrack.ActualWidth > 10 ? progressTrack.ActualWidth : 506;
-   double targetWidth = trackW * (clamped / 100.0);
-   if (SystemParameters.ClientAreaAnimation) {
-    var slide = new DoubleAnimation(progressFill.Width, targetWidth, TimeSpan.FromMilliseconds(160)) {
-     EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
-     FillBehavior = FillBehavior.Stop
-    };
-    progressFill.Width = targetWidth;
-    progressFill.BeginAnimation(FrameworkElement.WidthProperty, slide);
-   } else progressFill.Width = targetWidth;
-  }
-
-  void LaunchInstalledAndClose() {
-   try {
-    if (!String.IsNullOrEmpty(installedExePath) && File.Exists(installedExePath)) {
-     var started = Process.Start(new ProcessStartInfo(installedExePath) {
-      WorkingDirectory = IOPath.GetDirectoryName(installedExePath),
-      UseShellExecute = true
-     });
-     if (started != null) started.Dispose();
-    }
-   } catch { }
-   Close();
-  }
-
-  async Task RunInstall() {
-   string dir = (txtDir.Text ?? "").Trim();
-   if (String.IsNullOrWhiteSpace(dir)) dir = InstallerEngine.DefaultInstallDir;
-   bool desktop = chkDesktop.IsChecked == true;
-   bool startMenu = chkStartMenu.IsChecked == true;
-   bool startup = chkStartup.IsChecked == true;
-   bool autoLaunch = chkLaunch.IsChecked == true;
-
-   btnInstall.IsEnabled = false;
-   btnBrowse.IsEnabled = false;
-   txtDir.IsEnabled = false;
-   chkDesktop.IsEnabled = chkStartMenu.IsEnabled = chkStartup.IsEnabled = chkLaunch.IsEnabled = false;
-
-   try {
-    installing = true;
-    btnCancel.IsEnabled = false;
-    dir = IOPath.GetFullPath(dir);
-    string exePath = IOPath.Combine(dir, InstallStore.Launcher);
-    SetProgress(8, "Préparation des fichiers…");
-    long bytes = InstallerEngine.GetPayloadUncompressedBytes();
-    int estKb = (int)Math.Max(1024, bytes / 1024);
-
-    await Task.Run(() => {
-     InstallerEngine.Install(dir, (pct, msg) => Dispatcher.Invoke(() => SetProgress(pct, msg)));
-     Dispatcher.Invoke(() => SetProgress(90, "Création des raccourcis Windows…"));
-     if (desktop) {
-      InstallerEngine.CreateShortcut(
-       IOPath.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "MAYLO.lnk"),
-       exePath, dir, "maylo · League of Legends & ARAM Mayhem Companion");
-     }
-     if (startMenu) {
-      string sm = IOPath.Combine(Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "Programs", "MAYLO");
-      InstallerEngine.CreateShortcut(IOPath.Combine(sm, "MAYLO.lnk"), exePath, dir, "maylo · League of Legends & ARAM Mayhem Companion");
-      InstallerEngine.CreateShortcut(IOPath.Combine(sm, "Uninstall MAYLO.lnk"), exePath, dir, "Désinstaller MAYLO", "--uninstall");
-     }
-     InstallerEngine.RegisterUninstall(dir, exePath, exePath, estKb);
-     InstallerEngine.SetStartup(exePath, startup);
-    });
-
-    installedExePath = exePath;
-    finished = true;
-    installing = false;
-    btnCancel.IsEnabled = true;
-    SetProgress(100, "Installation terminée");
-    optionsCard.Visibility = Visibility.Collapsed;
-    lblDonePath.Text = dir;
-    doneCard.Visibility = Visibility.Visible;
-    btnCancel.Content = "Fermer";
-    btnInstall.Content = "Ouvrir MAYLO";
-    btnInstall.IsEnabled = true;
-
-    if (autoLaunch) {
-     await Task.Delay(550);
-     LaunchInstalledAndClose();
-    }
-   } catch (Exception ex) {
-    installing = false;
-    btnCancel.IsEnabled = true;
-    SetProgress(0, "Installation interrompue. " + ex.Message);
-    btnInstall.IsEnabled = true;
-    btnBrowse.IsEnabled = true;
-    txtDir.IsEnabled = true;
-    chkDesktop.IsEnabled = chkStartMenu.IsEnabled = chkStartup.IsEnabled = chkLaunch.IsEnabled = true;
-   }
-  }
- }
-
  public class UninstallWindow : Window {
   readonly CheckBox chkPurge;
   readonly TextBlock statusText;
@@ -878,13 +393,13 @@ namespace MayloSetup {
     head.Children.Add(tile);
    }
    var titles = new StackPanel();
-   titles.Children.Add(new TextBlock { Text = "Désinstaller MAYLO", FontSize = 17, FontWeight = FontWeights.Bold, Foreground = Brushes.White });
+   titles.Children.Add(new TextBlock { Text = "Uninstall MAYLO", FontSize = 17, FontWeight = FontWeights.Bold, Foreground = Brushes.White });
    titles.Children.Add(new TextBlock { Text = installDir, FontFamily = new FontFamily("Consolas"), FontSize = 10.5, Foreground = UiAssets.Brush(138, 138, 150), TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 340 });
    head.Children.Add(titles);
    body.Children.Add(head);
 
    statusText = new TextBlock {
-    Text = "Cette action retire MAYLO, ses raccourcis et son lancement au démarrage de Windows.",
+    Text = "Remove MAYLO, its shortcuts and its Windows startup entry.",
     FontSize = 12, Foreground = UiAssets.Brush(190, 190, 200), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 16, 0, 14)
    };
    body.Children.Add(statusText);
@@ -897,8 +412,8 @@ namespace MayloSetup {
    row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
    row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
    var txt = new StackPanel();
-   txt.Children.Add(new TextBlock { Text = "Supprimer aussi les réglages et le cache", FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = UiAssets.Brush(235, 235, 240) });
-   txt.Children.Add(new TextBlock { Text = "Efface les préférences, les notes et les icônes en cache", FontSize = 10.5, Foreground = UiAssets.Brush(138, 138, 150) });
+   txt.Children.Add(new TextBlock { Text = "Also remove settings and cache", FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = UiAssets.Brush(235, 235, 240) });
+   txt.Children.Add(new TextBlock { Text = "Clear preferences, notes and cached icons", FontSize = 10.5, Foreground = UiAssets.Brush(138, 138, 150) });
    Grid.SetColumn(txt, 0); row.Children.Add(txt);
    chkPurge = UiAssets.CreateToggleSwitch(false);
    Grid.SetColumn(chkPurge, 1); row.Children.Add(chkPurge);
@@ -914,7 +429,7 @@ namespace MayloSetup {
    };
    var btns = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
    btnCancel = new Button {
-    Content = "Annuler", MinWidth = 86, Height = 34, Margin = new Thickness(0, 0, 10, 0),
+    Content = "Cancel", MinWidth = 86, Height = 34, Margin = new Thickness(0, 0, 10, 0),
     Background = UiAssets.Brush(27, 29, 38), Foreground = UiAssets.Brush(212, 212, 216),
     BorderBrush = UiAssets.Brush(255, 255, 255, 24), BorderThickness = new Thickness(1), FontSize = 12, Cursor = Cursors.Hand,
     Template = UiAssets.RoundedButtonTemplate(new CornerRadius(8), UiAssets.Brush(38, 41, 54), UiAssets.Brush(48, 52, 68))
@@ -922,7 +437,7 @@ namespace MayloSetup {
    btnCancel.Click += (s, e) => Close();
 
    btnRemove = new Button {
-    Content = "Désinstaller", MinWidth = 112, Height = 34,
+    Content = "Uninstall", MinWidth = 112, Height = 34,
     Background = UiAssets.Brush(220, 38, 38), Foreground = Brushes.White,
     BorderBrush = UiAssets.Brush(248, 113, 113, 120), BorderThickness = new Thickness(1), FontSize = 12, FontWeight = FontWeights.SemiBold, Cursor = Cursors.Hand,
     Template = UiAssets.RoundedButtonTemplate(new CornerRadius(8), UiAssets.Brush(185, 28, 28), UiAssets.Brush(153, 27, 27))
@@ -931,8 +446,8 @@ namespace MayloSetup {
     btnRemove.IsEnabled = false;
     try {
      InstallerEngine.Uninstall(installDir, chkPurge.IsChecked == true);
-     statusText.Text = "MAYLO a été désinstallé.";
-     btnCancel.Content = "Fermer";
+     statusText.Text = "MAYLO has been uninstalled.";
+     btnCancel.Content = "Close";
     } catch (Exception ex) {
      statusText.Text = ex.Message;
      btnRemove.IsEnabled = true;
@@ -961,31 +476,8 @@ namespace MayloSetup {
     } catch { return 1; }
    }
 
-   if (args.Length > 1 && (args[0] == "--verify-ui" || args[0] == "--verify-motion")) {
-    bool record = args[0] == "--verify-motion";
-    int code = 0;
-    var app = new Application();
-   var w = new SetupWindow(true);
-    w.Loaded += async (s, e) => {
-     try {
-      await Task.Delay(350);
-      for (int i = 0; i < (record ? 27 : 1); i++) {
-       string outPng = record ? IOPath.Combine(args[1], i.ToString("D2") + ".png") : args[1];
-       w.UpdateLayout();
-       var rtb = new RenderTargetBitmap((int)Math.Ceiling(w.ActualWidth), (int)Math.Ceiling(w.ActualHeight), 96, 96, PixelFormats.Pbgra32);
-       rtb.Render(w);
-       var enc = new PngBitmapEncoder();
-       enc.Frames.Add(BitmapFrame.Create(rtb));
-       Directory.CreateDirectory(IOPath.GetDirectoryName(IOPath.GetFullPath(outPng)));
-       using (var fs = File.Create(outPng)) enc.Save(fs);
-       if (record) await Task.Delay(85);
-      }
-     } catch { code = 1; }
-     finally { w.Close(); app.Shutdown(); }
-    };
-    app.Run(w);
-    return code;
-   }
+   if (args.Length > 1 && (args[0] == "--verify-ui" || args[0] == "--verify-motion"))
+    return SetupExperience.Run(args[1], args[0] == "--verify-motion");
 
    if (args.Length > 0 && args[0] == "--uninstall") {
     try {
@@ -1011,9 +503,7 @@ namespace MayloSetup {
     return 0;
    }
 
-   var setupApp = new Application();
-   setupApp.Run(new SetupWindow());
-   return 0;
+   return SetupExperience.Run(null, false);
   }
  }
 }

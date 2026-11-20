@@ -1,0 +1,18 @@
+MAYLO — Windows beta
+===================
+
+Download the latest setup at https://github.com/Lysprd/MAYLO/releases.
+Run the setup and open MAYLO from its shortcut. Updates download in the
+background and are applied the next time you open MAYLO.
+For portable use, extract the entire ZIP and run MAYLO-Hub.exe.
+
+Requires Windows 10/11 x64 and Microsoft Edge WebView2 Runtime.
+In League, select Borderless video mode to use the in-game overlay.
+
+Alt+G or F9   Open the in-game sheet
+Ctrl+Tab      Hold to move widgets
+Alt+O         Toggle overlay editing
+Alt+A         Scan augment titles
+Alt+M         Show or hide overlays
+Alt+L         Open live match stats
+Escape        Close the in-game sheet
