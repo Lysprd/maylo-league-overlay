@@ -244,8 +244,8 @@ namespace MayhemCompanion {
   ulong lastOcrSig;
   DateTime nextOcrRecovery = DateTime.MinValue;
   int offerScanGeneration;
+  int previewAugmentCount = 3;
   bool manualRoleOverride, leftMouseWasDown, realQuit, wasInGame, hadGameWindow, loadoutBusy;
-  DateTime augmentCooldownUntil = DateTime.MinValue;
   readonly Dictionary<string, double> spellReadyAt = new Dictionary<string, double>();
 
   public readonly OfferSession OfferSessionRef;
@@ -660,26 +660,11 @@ namespace MayhemCompanion {
    if (r.Width < 300 || r.Height < 200) return;
    double rx = (pt.X - r.Left) / (double)r.Width;
    double ry = (pt.Y - r.Top) / (double)r.Height;
-   if (ry > 0.80) return; // Reroll button area
-   if (ry < 0.18) return;
-   Stat hit = null; double bestDx = 0.115;
-   for (int i = 0; i < offerSession.Choices.Length; i++) {
-    var st = offerSession.Choices[i];
-    var pos = offerSession.Positions[i];
-    if (st == null || pos == null) continue;
-    double dx = Math.Abs(rx - pos.X);
-    if (dx < bestDx) { bestDx = dx; hit = st; }
-   }
-   if (hit != null) {
-    // Instant 0ms vanish as soon as the player clicks an augment card + auto-track + 950ms anti-repop cooldown!
-    if (chosenAugments.Add(hit.Id)) {
-     Config.TrackedAugments = chosenAugments.ToList();
-     Save();
-    }
-    OcrStatus = "Picked: " + hit.Name;
-    ResetOfferSession();
-    augmentCooldownUntil = DateTime.UtcNow.AddMilliseconds(950);
-    PushState();
+   if (offerSession.TrackClick(rx, ry, DateTime.UtcNow)) {
+    // A capture started before the click may still show the old card.
+    lastOcrSig = 0;
+    nextOcrRecovery = DateTime.MinValue;
+    offerScanGeneration++;
    }
   }
 
@@ -1029,7 +1014,6 @@ namespace MayhemCompanion {
 
   async Task ReadAugments(bool requested) {
    if (ocrBusy || !Config.Connected) return;
-   if (DateTime.UtcNow < augmentCooldownUntil) return;
    EnsureAugmentCatalog();
    if (Game.InGame && (Selected == null || !ChampionMatches(Selected, Game.Champion))) {
     var played = Champions.FirstOrDefault(c => ChampionMatches(c, Game.Champion));
@@ -1064,6 +1048,14 @@ namespace MayhemCompanion {
     bool beforeRef = offerSession.Refreshing;
     bool changed = offerSession.Observe(scan.Hits, DateTime.UtcNow, requested);
     if (!offerSession.Visible) lastOcrSig = 0;
+    var picked = offerSession.ConfirmedPick;
+    if (picked != null) {
+     if (chosenAugments.Add(picked.Id)) {
+      Config.TrackedAugments = chosenAugments.ToList();
+      Save();
+     }
+     OcrStatus = "Picked: " + picked.Name;
+    }
     if (!OcrStatus.StartsWith("Picked:") || offerSession.Visible) {
      OcrStatus = offerSession.Visible
       ? offerSession.Choices.Count(x => x != null) + " augments detected" + (scan.UsedTitleBand ? " · fast band (" + Math.Round(scan.Milliseconds) + "ms)" : " · full")
@@ -1220,7 +1212,7 @@ namespace MayhemCompanion {
 
    var offeredList = new List<object>();
    var previewAugments = Preview && PreviewScene == "augments"
-    ? ModeData.Augments.OrderByDescending(x => x.Games >= 100).Take(3).ToArray()
+    ? ModeData.Augments.OrderByDescending(x => x.Games >= 100).Take(previewAugmentCount).ToArray()
     : null;
    int slotCount = previewAugments != null ? previewAugments.Length : offerSession.Choices.Length;
    for (int i = 0; i < slotCount; i++) {
@@ -1316,7 +1308,7 @@ namespace MayhemCompanion {
     inGameSheet = InGameSheet,
     inGameSheetTab = InGameSheetTab,
     preview = Preview,
-    previewScene = PreviewScene,
+    previewScene = PreviewScene, previewAugmentCount = previewAugmentCount,
     editing = IsOverlayEditing,
     overlayVisible = OverlayVisible,
     augmentsVisible = offerSession.Visible,
@@ -1586,7 +1578,10 @@ namespace MayhemCompanion {
       if (psc == "" || psc == "off") { Editing = false; Preview = false; PreviewScene = ""; InGameSheet = false; OverlayDragging = false; if (tabHeld) { tabHeld = false; tabSuppressed = true; } Save(); }
       else if (psc == "altg") { Preview = true; Editing = false; PreviewScene = "altg"; InGameSheet = true; InGameSheetTab = "build"; }
       else { Preview = true; Editing = true; PreviewScene = psc; InGameSheet = false; }
-      if (psc == "augments") EnsureAugmentCatalog();
+      if (psc == "augments") {
+       previewAugmentCount = Math.Max(3, Math.Min(OfferSession.MaxSlots, Json.I(msg, "count")));
+       EnsureAugmentCatalog();
+      }
       OverlayVisible = true; if (overlay != null) overlay.Sync(); PushState(); break;
      case "exportConfig":
       try {

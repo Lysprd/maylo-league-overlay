@@ -1355,10 +1355,11 @@ export function OverlayView({ state }: { state: AppState }) {
   const pScene = state.preview ? state.previewScene || '' : '';
 
   const augmentPreview = pScene === 'augments';
-  const previewXs = [0.29, 0.50, 0.71];
+  const previewCount = state.offered.filter(offer => offer.stat).length;
+  const previewGap = Math.min(0.21, 1 / (previewCount + 1));
   const offeredWithStat = state.offered.flatMap((offer) => {
     if (!offer.stat) return [];
-    const x = augmentPreview ? previewXs[offer.slot] : offer.x;
+    const x = augmentPreview ? 0.5 + (offer.slot - (previewCount - 1) / 2) * previewGap : offer.x;
     return x > 0 && x < 1 ? [{ ...offer, stat: offer.stat, x }] : [];
   });
 
@@ -1599,7 +1600,7 @@ export function OverlayView({ state }: { state: AppState }) {
                 );
                 const width = `min(228px, calc((${nearestGap * 100}vw - 8px) / ${scale}))`;
                 return (
-                  <div key={slot.stat.id} data-augment-badge={slot.slot}
+                  <div key={slot.slot} data-augment-badge={slot.slot}
                     className="col-start-1 row-start-1 w-max -translate-x-1/2 justify-self-start"
                     style={{ marginLeft: `calc(${slot.x * 100}vw - ${PANEL_INSET}px)` }}
                   >

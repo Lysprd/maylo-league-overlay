@@ -139,6 +139,42 @@ namespace MayhemCompanion {
       rerolled[1] = new AugmentHit { Stat = altStat, X = xs4[1], Y = 0.40 };
       sess4.Observe(rerolled, t0.AddMilliseconds(3100), false);
       Req(sess4.Choices[1] != null && sess4.Choices[1].Id == altStat.Id, "Reroll at slot 1 X must immediately replace slot 1");
+      var emptyHits = new List<AugmentHit>();
+      // The reroll button is below the card. A click at Y=.72 used to clear the whole overlay.
+      var rerollClick = new OfferSession();
+      rerollClick.Observe(scan4.Hits, t0);
+      Req(rerollClick.TrackClick(xs4[1], 0.72, t0.AddMilliseconds(50)), "Reroll click starts the OCR grace period");
+      rerollClick.Observe(emptyHits, t0.AddMilliseconds(210));
+      rerollClick.Observe(emptyHits, t0.AddMilliseconds(1100));
+      Req(rerollClick.Visible && rerollClick.Choices.Count(c => c != null) == 4, "Reroll animation must not clear any badges");
+      var shiftedTitle = rerolled.ToList();
+      shiftedTitle[1] = new AugmentHit { Stat = altStat, X = xs4[1] + 0.035, Y = 0.43 };
+      rerollClick.Observe(shiftedTitle, t0.AddMilliseconds(1150));
+      rerollClick.Observe(shiftedTitle, t0.AddMilliseconds(1280));
+      Req(rerollClick.Visible && rerollClick.Choices[1].Id == altStat.Id && rerollClick.ConfirmedPick == null &&
+       Math.Abs(rerollClick.Positions[1].X - scan4.Hits[1].X) < 0.001 &&
+       rerollClick.Choices.Where((c, i) => i != 1 && c != null).Select(c => c.Id)
+        .SequenceEqual(scan4.Hits.Where((c, i) => i != 1).Select(c => c.Stat.Id)),
+       "Reroll updates only its card and never records a pick");
+
+      var actualPick = new OfferSession();
+      actualPick.Observe(scan4.Hits, t0);
+      Req(actualPick.TrackClick(xs4[1], 0.50, t0.AddMilliseconds(50)), "Direct card click should be tracked");
+      actualPick.Observe(emptyHits, t0.AddMilliseconds(210));
+      Req(actualPick.Visible && actualPick.ConfirmedPick == null, "One empty frame cannot confirm a pick");
+      actualPick.Observe(emptyHits, t0.AddMilliseconds(1600));
+      Req(!actualPick.Visible && actualPick.ConfirmedPick != null && actualPick.ConfirmedPick.Id == scan4.Hits[1].Stat.Id,
+       "A sustained disappearance after clicking a card confirms the pick");
+
+      var ambiguous = new OfferSession();
+      ambiguous.Observe(scan4.Hits, t0);
+      ambiguous.TrackClick(xs4[1], 0.52, t0.AddMilliseconds(50));
+      ambiguous.Observe(emptyHits, t0.AddMilliseconds(200));
+      ambiguous.Observe(rerolled, t0.AddMilliseconds(600));
+      ambiguous.Observe(emptyHits, t0.AddMilliseconds(1000));
+      ambiguous.Observe(emptyHits, t0.AddMilliseconds(1800));
+      Req(!ambiguous.Visible && ambiguous.ConfirmedPick == null, "A replacement cancels an apparent card click");
+
       sess4.Observe(new List<AugmentHit>(), t0.AddSeconds(6), false);
       Req(sess4.Visible, "A single missed scan after a pause must not hide the offer");
       sess4.Observe(new List<AugmentHit>(), t0.AddSeconds(7), false);

@@ -284,6 +284,7 @@ export interface AppState {
   inGameSheetTab: 'build' | 'augments' | 'live';
   preview: boolean;
   previewScene?: string;
+  previewAugmentCount?: number;
   editing: boolean;
   overlayVisible: boolean;
   augmentsVisible: boolean;

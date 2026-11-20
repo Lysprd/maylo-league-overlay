@@ -3786,7 +3786,6 @@ export function HubView({ state }: { state: AppState }) {
                   <div className="flex flex-wrap items-center gap-1.5">
                     {[
                       { id: 'sr_hud', label: 'SR HUD + Minimap' },
-                      { id: 'augments', label: 'Augments' },
                       { id: 'bench', label: 'Bench Bar' },
                       { id: 'altg', label: 'Alt+G Sheet' },
                     ].map((sc) => (
@@ -3797,6 +3796,17 @@ export function HubView({ state }: { state: AppState }) {
                         onClick={() => postAction('setPreviewScene', { scene: sc.id })}
                       >
                         {sc.label}
+                      </Button>
+                    ))}
+                    {[3, 4, 5].map(count => (
+                      <Button
+                        key={count}
+                        size="xs"
+                        variant={state.preview && state.previewScene === 'augments' && (state.previewAugmentCount ?? 3) === count
+                          ? 'accent' : 'secondary'}
+                        onClick={() => postAction('setPreviewScene', { scene: 'augments', count })}
+                      >
+                        {count} Augments
                       </Button>
                     ))}
                     {state.preview && (

@@ -13,6 +13,29 @@ namespace MayhemCompanion {
   DateTime missingSince = DateTime.MinValue;
   public const int HoldMilliseconds = 750;
   const int SlotHoldMilliseconds = 2400;
+  const int ClickHoldMilliseconds = 1500;
+  AugmentHit clickedSlot;
+  bool clickCanPick;
+  DateTime clickUntil;
+  int missingFrames;
+  public Stat ConfirmedPick { get; private set; }
+
+  public bool TrackClick(double x, double y, DateTime now) {
+   if (!Visible || y < 0.18 || y > 0.90) return false;
+   var nearest = Positions.Where(p => p != null).OrderBy(p => Math.Abs(p.X - x)).FirstOrDefault();
+   if (nearest == null) return false;
+   double halfWidth = Positions.Where(p => p != null && p != nearest)
+    .Select(p => Math.Abs(p.X - nearest.X) / 2).DefaultIfEmpty(0.115).Min();
+   if (Math.Abs(nearest.X - x) >= Math.Min(halfWidth, 0.115)) return false;
+
+   clickUntil = now.AddMilliseconds(ClickHoldMilliseconds);
+   // A click lower down can be a reroll or a dismiss control. Give OCR time to read the row again.
+   bool cardInterior = y >= nearest.Y - 0.14 && y <= nearest.Y + 0.22;
+   clickedSlot = nearest;
+   clickCanPick = cardInterior && (now - SlotLastSeen[Array.IndexOf(Positions, nearest)]).TotalMilliseconds <= ClickHoldMilliseconds;
+   missingFrames = 0;
+   return true;
+  }
 
   public void Reset() {
    Choices = new Stat[MaxSlots];
@@ -21,10 +44,16 @@ namespace MayhemCompanion {
    Visible = false;
    Refreshing = false;
    missingSince = DateTime.MinValue;
+   clickUntil = DateTime.MinValue;
+   clickedSlot = null;
+   clickCanPick = false;
+   missingFrames = 0;
+   ConfirmedPick = null;
    Revision++;
   }
 
   public bool Observe(List<AugmentHit> hits, DateTime now, bool allowSingleOpen = false) {
+   ConfirmedPick = null;
    var observed = (hits ?? new List<AugmentHit>()).Where(h => h != null && h.Stat != null)
     .OrderBy(h => h.X).Take(MaxSlots).ToList();
    int minRequired = (Visible || allowSingleOpen) ? 1 : 2;
@@ -34,17 +63,32 @@ namespace MayhemCompanion {
      Refreshing = true;
      missingSince = now;
     }
-    if ((now - missingSince).TotalMilliseconds < HoldMilliseconds) return false;
+    missingFrames++;
+    if (now < clickUntil || (now - missingSince).TotalMilliseconds < HoldMilliseconds || missingFrames < 2) return false;
+    var pick = clickCanPick && clickedSlot != null ? clickedSlot.Stat : null;
     Reset();
+    ConfirmedPick = pick;
     return true;
    }
+
+   // A new title at the clicked position confirms a reroll. Keep its existing card center.
+   var clicked = clickedSlot;
+   var replacement = clicked == null ? null : observed.FirstOrDefault(h =>
+    h.Stat.Id != clicked.Stat.Id && Math.Abs(h.X - clicked.X) < AugmentOcr.MinCardSpacing);
+   if (replacement != null || now >= clickUntil) {
+    clickedSlot = null;
+    clickCanPick = false;
+   }
+   missingFrames = 0;
 
    var merged = new List<Tuple<Stat, AugmentHit, DateTime>>();
    foreach (var h in observed) {
     var damped = h;
-    if (Visible) {
+    if (h == replacement) {
+     damped = new AugmentHit { Stat = h.Stat, X = clicked.X, Y = clicked.Y };
+    } else if (Visible) {
      for (int i = 0; i < MaxSlots; i++) {
-      if (Choices[i] != null && Choices[i].Id == h.Stat.Id && Positions[i] != null && Math.Abs(Positions[i].X - h.X) < 0.025) {
+      if (Choices[i] != null && Choices[i].Id == h.Stat.Id && Positions[i] != null && Math.Abs(Positions[i].X - h.X) < 0.045) {
        damped = new AugmentHit {
         Stat = h.Stat, X = Positions[i].X,
         Y = Math.Abs(Positions[i].Y - h.Y) < 0.025 ? Positions[i].Y : h.Y
