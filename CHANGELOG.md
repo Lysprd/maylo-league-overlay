@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.1.0-beta.11
+- **Mode-scoped, lighter Patch Notes UI:** Patch notes now automatically follow the active mode in the top bar (`Ranked SR`, `ARAM`, or `ARAM Mayhem`) — removing redundant mode tabs and empty categories. Entries are cleanly grouped into **Buffs**, **Nerfs**, and **New & Adjusted** with compact expandable cards (click to reveal formatted `old → new` stat lines), clickable summary filter pills, and mode-accurate `BUFF`/`NERF` badges across Tier List, Bench, and `Alt+G`.
+- **Single-line update buttons:** Fixed the topbar update pill, sidebar `Restart & Update` button, and Settings update button with `whitespace-nowrap` and compact labels so they never wrap onto two lines.
+- **Smooth startup loading screen:** Replaced the instant jump to ~70% with a silky `requestAnimationFrame` progress sweep from `0% → 100%`, synchronized 4-step Swiss boot indicators (`Engine · Meta · Client · Ready`), version footer, and a smooth crossfade into the Hub.
+
 ## v0.1.0-beta.10
 
 - Detect new GitHub Releases within ~2 minutes (or immediately when focusing maylo) using conditional HTTP `ETag` (`304 Not Modified`) polling with zero extra API rate-limit usage.

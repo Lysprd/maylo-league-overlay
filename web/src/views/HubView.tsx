@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   Bug,
   Check,
+  ChevronDown,
   ChevronRight,
   Coins,
   Compass,
@@ -595,9 +596,9 @@ export function HubView({ state }: { state: AppState }) {
   const [tierSearch, setTierSearch] = useState('');
   const [historySearch, setHistorySearch] = useState('');
   const [patchCat, setPatchCat] = useState<'champion' | 'augment' | 'item' | 'system'>('champion');
-  const [patchFilter, setPatchFilter] = useState<'all' | 'buff' | 'nerf' | 'adjust'>('all');
-  const [patchMode, setPatchMode] = useState<'ALL' | 'SR' | 'ARAM' | 'MAYHEM'>('ALL');
+  const [patchFilter, setPatchFilter] = useState<'all' | 'buff' | 'nerf' | 'other'>('all');
   const [patchSearch, setPatchSearch] = useState('');
+  const [expandedPatches, setExpandedPatches] = useState<Record<string, boolean>>({});
   const [noteDraft, setNoteDraft] = useState<string | null>(null);
   const [toastText, setToastText] = useState<string | null>(null);
   const lastStatusRef = useRef<string | null>(null);
@@ -623,6 +624,13 @@ export function HubView({ state }: { state: AppState }) {
   useEffect(() => {
     setSelectedMatch(null);
   }, [view]);
+
+  // Reset patch filters cleanly when switching game mode in the top bar
+  useEffect(() => {
+    setPatchFilter('all');
+    setPatchSearch('');
+    setExpandedPatches({});
+  }, [state.activeMode]);
 
   // Surface statusText feedback (Sync Databases, Sync LoL, Borderless, Export/Import Config, Save Note, Copy) as a subtle auto-fading toast
   useEffect(() => {
@@ -898,16 +906,16 @@ export function HubView({ state }: { state: AppState }) {
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5" data-nodrag>
+        <div className="flex items-center gap-1.5 shrink-0" data-nodrag>
           {state.update?.canRestart && (
             <button
               type="button"
               onClick={() => postAction('applyUpdateRestart')}
-              title={state.update.message || 'Restart maylo to apply update'}
-              className="inline-flex items-center gap-1.5 rounded-full border border-indigo-400/45 bg-indigo-500/15 px-2.5 py-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-200 hover:bg-indigo-500/25 transition-colors cursor-pointer mr-1"
+              title={state.update.message || `Restart maylo to apply v${state.update.version}`}
+              className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 rounded-full border border-indigo-400/45 bg-indigo-500/15 px-2.5 py-1 text-[11px] font-semibold leading-none text-indigo-600 dark:text-indigo-200 hover:bg-indigo-500/25 transition-colors cursor-pointer mr-1"
             >
-              <Download className="size-3" />
-              <span>Update v{state.update.version} · Restart</span>
+              <Download className="size-3 shrink-0" />
+              <span>Update · Restart</span>
             </button>
           )}
           <Status
@@ -1055,8 +1063,8 @@ export function HubView({ state }: { state: AppState }) {
           <div className="space-y-2 border-t border-zinc-200/80 dark:border-white/[0.07] pt-3">
             {(state.update?.state === 'downloading' || state.update?.state === 'ready') && (
               <div className="rounded-xl border border-indigo-400/40 bg-indigo-500/10 p-2.5 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-indigo-700 dark:text-indigo-200">
+                <div className="flex items-center justify-between gap-2 min-w-0">
+                  <span className="inline-flex items-center gap-1.5 min-w-0 text-[11px] font-bold text-indigo-700 dark:text-indigo-200 whitespace-nowrap">
                     {state.update.state === 'downloading' ? (
                       <RefreshCw className="size-3 animate-spin shrink-0" />
                     ) : (
@@ -1065,7 +1073,7 @@ export function HubView({ state }: { state: AppState }) {
                     <span className="truncate">
                       {state.update.state === 'downloading'
                         ? `Downloading v${state.update.version}…`
-                        : `Update v${state.update.version}`}
+                        : `v${state.update.version} ready`}
                     </span>
                   </span>
                   {state.update.state === 'ready' && (
@@ -1076,11 +1084,11 @@ export function HubView({ state }: { state: AppState }) {
                   <Button
                     size="xs"
                     variant="accent"
-                    className="w-full"
+                    className="w-full whitespace-nowrap"
                     onClick={() => postAction('applyUpdateRestart')}
                   >
-                    <RotateCcw className="size-3" />
-                    Restart &amp; Update
+                    <RotateCcw className="size-3 shrink-0" />
+                    <span>Restart &amp; Update</span>
                   </Button>
                 ) : state.update.state === 'ready' ? (
                   <div className="text-[10px] text-zinc-500 dark:text-zinc-400">
@@ -3110,198 +3118,405 @@ export function HubView({ state }: { state: AppState }) {
               );
             })()}
 
-            {/* VIEW: PATCH NOTES (BUFFS / NERFS / ADJUSTMENTS) */}
+            {/* VIEW: PATCH NOTES (MODE-SCOPED, COMPACT & SCANNABLE) */}
             {view === 'PatchNotes' && (() => {
               const pn = state.patchNotes;
               const allEntries = pn?.entries || [];
+              const modeKey = state.activeMode || 'SR';
+              const modeLabel =
+                modeKey === 'MAYHEM' ? 'ARAM Mayhem' : modeKey === 'ARAM' ? 'ARAM' : 'Ranked SR';
+              const modeEntries = allEntries.filter((e) => e.mode === modeKey);
+
+              const allCats = [
+                { key: 'champion' as const, label: 'Champions' },
+                { key: 'augment' as const, label: 'Augments' },
+                { key: 'item' as const, label: 'Items' },
+                { key: 'system' as const, label: 'Systems' },
+              ]
+                .map((c) => ({ ...c, count: modeEntries.filter((e) => e.category === c.key).length }))
+                .filter((c) => c.count > 0);
+
+              const activeCat = allCats.some((c) => c.key === patchCat)
+                ? patchCat
+                : (allCats[0]?.key ?? 'champion');
+
+              const catEntries = modeEntries.filter((e) => e.category === activeCat);
+              const buffCount = catEntries.filter((e) => e.changeType === 'buff').length;
+              const nerfCount = catEntries.filter((e) => e.changeType === 'nerf').length;
+              const otherCount = catEntries.length - buffCount - nerfCount;
+
               const q = patchSearch.trim().toLowerCase();
-              const catCounts = {
-                champion: allEntries.filter((e) => e.category === 'champion').length,
-                augment: allEntries.filter((e) => e.category === 'augment').length,
-                item: allEntries.filter((e) => e.category === 'item').length,
-                system: allEntries.filter((e) => e.category === 'system').length,
-              };
-              const filtered = allEntries.filter((e) => {
-                if (e.category !== patchCat) return false;
-                if (patchMode !== 'ALL' && e.mode !== patchMode) return false;
-                if (patchFilter !== 'all') {
-                  if (patchFilter === 'adjust') {
-                    if (e.changeType !== 'adjust' && e.changeType !== 'added' && e.changeType !== 'system') return false;
-                  } else if (e.changeType !== patchFilter) {
-                    return false;
-                  }
-                }
+              const filtered = catEntries.filter((e) => {
+                if (patchFilter === 'buff' && e.changeType !== 'buff') return false;
+                if (patchFilter === 'nerf' && e.changeType !== 'nerf') return false;
+                if (patchFilter === 'other' && (e.changeType === 'buff' || e.changeType === 'nerf')) return false;
                 if (q && !e.title.toLowerCase().includes(q) && !e.summary.toLowerCase().includes(q)) return false;
                 return true;
               });
-              const buffCount = allEntries.filter((e) => e.category === patchCat && e.changeType === 'buff').length;
-              const nerfCount = allEntries.filter((e) => e.category === patchCat && e.changeType === 'nerf').length;
+
+              const groups = [
+                {
+                  key: 'buff',
+                  label: 'Buffs',
+                  dot: 'bg-emerald-500',
+                  text: 'text-emerald-600 dark:text-emerald-400',
+                  accent: 'border-l-emerald-500/70',
+                  valTone: 'text-emerald-600 dark:text-emerald-300',
+                  items: filtered.filter((e) => e.changeType === 'buff'),
+                },
+                {
+                  key: 'nerf',
+                  label: 'Nerfs',
+                  dot: 'bg-rose-500',
+                  text: 'text-rose-600 dark:text-rose-400',
+                  accent: 'border-l-rose-500/70',
+                  valTone: 'text-rose-600 dark:text-rose-300',
+                  items: filtered.filter((e) => e.changeType === 'nerf'),
+                },
+                {
+                  key: 'other',
+                  label: activeCat === 'system' ? 'Updates & Systems' : 'New & Adjusted',
+                  dot: 'bg-indigo-500',
+                  text: 'text-indigo-600 dark:text-indigo-400',
+                  accent: 'border-l-indigo-500/70',
+                  valTone: 'text-indigo-600 dark:text-indigo-300',
+                  items: filtered.filter((e) => e.changeType !== 'buff' && e.changeType !== 'nerf'),
+                },
+              ].filter((g) => g.items.length > 0);
+
+              const autoExpand = filtered.length <= 3;
+              const toggleFilter = (next: 'buff' | 'nerf' | 'other') =>
+                setPatchFilter((prev) => (prev === next ? 'all' : next));
+
+              const renderDetailText = (text: string, valTone: string) => {
+                const arrowIdx = text.indexOf('→');
+                const colonIdx = text.indexOf(':');
+                if (arrowIdx > 0) {
+                  const beforeArrow = text.slice(0, arrowIdx).trimEnd();
+                  const afterArrow = text.slice(arrowIdx + 1).trimStart();
+                  if (colonIdx > 0 && colonIdx < arrowIdx) {
+                    const label = beforeArrow.slice(0, colonIdx + 1);
+                    const oldPart = beforeArrow.slice(colonIdx + 1).trim();
+                    return (
+                      <>
+                        <span className="font-medium text-zinc-700 dark:text-zinc-200">{label}</span>{' '}
+                        <span className="text-zinc-400 dark:text-zinc-500">{oldPart}</span>{' '}
+                        <span className={cn('font-semibold', valTone)}>→ {afterArrow}</span>
+                      </>
+                    );
+                  }
+                  return (
+                    <>
+                      <span className="text-zinc-500 dark:text-zinc-400">{beforeArrow}</span>{' '}
+                      <span className={cn('font-semibold', valTone)}>→ {afterArrow}</span>
+                    </>
+                  );
+                }
+                return <span>{text}</span>;
+              };
+
               return (
                 <div className="space-y-4">
+                  {/* Minimal Mode-Scoped Header */}
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h2 className="font-display text-lg font-bold tracking-tight text-zinc-900 dark:text-white">
-                          Patch {pn?.version || state.ddVersion || 'Latest'} · Buffs &amp; Nerfs
-                        </h2>
-                        {buffCount > 0 && (
-                          <span className="rounded-full border border-emerald-500/30 bg-emerald-500/12 px-2 py-0.5 font-mono-tech text-[10px] font-bold text-emerald-600 dark:text-emerald-300">
-                            {buffCount} Buffs
-                          </span>
-                        )}
-                        {nerfCount > 0 && (
-                          <span className="rounded-full border border-rose-500/30 bg-rose-500/12 px-2 py-0.5 font-mono-tech text-[10px] font-bold text-rose-600 dark:text-rose-300">
-                            {nerfCount} Nerfs
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                        Live balance changes across Summoner&apos;s Rift, ARAM, and ARAM Mayhem augments
-                      </p>
+                    <div className="flex items-center gap-2.5">
+                      <h2 className="font-display text-lg font-bold tracking-tight text-zinc-900 dark:text-white">
+                        Patch {pn?.version || state.ddVersion || 'Latest'}
+                      </h2>
+                      <span className="rounded-md border border-indigo-400/25 bg-indigo-500/10 px-2 py-0.5 font-mono-tech text-[10px] font-semibold text-indigo-600 dark:text-indigo-300">
+                        {modeLabel}
+                      </span>
                     </div>
-                    <SegmentedTabs<'champion' | 'augment' | 'item' | 'system'>
-                      size="sm"
-                      value={patchCat}
-                      onChange={setPatchCat}
-                      options={[
-                        { value: 'champion', label: `Champions (${catCounts.champion})` },
-                        { value: 'augment', label: `Augments (${catCounts.augment})` },
-                        { value: 'item', label: `Items (${catCounts.item})` },
-                        { value: 'system', label: `Systems (${catCounts.system})` },
-                      ]}
-                    />
+                    {modeEntries.length > 4 && (
+                      <div className="relative w-56">
+                        <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-400" />
+                        <input
+                          value={patchSearch}
+                          onChange={(e) => setPatchSearch(e.target.value)}
+                          placeholder="Filter changes…"
+                          className="w-full rounded-lg border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#14151B] pl-8 pr-3 py-1.5 text-xs text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:border-indigo-400 focus:outline-none"
+                        />
+                      </div>
+                    )}
                   </div>
 
-                  <div className="flex flex-wrap items-center justify-between gap-2.5">
-                    <div className="relative flex-1 min-w-[200px] max-w-xs">
-                      <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-zinc-400" />
-                      <input
-                        value={patchSearch}
-                        onChange={(e) => setPatchSearch(e.target.value)}
-                        placeholder="Search champion, augment, item…"
-                        className="w-full rounded-xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#14151B] pl-8 pr-3 py-1.5 text-xs text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:border-indigo-400 focus:outline-none"
-                      />
+                  {/* Single Clean Toolbar: Active-Mode Categories + Clickable Balance Filters */}
+                  {(allCats.length > 1 || catEntries.length > 1) && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200/70 dark:border-white/[0.06] pb-3">
+                      <div className="flex items-center gap-1">
+                        {allCats.length > 1 &&
+                          allCats.map((cat) => {
+                            const active = activeCat === cat.key;
+                            return (
+                              <button
+                                key={cat.key}
+                                type="button"
+                                onClick={() => {
+                                  setPatchCat(cat.key);
+                                  setPatchFilter('all');
+                                }}
+                                className={cn(
+                                  'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors cursor-pointer',
+                                  active
+                                    ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-950 font-semibold'
+                                    : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-white/[0.05] hover:text-zinc-900 dark:hover:text-white'
+                                )}
+                              >
+                                <span>{cat.label}</span>
+                                <span
+                                  className={cn(
+                                    'font-mono-tech text-[10px]',
+                                    active ? 'opacity-70' : 'text-zinc-400 dark:text-zinc-500'
+                                  )}
+                                >
+                                  {cat.count}
+                                </span>
+                              </button>
+                            );
+                          })}
+                      </div>
+
+                      {catEntries.length > 1 && (
+                        <div className="flex items-center gap-1.5">
+                          {buffCount > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => toggleFilter('buff')}
+                              className={cn(
+                                'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-mono-tech text-[11px] font-semibold transition-all cursor-pointer',
+                                patchFilter === 'buff'
+                                  ? 'border-emerald-500/60 bg-emerald-500/18 text-emerald-700 dark:text-emerald-200'
+                                  : 'border-zinc-200/80 dark:border-white/[0.08] bg-transparent text-zinc-600 dark:text-zinc-400 hover:border-emerald-500/40 hover:text-emerald-600 dark:hover:text-emerald-300'
+                              )}
+                            >
+                              <span className="size-1.5 rounded-full bg-emerald-500" />
+                              {buffCount} Buffs
+                            </button>
+                          )}
+                          {nerfCount > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => toggleFilter('nerf')}
+                              className={cn(
+                                'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-mono-tech text-[11px] font-semibold transition-all cursor-pointer',
+                                patchFilter === 'nerf'
+                                  ? 'border-rose-500/60 bg-rose-500/18 text-rose-700 dark:text-rose-200'
+                                  : 'border-zinc-200/80 dark:border-white/[0.08] bg-transparent text-zinc-600 dark:text-zinc-400 hover:border-rose-500/40 hover:text-rose-600 dark:hover:text-rose-300'
+                              )}
+                            >
+                              <span className="size-1.5 rounded-full bg-rose-500" />
+                              {nerfCount} Nerfs
+                            </button>
+                          )}
+                          {otherCount > 0 && (buffCount > 0 || nerfCount > 0) && (
+                            <button
+                              type="button"
+                              onClick={() => toggleFilter('other')}
+                              className={cn(
+                                'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-mono-tech text-[11px] font-semibold transition-all cursor-pointer',
+                                patchFilter === 'other'
+                                  ? 'border-indigo-500/60 bg-indigo-500/18 text-indigo-700 dark:text-indigo-200'
+                                  : 'border-zinc-200/80 dark:border-white/[0.08] bg-transparent text-zinc-600 dark:text-zinc-400 hover:border-indigo-500/40 hover:text-indigo-600 dark:hover:text-indigo-300'
+                              )}
+                            >
+                              <span className="size-1.5 rounded-full bg-indigo-500" />
+                              {otherCount} {activeCat === 'champion' ? 'Adjusted' : 'Other'}
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <SegmentedTabs<'all' | 'buff' | 'nerf' | 'adjust'>
-                        size="sm"
-                        value={patchFilter}
-                        onChange={setPatchFilter}
-                        options={[
-                          { value: 'all', label: 'All' },
-                          { value: 'buff', label: 'Buffs' },
-                          { value: 'nerf', label: 'Nerfs' },
-                          { value: 'adjust', label: 'Adjusted' },
-                        ]}
-                      />
-                      <SegmentedTabs<'ALL' | 'SR' | 'ARAM' | 'MAYHEM'>
-                        size="sm"
-                        value={patchMode}
-                        onChange={setPatchMode}
-                        options={[
-                          { value: 'ALL', label: 'All' },
-                          { value: 'SR', label: 'SR' },
-                          { value: 'ARAM', label: 'ARAM' },
-                          { value: 'MAYHEM', label: 'Mayhem' },
-                        ]}
-                      />
-                    </div>
-                  </div>
+                  )}
 
                   {allEntries.length === 0 ? (
                     <GlassCard surface="hub" className="p-10 text-center text-sm text-zinc-500 dark:text-zinc-400">
                       Loading latest patch notes…
                     </GlassCard>
+                  ) : modeEntries.length === 0 ? (
+                    <GlassCard surface="hub" className="p-10 text-center space-y-2">
+                      <div className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
+                        No {modeLabel}-specific changes in Patch {pn?.version}
+                      </div>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                        General champion and item balance changes are available under Ranked SR.
+                      </p>
+                    </GlassCard>
                   ) : filtered.length === 0 ? (
-                    <GlassCard surface="hub" className="p-10 text-center text-sm text-zinc-500 dark:text-zinc-400">
-                      No patch changes match your current filters.
+                    <GlassCard surface="hub" className="p-8 text-center text-xs text-zinc-500 dark:text-zinc-400">
+                      No matching changes for &ldquo;{patchSearch}&rdquo;.
                     </GlassCard>
                   ) : (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
-                      {filtered.map((entry, idx) => (
-                        <GlassCard
-                          key={`${entry.category}-${entry.id}-${entry.title}-${idx}`}
-                          surface="hub"
-                          className="p-4 flex flex-col gap-2.5"
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex items-center gap-3 min-w-0">
-                              {entry.category === 'champion' ? (
-                                <ChampAvatar
-                                  src={entry.icon}
-                                  alt={entry.title}
-                                  className="size-10 rounded-xl border border-zinc-200 dark:border-white/12"
-                                />
-                              ) : entry.category === 'augment' ? (
-                                <AugmentIcon
-                                  src={entry.icon}
-                                  alt={entry.title}
-                                  className="size-10 rounded-xl border border-zinc-200 dark:border-white/12"
-                                />
-                              ) : entry.category === 'item' && entry.icon ? (
-                                <img
-                                  src={iconUrl(entry.icon)}
-                                  alt={entry.title}
-                                  className="size-10 rounded-xl border border-zinc-200 dark:border-white/12 bg-zinc-900 shrink-0"
-                                />
-                              ) : (
-                                <div className="flex size-10 items-center justify-center rounded-xl border border-indigo-500/25 bg-indigo-500/10 text-indigo-500 dark:text-indigo-300 shrink-0">
-                                  <Flame className="size-4" />
-                                </div>
-                              )}
-                              <div className="min-w-0">
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                  <span className="truncate text-sm font-bold text-zinc-900 dark:text-white">
-                                    {entry.title}
-                                  </span>
-                                  <PatchTagBadge tag={entry.changeType} />
-                                  <span className="rounded bg-zinc-100 dark:bg-white/[0.06] px-1.5 py-0.5 font-mono-tech text-[9px] font-semibold uppercase text-zinc-500 dark:text-zinc-400">
-                                    {entry.mode}
-                                  </span>
-                                </div>
-                                {entry.summary && (
-                                  <p className="mt-1 text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
-                                    {entry.summary}
-                                  </p>
-                                )}
-                              </div>
+                    <div className="space-y-5">
+                      {groups.map((grp) => (
+                        <section key={grp.key} className="space-y-2">
+                          {groups.length > 1 && (
+                            <div className="flex items-center gap-2 px-0.5">
+                              <span className={cn('size-2 rounded-full', grp.dot)} />
+                              <span className={cn('text-[11px] font-bold uppercase tracking-wider', grp.text)}>
+                                {grp.label}
+                              </span>
+                              <span className="font-mono-tech text-[10px] text-zinc-400 dark:text-zinc-500">
+                                {grp.items.length}
+                              </span>
                             </div>
-                            {entry.category === 'champion' && entry.slug && (
-                              <Button
-                                size="xs"
-                                variant="secondary"
-                                onClick={() => postAction('selectChampion', { slug: entry.slug, view: 'Build' })}
-                                className="shrink-0"
-                              >
-                                Build
-                              </Button>
-                            )}
-                          </div>
+                          )}
 
-                          {entry.details.length > 0 && (
-                            <div className="space-y-1 rounded-xl border border-zinc-200/70 dark:border-white/[0.06] bg-zinc-50/75 dark:bg-white/[0.02] p-2.5">
-                              {entry.details.slice(0, 4).map((dl, di) => (
-                                <div key={di} className="text-[11px] leading-snug text-zinc-600 dark:text-zinc-300">
-                                  {dl.text || (
-                                    <span>
-                                      <span className="text-zinc-400 line-through mr-1.5">{dl.oldValue}</span>
-                                      <span className="font-semibold text-indigo-600 dark:text-indigo-300">
-                                        → {dl.newValue}
-                                      </span>
-                                    </span>
+                          <div className="grid grid-cols-1 lg:grid-cols-2 items-start gap-2.5">
+                            {grp.items.map((entry, idx) => {
+                              const entryKey = `${entry.category}-${entry.id}-${entry.title}-${idx}`;
+                              const hasDetails = entry.details.length > 0 || Boolean(entry.playerNote);
+                              const isExpanded = hasDetails && (autoExpand || Boolean(expandedPatches[entryKey]));
+                              return (
+                                <GlassCard
+                                  key={entryKey}
+                                  surface="hub"
+                                  className={cn(
+                                    'border-l-2 transition-colors',
+                                    grp.accent,
+                                    hasDetails && 'hover:border-zinc-300 dark:hover:border-white/[0.14]'
                                   )}
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                                >
+                                  <div
+                                    role={hasDetails ? 'button' : undefined}
+                                    tabIndex={hasDetails ? 0 : undefined}
+                                    onClick={() => {
+                                      if (!hasDetails || autoExpand) return;
+                                      setExpandedPatches((prev) => ({ ...prev, [entryKey]: !prev[entryKey] }));
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if ((e.key === 'Enter' || e.key === ' ') && hasDetails && !autoExpand) {
+                                        e.preventDefault();
+                                        setExpandedPatches((prev) => ({ ...prev, [entryKey]: !prev[entryKey] }));
+                                      }
+                                    }}
+                                    className={cn('p-3.5', hasDetails && !autoExpand && 'cursor-pointer')}
+                                  >
+                                    <div className="flex items-start justify-between gap-2.5">
+                                      <div className="flex items-start gap-3 min-w-0">
+                                        {entry.category === 'champion' ? (
+                                          <ChampAvatar
+                                            src={entry.icon}
+                                            alt={entry.title}
+                                            className="size-9 rounded-lg border border-zinc-200 dark:border-white/12 mt-0.5"
+                                          />
+                                        ) : entry.category === 'augment' ? (
+                                          <AugmentIcon
+                                            src={entry.icon}
+                                            alt={entry.title}
+                                            className="size-9 rounded-lg border border-zinc-200 dark:border-white/12 mt-0.5"
+                                          />
+                                        ) : entry.category === 'item' && entry.icon ? (
+                                          <img
+                                            src={iconUrl(entry.icon)}
+                                            alt={entry.title}
+                                            className="size-9 rounded-lg border border-zinc-200 dark:border-white/12 bg-zinc-900 shrink-0 mt-0.5"
+                                          />
+                                        ) : (
+                                          <div className="flex size-9 items-center justify-center rounded-lg border border-indigo-500/20 bg-indigo-500/10 text-indigo-500 dark:text-indigo-300 shrink-0 mt-0.5">
+                                            <Flame className="size-4" />
+                                          </div>
+                                        )}
+                                        <div className="min-w-0">
+                                          <div className="flex items-center gap-2">
+                                            <span className="truncate text-[13px] font-bold text-zinc-900 dark:text-white">
+                                              {entry.title}
+                                            </span>
+                                            {grp.key === 'other' && <PatchTagBadge tag={entry.changeType} />}
+                                          </div>
+                                          {entry.summary && (
+                                            <p
+                                              className={cn(
+                                                'mt-0.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400',
+                                                !isExpanded && 'line-clamp-2'
+                                              )}
+                                            >
+                                              {entry.summary}
+                                            </p>
+                                          )}
+                                        </div>
+                                      </div>
 
-                          {entry.playerNote && (
-                            <div className="text-[11px] text-indigo-600 dark:text-indigo-300/90 font-medium">
-                              Tip · {entry.playerNote}
-                            </div>
-                          )}
-                        </GlassCard>
+                                      <div className="flex items-center gap-1.5 shrink-0">
+                                        {entry.category === 'champion' && entry.slug && (
+                                          <button
+                                            type="button"
+                                            onClick={(ev) => {
+                                              ev.stopPropagation();
+                                              postAction('selectChampion', { slug: entry.slug, view: 'Build' });
+                                            }}
+                                            className="rounded-md border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-zinc-600 dark:text-zinc-300 hover:border-indigo-400/50 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors cursor-pointer"
+                                          >
+                                            Build
+                                          </button>
+                                        )}
+                                        {hasDetails && !autoExpand && (
+                                          <span
+                                            className={cn(
+                                              'inline-flex items-center gap-0.5 rounded-md px-1.5 py-1 text-[10px] font-mono-tech text-zinc-400 transition-colors',
+                                              isExpanded && 'text-zinc-700 dark:text-zinc-200'
+                                            )}
+                                          >
+                                            {entry.details.length > 0 && <span>{entry.details.length}</span>}
+                                            <ChevronDown
+                                              className={cn(
+                                                'size-3.5 transition-transform duration-150',
+                                                isExpanded && 'rotate-180'
+                                              )}
+                                            />
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {isExpanded && (
+                                      <div className="mt-3 pt-2.5 border-t border-zinc-200/60 dark:border-white/[0.06] space-y-1.5">
+                                        {entry.details.map((dl, di) => (
+                                          <div
+                                            key={di}
+                                            className="flex items-start gap-2 text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-300"
+                                          >
+                                            <span className={cn('mt-1.5 size-1 rounded-full shrink-0 opacity-75', grp.dot)} />
+                                            <div className="min-w-0">
+                                              {dl.text ? (
+                                                renderDetailText(dl.text, grp.valTone)
+                                              ) : (
+                                                <span>
+                                                  <span className="text-zinc-400 line-through mr-1.5">{dl.oldValue}</span>
+                                                  <span className={cn('font-semibold', grp.valTone)}>
+                                                    → {dl.newValue}
+                                                  </span>
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
+                                        ))}
+                                        {entry.playerNote && (
+                                          <div className="pt-1 text-[11px] italic text-zinc-500 dark:text-zinc-400">
+                                            {entry.playerNote}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                </GlassCard>
+                              );
+                            })}
+                          </div>
+                        </section>
                       ))}
+                    </div>
+                  )}
+
+                  {modeKey === 'ARAM' && (
+                    <div className="flex items-center justify-between rounded-xl border border-zinc-200/70 dark:border-white/[0.06] bg-zinc-50/60 dark:bg-white/[0.02] px-3.5 py-2.5 text-xs text-zinc-500 dark:text-zinc-400">
+                      <span>Showing ARAM-specific tuning only. General champion &amp; item balance lives in Ranked SR.</span>
+                      <button
+                        type="button"
+                        onClick={() => postAction('setMode', { mode: 'SR' })}
+                        className="shrink-0 font-semibold text-indigo-600 dark:text-indigo-300 hover:underline cursor-pointer ml-3"
+                      >
+                        View Ranked SR →
+                      </button>
                     </div>
                   )}
                 </div>
@@ -4033,10 +4248,11 @@ export function HubView({ state }: { state: AppState }) {
                       <Button
                         size="xs"
                         variant="accent"
+                        className="whitespace-nowrap shrink-0"
                         onClick={() => postAction('applyUpdateRestart')}
                       >
-                        <Download className="size-3" />
-                        Restart &amp; Apply v{state.update.version}
+                        <Download className="size-3 shrink-0" />
+                        <span>Restart &amp; Update</span>
                       </Button>
                     ) : (
                       <Button

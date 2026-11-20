@@ -355,19 +355,19 @@ namespace MayhemCompanion {
      if (!closing) Dispatcher.BeginInvoke((Action)(() => { if (!closing) PushState(); }));
     };
     try {
-     BootProgress = 24; BootStage = "Loading…";
+     BootProgress = 12; BootStage = "Initializing workspace…";
      await InitWeb();
-     PushState();
+     BootProgress = 26; BootStage = "Preparing overlay engine…"; PushState();
      overlay = new HybridOverlayWindow(this);
      overlay.Show();
      SetupTray();
      if (startMinimized && Config.MinimizeToTray && tray != null) Hide();
      StartTimers();
-     BootProgress = 52; BootStage = "Loading Riot Data Dragon & Meta…"; PushState();
+     BootProgress = 44; BootStage = "Loading Riot Data Dragon & Meta…"; PushState();
      await LoadHome(true);
-     BootProgress = 78; BootStage = "Connecting League of Legends client…"; PushState();
+     BootProgress = 68; BootStage = "Connecting League of Legends client…"; PushState();
      await Poll();
-     BootProgress = 94; BootStage = "Syncing Tier List & Match History…"; PushState();
+     BootProgress = 86; BootStage = "Syncing Tier List & Patch Notes…"; PushState();
      await RefreshTierList(false);
      var _ = RefreshProfile(true);
      var _pn = MultiModeParser.LoadPatchNotes(false).ContinueWith(t => {
@@ -1299,8 +1299,15 @@ namespace MayhemCompanion {
    };
    var selMode = modeEntryFor(Selected);
    Func<string, string> patchTagOf = sl => {
+    if (String.IsNullOrEmpty(sl) || MultiModeParser.PatchNotes == null) return "";
+    Dictionary<string, string> modeTags;
     string pt;
-    return !String.IsNullOrEmpty(sl) && MultiModeParser.PatchNotes != null && MultiModeParser.PatchNotes.ChampionTagBySlug.TryGetValue(sl, out pt) ? pt : "";
+    if (MultiModeParser.PatchNotes.ChampionTagByMode != null
+        && MultiModeParser.PatchNotes.ChampionTagByMode.TryGetValue(ActiveMode ?? "SR", out modeTags)
+        && modeTags.TryGetValue(sl, out pt)) {
+     return pt;
+    }
+    return "";
    };
    var pn = MultiModeParser.PatchNotes ?? new PatchNotesBundle();
 

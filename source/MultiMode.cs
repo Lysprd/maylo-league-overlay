@@ -813,6 +813,12 @@ namespace MayhemCompanion {
       bundle.Entries.Add(entry);
       if (cat == "champion" && !String.IsNullOrEmpty(slug) && (ctype == "buff" || ctype == "nerf" || ctype == "adjust")) {
        if (!bundle.ChampionTagBySlug.ContainsKey(slug) || mode == "SR") bundle.ChampionTagBySlug[slug] = ctype;
+       Dictionary<string, string> modeMap;
+       if (!bundle.ChampionTagByMode.TryGetValue(mode, out modeMap)) {
+        modeMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        bundle.ChampionTagByMode[mode] = modeMap;
+       }
+       modeMap[slug] = ctype;
       }
      }
     };

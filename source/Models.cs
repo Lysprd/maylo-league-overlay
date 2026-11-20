@@ -111,6 +111,7 @@ namespace MayhemCompanion {
   public string OfficialUrl = "";
   public List<PatchEntry> Entries = new List<PatchEntry>();
   public Dictionary<string, string> ChampionTagBySlug = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+  public Dictionary<string, Dictionary<string, string>> ChampionTagByMode = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
  }
 
  public class Placement {
