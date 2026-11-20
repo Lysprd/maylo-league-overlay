@@ -72,6 +72,9 @@ namespace MayhemCompanion {
     Req(aramLive.Objectives.Count == 0, "Objectives must be empty outside Summoner's Rift");
     Req(GameBridge.DetectModeKey("CLASSIC", 480, false) == "SR" &&
         GameBridge.DetectModeKey("ARAM", 2400, false) == "MAYHEM" &&
+        GameBridge.DetectModeKey("KIWI", 3270, false) == "MAYHEM" &&
+        GameBridge.DetectModeKey("CLASSIC", 3100, false) == "SR" &&
+        GameBridge.DetectModeKey("PRACTICETOOL", 3140, false) == "SR" &&
         GameBridge.DetectModeKey("ARAM", 720, false) == "ARAM" &&
         GameBridge.DetectModeKey("CLASSIC", 1700, true) == "" &&
         GameBridge.DetectModeKey("CHERRY", 0, false) == "" &&

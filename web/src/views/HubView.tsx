@@ -746,7 +746,7 @@ export function HubView({ state }: { state: AppState }) {
   const modeHistory = useMemo(() => {
     return (state.history || []).filter((m) => {
       const modeStr = (m.mode || '').toUpperCase();
-      const isMayhemMatch = Boolean(m.mayhem) || m.queue === 2400 || modeStr === 'KIWI';
+      const isMayhemMatch = Boolean(m.mayhem) || m.queue === 2400 || m.queue === 3270 || modeStr === 'KIWI';
       const isAramMatch = !isMayhemMatch && (m.queue === 450 || m.queue === 720 || modeStr === 'ARAM');
       const isArenaMatch = m.queue === 1700 || m.queue === 1710 || modeStr === 'CHERRY';
       if (state.activeMode === 'MAYHEM') return isMayhemMatch;

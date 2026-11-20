@@ -72,23 +72,28 @@ namespace MayhemCompanion {
   }
 
   public static bool IsMayhemMode(string mode, int queueId = 0) {
-   return queueId == 2400 || String.Equals(mode, "KIWI", StringComparison.OrdinalIgnoreCase) || String.Equals(mode, "MAYHEM", StringComparison.OrdinalIgnoreCase);
+   return queueId == 2400 || queueId == 3270 || String.Equals(mode, "KIWI", StringComparison.OrdinalIgnoreCase) || String.Equals(mode, "MAYHEM", StringComparison.OrdinalIgnoreCase);
   }
 
   public static string DetectModeKey(string mode, int queueId, bool mayhem) {
    switch (queueId) {
-    case 2400: return "MAYHEM";
+    case 2400: case 3270: return "MAYHEM";
     case 450: case 720: return "ARAM";
     case 400: case 420: case 430: case 440: case 480: case 490: case 700:
-    case 830: case 840: case 850: case 870: case 880: case 890: return "SR";
+    case 830: case 840: case 850: case 870: case 880: case 890:
+    case 3100: case 3110: case 3120: case 3130: case 3140: return "SR";
+    case 1700: case 1710: return "";
    }
+   // Explicit ARAM Mayhem (KIWI) and Practice Tool modes work across Riot queue ID rotations.
+   if (String.Equals(mode, "KIWI", StringComparison.OrdinalIgnoreCase) ||
+       String.Equals(mode, "MAYHEM", StringComparison.OrdinalIgnoreCase)) return "MAYHEM";
+   if (String.Equals(mode, "PRACTICETOOL", StringComparison.OrdinalIgnoreCase)) return "SR";
    // Published queue IDs take precedence over a generic map mode such as CLASSIC.
    if (queueId > 0) return "";
    if (mayhem || IsMayhemMode(mode)) return "MAYHEM";
    if (String.Equals(mode, "ARAM", StringComparison.OrdinalIgnoreCase)) return "ARAM";
    if (String.Equals(mode, "CLASSIC", StringComparison.OrdinalIgnoreCase) ||
-       String.Equals(mode, "SWIFTPLAY", StringComparison.OrdinalIgnoreCase) ||
-       String.Equals(mode, "PRACTICETOOL", StringComparison.OrdinalIgnoreCase)) return "SR";
+       String.Equals(mode, "SWIFTPLAY", StringComparison.OrdinalIgnoreCase)) return "SR";
    return "";
   }
 
@@ -408,7 +413,7 @@ namespace MayhemCompanion {
     } catch { }
     if (!snapshot.Mayhem && snapshot.Mode == "" && snapshot.Bench.Count > 0) snapshot.Mode = "ARAM";
     // Capture ARAM / ARAM Mayhem Champion Cards during the opening flip window if bench hasn't populated yet
-    if ((snapshot.Mayhem || snapshot.Mode == "ARAM" || snapshot.QueueId == 2400 || snapshot.QueueId == 450) && snapshot.PriorityCards.Count == 0 && snapshot.Bench.Count <= 2) {
+    if ((snapshot.Mayhem || snapshot.Mode == "ARAM" || snapshot.QueueId == 2400 || snapshot.QueueId == 3270 || snapshot.QueueId == 450) && snapshot.PriorityCards.Count == 0 && snapshot.Bench.Count <= 2) {
      try {
       var pickable = Json.Serializer().DeserializeObject(await LcuGet("/lol-champ-select/v1/pickable-champion-ids")) as object[];
       if (pickable != null && pickable.Length >= 2 && pickable.Length <= 4) {

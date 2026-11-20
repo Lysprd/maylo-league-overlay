@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.1.0-beta.14
+- **Critical overlay fix for ARAM Mayhem (queue `3270`) & Practice/Custom SR (`3100`/`3110`/`3140`):** `DetectModeKey` previously rejected Riot's new live ARAM Mayhem queue ID `3270` (`KIWI`) and SR Practice/Custom queues (`3100`/`3110`/`3140`) as unsupported, hiding the entire overlay, Champ Select ribbon, and augment OCR. Both explicit queue IDs and `KIWI` / `PRACTICETOOL` modes are now recognized reliably across Riot queue rotations.
+
 ## v0.1.0-beta.13
 - **Mode-scoped Overview & Match History:** Both **Overview** (Recent Form, Win Rate, KDA, Trend Graph, Personal Champion Pool) and **Match History** now automatically follow the active mode selected in the top bar (`ARAM Mayhem`, `ARAM`, or `Ranked SR`) with a clean mode badge and zero redundant queue filter bars.
 - **Animated glowing Update button:** Upgraded both the topbar `Update · Restart` pill and the sidebar `Restart & Update` card/button with a pulsing indigo-violet glow, shimmer sweep, animated BorderBeam, and live emerald ping dot so available updates stand out immediately.

@@ -16,7 +16,7 @@ namespace MayhemCompanion {
   public int Kills { get; set; } public int Deaths { get; set; } public int Assists { get; set; } public bool Won { get; set; } public bool Remake { get; set; }
   public int Duration { get; set; } public int Damage { get; set; } public int Gold { get; set; } public int Cs { get; set; } public int Heal { get; set; }
   public List<int> Items { get; set; } public List<int> Augments { get; set; } public List<int> Runes { get; set; }
-  public bool Mayhem { get { return Queue == 2400 || Mode == "KIWI"; } }
+  public bool Mayhem { get { return Queue == 2400 || Queue == 3270 || Mode == "KIWI"; } }
   public string QueueName { get { return Mayhem ? "ARAM Mayhem" : Queue == 450 ? "ARAM" : Queue == 420 ? "Ranked Solo" : Queue == 440 ? "Ranked Flex" : Mode == "PRACTICETOOL" ? "Practice" : Mode == "SWIFTPLAY" ? "Quickplay" : Mode == "CLASSIC" ? "Summoner's Rift" : Mode ?? "LoL"; } }
   public string Time { get { return Duration / 60 + ":" + (Duration % 60).ToString("00"); } }
   public DateTime Date { get { return new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddMilliseconds(Created).ToLocalTime(); } }
