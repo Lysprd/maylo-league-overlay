@@ -758,6 +758,17 @@ export function HubView({ state }: { state: AppState }) {
         </div>
 
         <div className="flex items-center gap-1.5" data-nodrag>
+          {state.update?.canRestart && (
+            <button
+              type="button"
+              onClick={() => postAction('applyUpdateRestart')}
+              title={state.update.message || 'Restart maylo to apply update'}
+              className="inline-flex items-center gap-1.5 rounded-full border border-indigo-400/45 bg-indigo-500/15 px-2.5 py-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-200 hover:bg-indigo-500/25 transition-colors cursor-pointer mr-1"
+            >
+              <Download className="size-3" />
+              <span>Update v{state.update.version} · Restart</span>
+            </button>
+          )}
           <Status
             variant={game.inGame ? 'live' : state.settings.connected ? 'success' : 'default'}
             pulse={game.inGame}
@@ -3607,6 +3618,51 @@ export function HubView({ state }: { state: AppState }) {
                   label="Minimize to System Tray on Close"
                   description="Closing the window keeps maylo running quietly in the taskbar tray"
                 />
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-200/80 dark:border-white/[0.08] bg-zinc-50/70 dark:bg-white/[0.025] px-3 py-2.5 mx-2.5">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                      <span>Automatic Updates</span>
+                      <span className="rounded bg-indigo-500/12 px-1.5 py-0.5 font-mono-tech text-[10px] text-indigo-600 dark:text-indigo-300">
+                        v{state.version}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400 truncate">
+                      {state.update?.message || 'Checks GitHub Releases automatically with SHA-256 verification'}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {state.update?.canRestart ? (
+                      <Button
+                        size="xs"
+                        variant="accent"
+                        onClick={() => postAction('applyUpdateRestart')}
+                      >
+                        <Download className="size-3" />
+                        Restart &amp; Apply v{state.update.version}
+                      </Button>
+                    ) : (
+                      <Button
+                        size="xs"
+                        variant="secondary"
+                        disabled={state.update?.state === 'checking' || state.update?.state === 'downloading'}
+                        onClick={() => postAction('checkUpdates')}
+                      >
+                        <RefreshCw
+                          className={cn(
+                            'size-3',
+                            (state.update?.state === 'checking' || state.update?.state === 'downloading') &&
+                              'animate-spin'
+                          )}
+                        />
+                        {state.update?.state === 'checking'
+                          ? 'Checking…'
+                          : state.update?.state === 'downloading'
+                            ? 'Downloading…'
+                            : 'Check for Updates'}
+                      </Button>
+                    )}
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 px-2.5 pt-2">
                   {[
                     { field: 'sheet', label: 'In-Game Sheet', val: state.settings.hotkeySheet || 'G' },

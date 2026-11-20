@@ -217,8 +217,12 @@ namespace MayloSetup {
     if (current == null || current.CompareTo(release) < 0) {
      InstallStore.Stage(targetDir, release, res, progress);
      InstallStore.Activate(targetDir, release);
+     InstallStore.PruneOldVersions(targetDir);
     }
-    if (!File.Exists(launcher)) File.Copy(asm.Location, launcher);
+    // Always write MAYLO.exe via CopyCleanFile (never File.Copy!) so browser Mark-of-the-Web
+    // (:Zone.Identifier) is NEVER copied onto the installed launcher, and upgrades refresh MAYLO.exe!
+    try { InstallStore.CopyCleanFile(asm.Location, launcher); }
+    catch { InstallStore.UnblockFile(launcher); }
    }
   }
 
@@ -242,19 +246,20 @@ namespace MayloSetup {
    return exe;
   }
 
-  public static void LaunchCurrent(string root) {
+  public static void LaunchCurrent(string root, string[] args = null) {
+   InstallStore.UnblockFile(IOPath.Combine(root, InstallStore.Launcher));
    using (InstallStore.Lock(root)) {
     var current = InstallStore.Current(root);
     var previous = InstallStore.Current(root, true);
     var release = current ?? previous;
     if (release == null) throw new IOException("No valid maylo version is installed.");
     try {
-     using (var app = InstallStore.Launch(root, release)) {
+     using (var app = InstallStore.Launch(root, release, args)) {
       if (app.WaitForExit(2500) && app.ExitCode != 0) throw new IOException("maylo could not start.");
      }
     } catch (Exception) {
      if (previous == null || previous.Text == release.Text) throw;
-     using (InstallStore.Launch(root, previous)) { }
+     using (InstallStore.Launch(root, previous, args)) { }
      release = previous;
     }
     if (current == null || current.Text != release.Text) InstallStore.Activate(root, release);
@@ -310,9 +315,10 @@ namespace MayloSetup {
 
   public static void SetStartup(string exePath, bool enabled) {
    try {
+    if (!String.IsNullOrEmpty(exePath)) InstallStore.UnblockFile(exePath);
     using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true)) {
      if (key == null) return;
-     if (enabled && !String.IsNullOrEmpty(exePath)) key.SetValue("MAYLO", "\"" + exePath + "\"");
+     if (enabled && !String.IsNullOrEmpty(exePath)) key.SetValue("MAYLO", "\"" + exePath + "\" --autostart");
      else if (key.GetValue("MAYLO") != null) key.DeleteValue("MAYLO", false);
     }
    } catch { }
@@ -482,7 +488,7 @@ namespace MayloSetup {
    if (args.Length > 0 && args[0] == "--uninstall") {
     try {
      string temp = IOPath.Combine(IOPath.GetTempPath(), "MAYLO-uninstall-" + Guid.NewGuid().ToString("N") + ".exe");
-     File.Copy(Assembly.GetExecutingAssembly().Location, temp);
+     InstallStore.CopyCleanFile(Assembly.GetExecutingAssembly().Location, temp);
      using (Process.Start(new ProcessStartInfo(temp, "--remove-installed") { UseShellExecute = false })) { }
      return 0;
     } catch (Exception ex) {
@@ -498,7 +504,7 @@ namespace MayloSetup {
    }
 
    if (String.Equals(IOPath.GetFileName(Assembly.GetExecutingAssembly().Location), InstallStore.Launcher, StringComparison.OrdinalIgnoreCase)) {
-    try { InstallerEngine.LaunchCurrent(AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\')); }
+    try { InstallerEngine.LaunchCurrent(AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\'), args); }
     catch (Exception ex) { MessageBox.Show(ex.Message, "maylo"); return 1; }
     return 0;
    }

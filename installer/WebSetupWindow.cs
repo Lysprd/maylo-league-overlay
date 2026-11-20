@@ -179,8 +179,15 @@ namespace MayloSetup {
     Description = "Choose the maylo install folder",
     SelectedPath = Directory.Exists(path) ? path : InstallerEngine.GetInstalledDir()
    }) {
-    if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-     Send(new { type = "setupPath", path = dialog.SelectedPath });
+    if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK && !String.IsNullOrWhiteSpace(dialog.SelectedPath)) {
+     string chosen = dialog.SelectedPath.TrimEnd('\\');
+     bool hasOtherFiles = Directory.Exists(chosen) && Directory.GetFileSystemEntries(chosen).Length > 0
+      && !File.Exists(Path.Combine(chosen, MayloRelease.InstallStore.Launcher));
+     if (hasOtherFiles && !chosen.EndsWith("\\MAYLO", StringComparison.OrdinalIgnoreCase)) {
+      chosen = Path.Combine(chosen, "MAYLO");
+     }
+     Send(new { type = "setupPath", path = chosen });
+    }
    }
   }
 
@@ -209,6 +216,7 @@ namespace MayloSetup {
 
   void Launch() {
    try {
+    MayloRelease.InstallStore.UnblockFile(installedExe);
     using (Process.Start(new ProcessStartInfo(installedExe) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(installedExe) })) { }
     Close();
    } catch (Exception ex) {

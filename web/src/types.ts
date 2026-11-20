@@ -338,4 +338,10 @@ export interface AppState {
   settings: AppSettings;
   inspectedItem: ItemDetail | null;
   inspectedAugment: AugmentDetail | null;
+  update?: {
+    state: 'idle' | 'checking' | 'downloading' | 'ready' | 'up_to_date' | 'error' | 'portable';
+    version: string;
+    message: string;
+    canRestart: boolean;
+  };
 }

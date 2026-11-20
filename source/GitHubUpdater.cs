@@ -11,10 +11,46 @@ using System.Web.Script.Serialization;
 using MayloRelease;
 
 namespace MayhemCompanion {
+ internal sealed class UpdateSnapshot {
+  public string State = "idle"; // idle | checking | downloading | ready | up_to_date | error | portable
+  public string Version = "";
+  public string Message = "";
+  public bool CanRestart = false;
+ }
+
  internal static class GitHubUpdater {
   const long RepositoryId = 1464758229;
   const string RepositoryApi = "https://api.github.com/repositories/1464758229";
   const int DownloadLimit = 32 * 1024 * 1024;
+
+  static readonly SemaphoreSlim checkGate = new SemaphoreSlim(1, 1);
+  static readonly object statusLock = new object();
+  static UpdateSnapshot currentStatus = new UpdateSnapshot();
+  public static event Action StatusChanged;
+
+  public static UpdateSnapshot GetStatus() {
+   lock (statusLock) {
+    return new UpdateSnapshot {
+     State = currentStatus.State,
+     Version = currentStatus.Version,
+     Message = currentStatus.Message,
+     CanRestart = currentStatus.CanRestart
+    };
+   }
+  }
+
+  static void SetStatus(string state, string version, string message, bool canRestart) {
+   lock (statusLock) {
+    currentStatus = new UpdateSnapshot {
+     State = state ?? "idle",
+     Version = version ?? "",
+     Message = message ?? "",
+     CanRestart = canRestart
+    };
+   }
+   var cb = StatusChanged;
+   if (cb != null) { try { cb(); } catch { } }
+  }
 
   public sealed class Release {
    public string tag_name { get; set; }
@@ -38,20 +74,43 @@ namespace MayhemCompanion {
 
   public static void Start(CancellationToken cancellation) {
    string root = InstallStore.InstalledRoot();
-   if (root == null) return;
+   if (root == null) {
+    SetStatus("portable", BuildInfo.Version, "Portable build — install via Setup.exe for automatic updates.", false);
+    return;
+   }
    var _ = Task.Run(() => Run(root, cancellation), cancellation);
   }
 
+  public static async Task CheckNowAsync() {
+   string root = InstallStore.InstalledRoot();
+   if (root == null) {
+    SetStatus("portable", BuildInfo.Version, "Portable build — install via Setup.exe for automatic updates.", false);
+    return;
+   }
+   using (var client = CreateClient()) {
+    try {
+     await CheckLocked(root, client, CancellationToken.None, true);
+    } catch (Exception ex) {
+     SetStatus("error", "", "Update check failed: " + ex.Message, false);
+    }
+   }
+  }
+
+  static HttpClient CreateClient() {
+   var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false });
+   client.Timeout = TimeSpan.FromSeconds(30);
+   client.MaxResponseContentBufferSize = 4 * 1024 * 1024;
+   client.DefaultRequestHeaders.UserAgent.ParseAdd("maylo/" + BuildInfo.Version);
+   return client;
+  }
+
   static async Task Run(string root, CancellationToken cancellation) {
-   using (var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })) {
-    client.Timeout = TimeSpan.FromSeconds(30);
-    client.MaxResponseContentBufferSize = 4 * 1024 * 1024;
-    client.DefaultRequestHeaders.UserAgent.ParseAdd("maylo/" + BuildInfo.Version);
+   using (var client = CreateClient()) {
     var delay = TimeSpan.FromSeconds(8);
     while (!cancellation.IsCancellationRequested) {
      try {
       await Task.Delay(delay, cancellation);
-      await Check(root, client, cancellation);
+      await CheckLocked(root, client, cancellation, false);
      } catch (OperationCanceledException) {
       if (cancellation.IsCancellationRequested) return;
      } catch (Exception ex) {
@@ -59,6 +118,15 @@ namespace MayhemCompanion {
      }
      delay = TimeSpan.FromMinutes(30);
     }
+   }
+  }
+
+  static async Task CheckLocked(string root, HttpClient client, CancellationToken cancellation, bool interactive) {
+   if (!await checkGate.WaitAsync(0, cancellation)) return;
+   try {
+    await Check(root, client, cancellation, interactive);
+   } finally {
+    checkGate.Release();
    }
   }
 
@@ -87,17 +155,27 @@ namespace MayhemCompanion {
    }
   }
 
-  static async Task Check(string root, HttpClient client, CancellationToken cancellation) {
+  static async Task Check(string root, HttpClient client, CancellationToken cancellation, bool interactive) {
    var current = InstallStore.Current(root);
    if (current == null) return;
+   var running = ReleaseVersion.Parse(BuildInfo.Version);
+   if (running != null && current.CompareTo(running) > 0) {
+    SetStatus("ready", current.Text, "v" + current.Text + " is ready — restart maylo to apply.", true);
+    return;
+   }
+   if (interactive) SetStatus("checking", "", "Checking GitHub Releases…", false);
    // Resolve the current name through the immutable repository ID before trusting any download URL.
    var repo = await GetJson<RepositoryIdentity>(client, RepositoryApi, cancellation);
    if (repo == null || repo.id != RepositoryId || !Regex.IsMatch(repo.full_name ?? "", @"\A[A-Za-z0-9-]+/[A-Za-z0-9_.-]+\z"))
     throw new IOException("Unexpected GitHub repository identity.");
    var releases = await GetJson<Release[]>(client, RepositoryApi + "/releases?per_page=30", cancellation);
    var target = SelectRelease(releases, current, repo.full_name);
-   if (target == null) return;
+   if (target == null) {
+    if (interactive) SetStatus("up_to_date", current.Text, "You're up to date (v" + current.Text + ").", false);
+    return;
+   }
 
+   SetStatus("downloading", target.Item1.Text, "Downloading v" + target.Item1.Text + "…", false);
    using (var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation)) {
     deadline.CancelAfter(TimeSpan.FromMinutes(2));
     using (var zip = await Download(client, target.Item2, deadline.Token))
@@ -106,8 +184,10 @@ namespace MayhemCompanion {
      if (current == null || current.CompareTo(target.Item1) >= 0) return;
      InstallStore.Stage(root, target.Item1, zip);
      InstallStore.Activate(root, target.Item1);
+     InstallStore.PruneOldVersions(root);
     }
    }
+   SetStatus("ready", target.Item1.Text, "v" + target.Item1.Text + " installed — restart to apply.", true);
   }
 
   static async Task<MemoryStream> Download(HttpClient client, Asset asset, CancellationToken cancellation) {
@@ -179,7 +259,8 @@ namespace MayhemCompanion {
      throw new Exception("Accepted mismatched digest");
     } catch (InvalidDataException) { }
     VerifyStagedUpdate();
-    File.WriteAllText(report, "PASS: beta ordering, release selection, SHA-256, archive paths, and atomic activation/rollback.");
+    VerifyMotwStrip();
+    File.WriteAllText(report, "PASS: beta ordering, release selection, SHA-256, archive paths, atomic activation/rollback/prune, and Zone.Identifier MOTW stripping.");
     return 0;
    } catch (Exception ex) {
     File.WriteAllText(report, ex.ToString());
@@ -187,27 +268,70 @@ namespace MayhemCompanion {
    }
   }
 
+  [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+  static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string lpFileName, uint dwDesiredAccess, uint dwShareMode, IntPtr lpSecurityAttributes, uint dwCreationDisposition, uint dwFlagsAndAttributes, IntPtr hTemplateFile);
+
+  static bool HasZoneIdentifier(string path) {
+   using (var h = CreateFile(path + ":Zone.Identifier", 0x80000000u, 3u, IntPtr.Zero, 3u, 0x80u, IntPtr.Zero)) {
+    return !h.IsInvalid;
+   }
+  }
+
+  static void WriteZoneIdentifier(string path) {
+   using (var h = CreateFile(path + ":Zone.Identifier", 0x40000000u, 0u, IntPtr.Zero, 2u, 0x80u, IntPtr.Zero)) {
+    if (h.IsInvalid) return;
+    using (var fs = new FileStream(h, FileAccess.Write))
+    using (var sw = new StreamWriter(fs)) sw.Write("[ZoneTransfer]\r\nZoneId=3\r\n");
+   }
+  }
+
+  static void VerifyMotwStrip() {
+   var dir = Path.Combine(Path.GetTempPath(), "maylo-motw-test-" + Guid.NewGuid().ToString("N"));
+   Directory.CreateDirectory(dir);
+   try {
+    string src = Path.Combine(dir, "downloaded-setup.exe");
+    string dst = Path.Combine(dir, "MAYLO.exe");
+    File.WriteAllText(src, "payload");
+    WriteZoneIdentifier(src);
+    if (!HasZoneIdentifier(src)) return; // Non-NTFS filesystem
+    InstallStore.CopyCleanFile(src, dst);
+    if (HasZoneIdentifier(dst)) throw new Exception("CopyCleanFile propagated Zone.Identifier MOTW!");
+    InstallStore.UnblockFile(src);
+    if (HasZoneIdentifier(src)) throw new Exception("UnblockFile failed to remove Zone.Identifier MOTW!");
+   } finally {
+    try { Directory.Delete(dir, true); } catch { }
+   }
+  }
+
   static void VerifyStagedUpdate() {
    var directory = Path.Combine(Path.GetTempPath(), "maylo-updater-test-" + Guid.NewGuid().ToString("N"));
-   var old = ReleaseVersion.Parse("0.1.0-beta.1");
-   var next = ReleaseVersion.Parse("0.1.0-beta.2");
+   var v1 = ReleaseVersion.Parse("0.1.0-beta.1");
+   var v2 = ReleaseVersion.Parse("0.1.0-beta.2");
+   var v3 = ReleaseVersion.Parse("0.1.0-beta.3");
    try {
     using (InstallStore.Lock(directory)) {
-     using (var zip = TestPackage(old, false)) InstallStore.Stage(directory, old, zip);
-     InstallStore.Activate(directory, old);
+     using (var zip = TestPackage(v1, false)) InstallStore.Stage(directory, v1, zip);
+     InstallStore.Activate(directory, v1);
      try {
-      using (var zip = TestPackage(next, true)) InstallStore.Stage(directory, next, zip);
+      using (var zip = TestPackage(v2, true)) InstallStore.Stage(directory, v2, zip);
       throw new Exception("Accepted archive traversal");
      } catch (InvalidDataException) { }
-     if (InstallStore.Current(directory).Text != old.Text) throw new Exception("Broken package changed the active version");
+     if (InstallStore.Current(directory).Text != v1.Text) throw new Exception("Broken package changed the active version");
 
-     using (var zip = TestPackage(next, false)) InstallStore.Stage(directory, next, zip);
-     if (InstallStore.Current(directory).Text != old.Text) throw new Exception("Staging changed the active version");
-     InstallStore.Activate(directory, next);
-     if (InstallStore.Current(directory).Text != next.Text || InstallStore.Current(directory, true).Text != old.Text)
+     using (var zip = TestPackage(v2, false)) InstallStore.Stage(directory, v2, zip);
+     if (InstallStore.Current(directory).Text != v1.Text) throw new Exception("Staging changed the active version");
+     InstallStore.Activate(directory, v2);
+     if (InstallStore.Current(directory).Text != v2.Text || InstallStore.Current(directory, true).Text != v1.Text)
       throw new Exception("Update should retain the previous version");
+
+     using (var zip = TestPackage(v3, false)) InstallStore.Stage(directory, v3, zip);
+     InstallStore.Activate(directory, v3);
+     InstallStore.PruneOldVersions(directory);
+     if (Directory.Exists(Path.Combine(InstallStore.Versions(directory), v1.Text)))
+      throw new Exception("PruneOldVersions failed to remove superseded v1");
+
      InstallStore.Activate(directory, InstallStore.Current(directory, true));
-     if (InstallStore.Current(directory).Text != old.Text) throw new Exception("Rollback failed");
+     if (InstallStore.Current(directory).Text != v2.Text) throw new Exception("Rollback failed");
     }
    } finally {
     if (Directory.Exists(directory)) Directory.Delete(directory, true);

@@ -1,11 +1,17 @@
 using System;
+using System.Diagnostics;
 using System.Globalization;
+using System.IO;
+using System.Linq;
 using System.Net;
 using System.Threading;
 using System.Windows;
+using MayloRelease;
 
 namespace MayhemCompanion {
  public static class Program {
+  public static string PendingRestartLauncher;
+
   [STAThread]
   public static int Main(string[] args) {
    Thread.CurrentThread.CurrentCulture = CultureInfo.GetCultureInfo("en-US");
@@ -22,15 +28,18 @@ namespace MayhemCompanion {
     }
    }
 
+   bool startMinimized = args.Any(a => a == "--autostart" || a == "--minimized");
+
    bool first;
    using (var mutex = new Mutex(true, "Local\\MayhemCompanionV2", out first)) {
     if (!first) {
-     MessageBox.Show("maylo is already running. Open its tray icon or press Alt+G / F9.", "maylo");
+     if (!startMinimized)
+      MessageBox.Show("maylo is already running. Open its tray icon or press Alt+G / F9.", "maylo");
      return 0;
     }
 
     var app = new Application();
-    var hub = new HybridHubWindow();
+    var hub = new HybridHubWindow(false, startMinimized);
     app.SessionEnding += (s, e) => hub.PrepareQuit();
     app.DispatcherUnhandledException += (s, e) => {
      MessageBox.Show(e.Exception.Message, "maylo");
@@ -38,11 +47,36 @@ namespace MayhemCompanion {
     };
     using (var cancellation = new CancellationTokenSource()) {
      GitHubUpdater.Start(cancellation.Token);
-     try { app.Run(hub); }
-     finally { cancellation.Cancel(); }
+     try {
+      if (startMinimized && hub.Config.MinimizeToTray) {
+       app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+       hub.Closed += (s, e) => app.Shutdown();
+       hub.WindowState = WindowState.Minimized;
+       hub.ShowInTaskbar = false;
+       hub.Show();
+       hub.Hide();
+       hub.ShowInTaskbar = true;
+       app.Run();
+      } else {
+       app.Run(hub);
+      }
+     } finally {
+      cancellation.Cancel();
+     }
     }
-    return 0;
    }
+
+   // Mutex is now fully released — launch updated MAYLO.exe cleanly if user clicked Restart to Update!
+   if (!String.IsNullOrEmpty(PendingRestartLauncher) && File.Exists(PendingRestartLauncher)) {
+    try {
+     InstallStore.UnblockFile(PendingRestartLauncher);
+     using (Process.Start(new ProcessStartInfo(PendingRestartLauncher) {
+      WorkingDirectory = Path.GetDirectoryName(PendingRestartLauncher),
+      UseShellExecute = false
+     })) { }
+    } catch { }
+   }
+   return 0;
   }
  }
 }

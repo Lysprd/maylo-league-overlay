@@ -291,13 +291,25 @@ namespace MayhemCompanion {
 
   public void PrepareQuit() { realQuit = true; }
 
-  public HybridHubWindow(bool diagnostics = false) {
+  public HybridHubWindow(bool diagnostics = false, bool startMinimized = false) {
    Directory.CreateDirectory(WebCache.Root);
    try {
     var loaded = Json.Serializer().Deserialize<V2Settings>(File.ReadAllText(Path.Combine(WebCache.Root, "settings-v3.json")));
     if (loaded != null) Config = loaded;
    } catch { }
    SanitizeConfig();
+   // Self-heal Mark-of-the-Web (:Zone.Identifier) on installed MAYLO.exe & current MAYLO-Hub.exe
+   // so Windows Startup never prompts "Voulez-vous exécuter ce logiciel ?" even for upgraded installs!
+   if (!diagnostics) {
+    try {
+     MayloRelease.InstallStore.UnblockFile(System.Reflection.Assembly.GetExecutingAssembly().Location);
+     var installedRoot = MayloRelease.InstallStore.InstalledRoot();
+     if (installedRoot != null) {
+      MayloRelease.InstallStore.UnblockFile(Path.Combine(installedRoot, MayloRelease.InstallStore.Launcher));
+     }
+     if (Config.LaunchWithWindows) SetStartupRegistry(true);
+    } catch { }
+   }
    // Reset stale pre-v14 overlay panel coordinates once (flush edge-to-edge layout!)
    if (Config.LayoutVersion < 14) {
     Config.Panels.Clear();
@@ -348,7 +360,10 @@ namespace MayhemCompanion {
     RegisterAppHotkeys();
    };
 
-   Loaded += async (s, e) => {
+    Loaded += async (s, e) => {
+    GitHubUpdater.StatusChanged += () => {
+     if (!closing) Dispatcher.BeginInvoke((Action)(() => { if (!closing) PushState(); }));
+    };
     try {
      BootProgress = 24; BootStage = "Loading…";
      await InitWeb();
@@ -461,8 +476,10 @@ namespace MayhemCompanion {
      var installRoot = MayloRelease.InstallStore.InstalledRoot();
      string launcher = installRoot == null ? System.Reflection.Assembly.GetExecutingAssembly().Location
       : Path.Combine(installRoot, MayloRelease.InstallStore.Launcher);
-     if (enabled) key.SetValue("MAYLO", "\"" + launcher + "\"");
-     else if (key.GetValue("MAYLO") != null) key.DeleteValue("MAYLO", false);
+     if (enabled) {
+      MayloRelease.InstallStore.UnblockFile(launcher);
+      key.SetValue("MAYLO", "\"" + launcher + "\" --autostart");
+     } else if (key.GetValue("MAYLO") != null) key.DeleteValue("MAYLO", false);
     }
    } catch { }
   }
@@ -1426,7 +1443,13 @@ namespace MayhemCompanion {
      panels = Config.Panels.ToDictionary(kv => kv.Key, kv => new { x = kv.Value.X, y = kv.Value.Y })
     },
     inspectedItem = inspectedItemObj,
-    inspectedAugment = inspectedAugObj
+    inspectedAugment = inspectedAugObj,
+    update = new {
+     state = GitHubUpdater.GetStatus().State,
+     version = GitHubUpdater.GetStatus().Version,
+     message = GitHubUpdater.GetStatus().Message,
+     canRestart = GitHubUpdater.GetStatus().CanRestart
+    }
    };
    return Json.Serializer().Serialize(payload);
   }
@@ -1670,6 +1693,18 @@ namespace MayhemCompanion {
       else if (sk == "onboardingSeen") Config.OnboardingSeen = Convert.ToBoolean(sv);
       Save(); if (overlay != null) overlay.Sync(); PushState();
       if (resyncLoadout) await SyncLoadout();
+      break;
+     case "checkUpdates":
+      await GitHubUpdater.CheckNowAsync();
+      PushState();
+      break;
+     case "applyUpdateRestart":
+      var upRoot = MayloRelease.InstallStore.InstalledRoot();
+      if (upRoot != null) {
+       Program.PendingRestartLauncher = Path.Combine(upRoot, MayloRelease.InstallStore.Launcher);
+       realQuit = true;
+       Close();
+      }
       break;
      case "exportItemSet":
       if (Selected == null) { ImportStatus = "Select a champion first."; PushState(); break; }
