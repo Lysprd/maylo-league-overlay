@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.1.0-beta.13
+- **Mode-scoped Overview & Match History:** Both **Overview** (Recent Form, Win Rate, KDA, Trend Graph, Personal Champion Pool) and **Match History** now automatically follow the active mode selected in the top bar (`ARAM Mayhem`, `ARAM`, or `Ranked SR`) with a clean mode badge and zero redundant queue filter bars.
+- **Animated glowing Update button:** Upgraded both the topbar `Update · Restart` pill and the sidebar `Restart & Update` card/button with a pulsing indigo-violet glow, shimmer sweep, animated BorderBeam, and live emerald ping dot so available updates stand out immediately.
+- **Animated Live Game indicator in sidebar:** Added a pulsing emerald dot right next to **Live game** whenever an active League match is detected (and an amber pulse during Champ Select).
+
 ## v0.1.0-beta.12
 - **Instant Champ Select Win Rate & Team Synergy (`Cards & Bench`):** Speeds up Champ Select polling (`450ms`), pre-warms mode Tier Lists in memory (zero blank flash), captures ARAM / ARAM Mayhem priority Champion Cards (`isPriority` + pickable subset) and ally intents, and ranks every card & bench option by combined **Win Rate + Team Synergy** (real ally duo WR pre-fetched in background + instant 0ms DDragon comp synergy: `Frontline`, `AP Carry`, `AD DPS`, `Enchanter`). Highlights top upgrade picks with a golden glow and `+X.X%` upgrade delta so you never miss a winning pick.
 - **Faster In-Game Augment Card Flip & Synergy Visibility:** Accelerates OCR scanning to `55ms` and keeps wide multi-card capture active during the first 2.5s of card reveal so all 3–4 augment cards lock in the exact frame they flip. Displays active synergy bonus (`+X.X% syn`) right alongside Win Rate plus top combo synergy hints (`Combo +Partner`) even on Augment #1.

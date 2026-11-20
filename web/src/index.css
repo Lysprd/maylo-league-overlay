@@ -130,6 +130,29 @@
   animation: bar-shimmer 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
+@keyframes update-glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.45), 0 0 14px rgba(99, 102, 241, 0.38), 0 0 26px rgba(99, 102, 241, 0.16);
+  }
+  50% {
+    box-shadow: 0 0 0 1px rgba(165, 180, 252, 0.85), 0 0 22px rgba(99, 102, 241, 0.68), 0 0 38px rgba(139, 92, 246, 0.32);
+  }
+}
+
+.update-btn-glow {
+  animation: update-glow-pulse 2.2s ease-in-out infinite;
+}
+
+.update-btn-glow::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 25%, rgba(255, 255, 255, 0.24) 50%, transparent 75%);
+  transform: translateX(-140%);
+  animation: bar-shimmer 2.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  pointer-events: none;
+}
+
 /* Native Chromium View Transitions API for silky radial Dark <-> Light reveal (zero muddy cross-fade!) */
 ::view-transition-old(root),
 ::view-transition-new(root) {

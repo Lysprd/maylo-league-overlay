@@ -590,7 +590,6 @@ export function HubView({ state }: { state: AppState }) {
   const [tierFilter, setTierFilter] = useState('All');
   const [augSearch, setAugSearch] = useState('');
   const [augRarity, setAugRarity] = useState('All');
-  const [historyFilter, setHistoryFilter] = useState('All');
   const [selectedMatch, setSelectedMatch] = useState<MatchRecord | null>(null);
   const [liveFilter, setLiveFilter] = useState<'Overview' | 'Your team' | 'Opponents'>('Overview');
   const [tierSearch, setTierSearch] = useState('');
@@ -742,17 +741,27 @@ export function HubView({ state }: { state: AppState }) {
     );
   }, [state.allAugments, augSearch, augRarity]);
 
+  const activeModeLabel = isMayhem ? 'ARAM Mayhem' : isSR ? 'Ranked SR' : 'ARAM';
+
+  const modeHistory = useMemo(() => {
+    return (state.history || []).filter((m) => {
+      const modeStr = (m.mode || '').toUpperCase();
+      const isMayhemMatch = Boolean(m.mayhem) || m.queue === 2400 || modeStr === 'KIWI';
+      const isAramMatch = !isMayhemMatch && (m.queue === 450 || m.queue === 720 || modeStr === 'ARAM');
+      const isArenaMatch = m.queue === 1700 || m.queue === 1710 || modeStr === 'CHERRY';
+      if (state.activeMode === 'MAYHEM') return isMayhemMatch;
+      if (state.activeMode === 'ARAM') return isAramMatch;
+      return !isMayhemMatch && !isAramMatch && !isArenaMatch;
+    });
+  }, [state.history, state.activeMode]);
+
   const filteredHistory = useMemo(() => {
     const q = historySearch.trim().toLowerCase();
-    return (state.history || []).filter((m) => {
+    return modeHistory.filter((m) => {
       if (q && !m.championName.toLowerCase().includes(q) && !m.queueName.toLowerCase().includes(q)) return false;
-      if (historyFilter === 'All') return true;
-      if (historyFilter === 'Mayhem') return m.mayhem;
-      if (historyFilter === 'ARAM') return m.queue === 450;
-      if (historyFilter === 'Ranked') return m.queue === 420 || m.queue === 440;
       return true;
     });
-  }, [state.history, historyFilter, historySearch]);
+  }, [modeHistory, historySearch]);
 
   const computePool = (matches: MatchRecord[]) => {
     const valid = matches.filter((m) => !m.remake);
@@ -801,8 +810,8 @@ export function HubView({ state }: { state: AppState }) {
     };
   };
 
-  const overviewTopChampions = useMemo(() => computePool(state.history || []), [state.history]);
-  const overviewStats = useMemo(() => computeStats(state.history || []), [state.history]);
+  const overviewTopChampions = useMemo(() => computePool(modeHistory), [modeHistory]);
+  const overviewStats = useMemo(() => computeStats(modeHistory), [modeHistory]);
   const topPlayedChampions = useMemo(() => computePool(filteredHistory), [filteredHistory]);
   const historyStats = useMemo(() => computeStats(filteredHistory), [filteredHistory]);
 
@@ -912,8 +921,12 @@ export function HubView({ state }: { state: AppState }) {
               type="button"
               onClick={() => postAction('applyUpdateRestart')}
               title={state.update.message || `Restart maylo to apply v${state.update.version}`}
-              className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 rounded-full border border-indigo-400/45 bg-indigo-500/15 px-2.5 py-1 text-[11px] font-semibold leading-none text-indigo-600 dark:text-indigo-200 hover:bg-indigo-500/25 transition-colors cursor-pointer mr-1"
+              className="update-btn-glow relative overflow-hidden inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 rounded-full border border-indigo-300/60 bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-500 px-3 py-1 text-[11px] font-bold leading-none text-white hover:brightness-110 transition-all cursor-pointer mr-1"
             >
+              <span className="relative flex size-2 shrink-0">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-300 opacity-80" />
+                <span className="relative inline-flex size-2 rounded-full bg-emerald-300" />
+              </span>
               <Download className="size-3 shrink-0" />
               <span>Update · Restart</span>
             </button>
@@ -1053,7 +1066,28 @@ export function HubView({ state }: { state: AppState }) {
                     />
                   )}
                   <Icon className="relative z-10 size-4 shrink-0" />
-                  <span className="relative z-10 truncate">{item.label}</span>
+                  <span className="relative z-10 truncate flex-1 text-left">{item.label}</span>
+                  {item.id === 'Live' && (game.inGame || game.inSelection) && (
+                    <span
+                      title={game.inGame ? 'Match live' : 'Champ Select'}
+                      className="relative z-10 flex size-2.5 shrink-0 items-center justify-center"
+                    >
+                      <span
+                        className={cn(
+                          'absolute inline-flex h-full w-full animate-ping rounded-full opacity-75',
+                          game.inGame ? 'bg-emerald-400' : 'bg-amber-400'
+                        )}
+                      />
+                      <span
+                        className={cn(
+                          'relative inline-flex size-2 rounded-full',
+                          game.inGame
+                            ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)]'
+                            : 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.85)]'
+                        )}
+                      />
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -1062,8 +1096,16 @@ export function HubView({ state }: { state: AppState }) {
           {/* Minimal Account / Live Update / Overlay Preview Footer */}
           <div className="space-y-2 border-t border-zinc-200/80 dark:border-white/[0.07] pt-3">
             {(state.update?.state === 'downloading' || state.update?.state === 'ready') && (
-              <div className="rounded-xl border border-indigo-400/40 bg-indigo-500/10 p-2.5 space-y-2">
-                <div className="flex items-center justify-between gap-2 min-w-0">
+              <div
+                className={cn(
+                  'relative overflow-hidden rounded-xl border p-2.5 space-y-2',
+                  state.update.canRestart
+                    ? 'border-indigo-400/65 bg-indigo-500/14 shadow-[0_0_24px_rgba(99,102,241,0.22)]'
+                    : 'border-indigo-400/40 bg-indigo-500/10'
+                )}
+              >
+                {state.update.canRestart && <BorderBeam tone="indigo" />}
+                <div className="relative z-10 flex items-center justify-between gap-2 min-w-0">
                   <span className="inline-flex items-center gap-1.5 min-w-0 text-[11px] font-bold text-indigo-700 dark:text-indigo-200 whitespace-nowrap">
                     {state.update.state === 'downloading' ? (
                       <RefreshCw className="size-3 animate-spin shrink-0" />
@@ -1077,21 +1119,23 @@ export function HubView({ state }: { state: AppState }) {
                     </span>
                   </span>
                   {state.update.state === 'ready' && (
-                    <span className="size-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                    <span className="relative flex size-2.5 shrink-0 items-center justify-center">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative inline-flex size-2 rounded-full bg-emerald-400" />
+                    </span>
                   )}
                 </div>
                 {state.update.canRestart ? (
-                  <Button
-                    size="xs"
-                    variant="accent"
-                    className="w-full whitespace-nowrap"
+                  <button
+                    type="button"
                     onClick={() => postAction('applyUpdateRestart')}
+                    className="update-btn-glow relative z-10 overflow-hidden flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-500 px-2.5 py-1.5 text-[11px] font-bold text-white hover:brightness-110 transition-all cursor-pointer"
                   >
                     <RotateCcw className="size-3 shrink-0" />
                     <span>Restart &amp; Update</span>
-                  </Button>
+                  </button>
                 ) : state.update.state === 'ready' ? (
-                  <div className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                  <div className="relative z-10 text-[10px] text-zinc-500 dark:text-zinc-400">
                     Ready to apply once match ends
                   </div>
                 ) : null}
@@ -1522,9 +1566,9 @@ export function HubView({ state }: { state: AppState }) {
               </div>
             )}
 
-            {/* VIEW: DASHBOARD / OVERVIEW */}
+            {/* VIEW: DASHBOARD / OVERVIEW (MODE-SCOPED) */}
             {view === 'Dashboard' && (() => {
-              const recentForm = (state.history || []).filter((m) => !m.remake).slice(0, 10);
+              const recentForm = modeHistory.filter((m) => !m.remake).slice(0, 10);
               const metaPicks =
                 state.tierList.length > 0
                   ? state.tierList.slice(0, 8).map((t) => ({
@@ -1564,13 +1608,16 @@ export function HubView({ state }: { state: AppState }) {
                         </div>
                       )}
                       <div className="min-w-0">
-                        <SwissEyebrow index="01" label="SUMMONER OVERVIEW" className="mb-1" />
+                        <SwissEyebrow index="01" label={`OVERVIEW · ${activeModeLabel.toUpperCase()}`} className="mb-1" />
                         <div className="flex flex-wrap items-center gap-2">
                           <h1 className="font-display truncate text-xl font-bold tracking-tight text-zinc-900 dark:text-white">
                             {state.privateMode
                               ? 'Private Summoner'
                               : state.account?.riotId || 'Summoner Overview'}
                           </h1>
+                          <span className="font-mono-tech rounded-md border border-indigo-400/25 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-semibold text-indigo-600 dark:text-indigo-300">
+                            {activeModeLabel}
+                          </span>
                           {state.account && (
                             <span className="font-mono-tech rounded-md border border-zinc-200 dark:border-white/12 bg-white/80 dark:bg-white/[0.06] px-2 py-0.5 text-[10px] font-semibold text-zinc-600 dark:text-zinc-300 backdrop-blur-xs">
                               LV {state.account.level} · {state.account.region}
@@ -1582,7 +1629,7 @@ export function HubView({ state }: { state: AppState }) {
                             Form
                           </span>
                           {recentForm.length === 0 ? (
-                            <span className="text-[11px] text-zinc-400">No matches loaded yet</span>
+                            <span className="text-[11px] text-zinc-400">No recent {activeModeLabel} matches</span>
                           ) : (
                             recentForm.map((m) => (
                               <span
@@ -1648,14 +1695,14 @@ export function HubView({ state }: { state: AppState }) {
                     },
                     {
                       code: '02',
-                      label: 'Recent Win Rate',
+                      label: `${activeModeLabel} Win Rate`,
                       node:
                         overviewStats.games > 0 ? (
                           <NumberTicker value={overviewStats.wr} decimals={1} suffix="%" />
                         ) : (
                           <span>—</span>
                         ),
-                      sub: `${overviewStats.games} recent matches`,
+                      sub: `${overviewStats.games} ${activeModeLabel} matches`,
                       icon: TrendingUp,
                     },
                     {
@@ -1714,7 +1761,7 @@ export function HubView({ state }: { state: AppState }) {
                 {/* Performance Trend Graph + Personal Champion Pool */}
                 <div className="grid grid-cols-1 lg:grid-cols-[1.55fr_1fr] gap-4">
                   <GlassCard surface="hub" className="p-5">
-                    <OverviewTrendChart matches={state.history || []} />
+                    <OverviewTrendChart matches={modeHistory} />
                   </GlassCard>
 
                   <GlassCard surface="hub" className="p-5 flex flex-col justify-between">
@@ -1725,7 +1772,7 @@ export function HubView({ state }: { state: AppState }) {
                             Your Top Champions
                           </h3>
                           <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                            Personal pool from recent games
+                            Personal {activeModeLabel} pool
                           </p>
                         </div>
                         <Button
@@ -2545,20 +2592,20 @@ export function HubView({ state }: { state: AppState }) {
               );
             })()}
 
-            {/* VIEW: MATCH HISTORY (Strict CSS Grid Alignment!) */}
+            {/* VIEW: MATCH HISTORY (MODE-SCOPED & STRICT CSS GRID ALIGNMENT) */}
             {view === 'History' && (
               <div className="space-y-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h2 className="text-base font-bold text-zinc-900 dark:text-white">
+                  <div className="flex items-center gap-2.5">
+                    <h2 className="font-display text-lg font-bold tracking-tight text-zinc-900 dark:text-white">
                       Match History
                     </h2>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                      Aligned performance breakdown across Mayhem, ARAM, and Summoner's Rift
-                    </p>
+                    <span className="rounded-md border border-indigo-400/25 bg-indigo-500/10 px-2 py-0.5 font-mono-tech text-[10px] font-semibold text-indigo-600 dark:text-indigo-300">
+                      {activeModeLabel}
+                    </span>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <div className="relative w-44">
+                    <div className="relative w-48">
                       <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" />
                       <input
                         type="text"
@@ -2568,17 +2615,6 @@ export function HubView({ state }: { state: AppState }) {
                         className="w-full rounded-xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#14151B] py-1.5 pl-8 pr-2.5 text-xs text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:border-indigo-400 focus:outline-none"
                       />
                     </div>
-                    <SegmentedTabs
-                      size="sm"
-                      value={historyFilter}
-                      onChange={setHistoryFilter}
-                      options={[
-                        { value: 'All', label: 'All' },
-                        { value: 'Mayhem', label: 'Mayhem' },
-                        { value: 'ARAM', label: 'ARAM' },
-                        { value: 'Ranked', label: 'Ranked' },
-                      ]}
-                    />
                     <Button size="sm" variant="secondary" onClick={() => postAction('refreshProfile')}>
                       <RefreshCw className="size-3.5" />
                       Refresh
@@ -2656,7 +2692,9 @@ export function HubView({ state }: { state: AppState }) {
                 <GlassCard surface="hub" className="overflow-hidden">
                   {filteredHistory.length === 0 ? (
                     <div className="p-10 text-center text-sm text-zinc-500 dark:text-zinc-400">
-                      No recent matches found for this filter. Connect the League client and press Refresh.
+                      {historySearch.trim()
+                        ? `No ${activeModeLabel} matches matching "${historySearch}".`
+                        : `No recent ${activeModeLabel} matches found yet. Play a game or press Refresh.`}
                     </div>
                   ) : (
                     <div className="overflow-x-auto">
