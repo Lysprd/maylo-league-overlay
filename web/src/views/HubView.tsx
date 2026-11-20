@@ -469,6 +469,7 @@ export function HubView({ state }: { state: AppState }) {
   const isSR = state.activeMode === 'SR';
   const selected = state.selected;
   const game = state.game;
+  const unsupportedMatch = (game.inGame || game.inSelection) && game.modeKey === '';
   const rawView = state.view || 'Dashboard';
   const normalizedView = !isMayhem && rawView === 'Augments' ? 'TierList' : rawView;
   // If user enters Build without a selected champion, cleanly show the full Champions grid!
@@ -770,11 +771,12 @@ export function HubView({ state }: { state: AppState }) {
             </button>
           )}
           <Status
-            variant={game.inGame ? 'live' : state.settings.connected ? 'success' : 'default'}
-            pulse={game.inGame}
+            variant={unsupportedMatch ? 'warning' : game.inGame ? 'live' : state.settings.connected ? 'success' : 'default'}
+            pulse={game.inGame && !unsupportedMatch}
+            title={state.connectionText}
             className="hidden md:inline-flex mr-1"
           >
-            {game.inGame
+            {unsupportedMatch ? 'Unsupported mode' : game.inGame
               ? `In Game · ${game.live.clock || 'Live'}`
               : game.inSelection
                 ? 'Champ Select'
@@ -3508,19 +3510,19 @@ export function HubView({ state }: { state: AppState }) {
                   checked={state.settings.showBuildOverlay}
                   onChange={(v) => postAction('updateSetting', { key: 'showBuildOverlay', value: v })}
                   label="Build Guide HUD"
-                  description="Next buy recommendation, component tracking, WR/PR, and gold remaining"
+                  description="Summoner’s Rift, ARAM and Mayhem · next purchase, components and gold remaining"
                 />
                 <Switch
                   checked={state.settings.showPerfStrip}
                   onChange={(v) => postAction('updateSetting', { key: 'showPerfStrip', value: v })}
                   label="Live CS/min & Performance Strip"
-                  description="Compact real-time CS/min (with 7.5 SR benchmark), KDA, and Kill Participation %"
+                  description="Summoner’s Rift, ARAM and Mayhem · CS/min, KDA and kill participation"
                 />
                 <Switch
                   checked={state.settings.showJungleWidget}
                   onChange={(v) => postAction('updateSetting', { key: 'showJungleWidget', value: v })}
                   label="On-Minimap Objective Timers & Jungle Path (SR)"
-                  description="Pins Dragon, Voidgrubs, Herald, Baron timers & early clear route directly onto the minimap (resizable live in Alt+O)"
+                  description="Summoner’s Rift, including Swiftplay · objectives and early jungle routes on the minimap"
                 />
                 {state.settings.showJungleWidget && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 rounded-xl border border-zinc-200/70 dark:border-white/[0.06] bg-zinc-50/60 dark:bg-white/[0.02] px-4 py-3 mx-2 my-1">
@@ -3579,13 +3581,13 @@ export function HubView({ state }: { state: AppState }) {
                   checked={state.settings.showRerollBar}
                   onChange={(v) => postAction('updateSetting', { key: 'showRerollBar', value: v })}
                   label="Reroll Reference Bar"
-                  description="Shows top S-tier augment targets during Mayhem augment selection"
+                  description="Mayhem · recommended reroll targets while choosing an augment"
                 />
                 <Switch
                   checked={state.settings.showBenchBar}
                   onChange={(v) => postAction('updateSetting', { key: 'showBenchBar', value: v })}
                   label="Smart ARAM / Mayhem Bench Bar"
-                  description="Shows all bench champions ranked by Tier & Win Rate during Champ Select"
+                  description="ARAM and Mayhem · ranks available bench champions during champion select"
                 />
                 <Switch
                   checked={state.settings.showSpellTracker}
@@ -3721,13 +3723,13 @@ export function HubView({ state }: { state: AppState }) {
                   checked={state.settings.ocr}
                   onChange={(v) => postAction('updateSetting', { key: 'ocr', value: v })}
                   label="Auto-Detect Augments (OCR)"
-                  description="Fast title-band detection placing centered tier badges above augment cards"
+                  description="Mayhem · reads card titles and centers the tier badges above them"
                 />
                 <Switch
                   checked={state.settings.ocrAllModes}
                   onChange={(v) => postAction('updateSetting', { key: 'ocrAllModes', value: v })}
-                  label="Enable OCR in All ARAM/Arena Modes"
-                  description="Run augment detection even if Riot queue metadata differs"
+                  label="Scan augments outside Mayhem"
+                  description="Also scan in supported Summoner’s Rift and ARAM matches"
                 />
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 px-2.5 pt-1">

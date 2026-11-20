@@ -162,6 +162,8 @@ export interface LiveSummary {
   players: LivePlayer[];
   events: string[];
   objectives: ObjectiveTimer[];
+  inhibitors?: ObjectiveTimer[];
+  inventoryValue?: { blue: number; red: number; partial: boolean } | null;
   spellCooldowns?: SpellCooldown[];
 }
 
@@ -273,7 +275,7 @@ export interface AppState {
   bootStage: string;
   view: string;
   activeMode: GameModeKey;
-  detectedMode: GameModeKey;
+  detectedMode: GameModeKey | '';
   activeRole: string;
   detectedRole: string;
   availableRoles: string[];
@@ -305,6 +307,8 @@ export interface AppState {
   game: {
     phase: string;
     mode: string;
+    modeKey?: GameModeKey | '';
+    modeLabel?: string;
     champion: string;
     inGame: boolean;
     inSelection: boolean;

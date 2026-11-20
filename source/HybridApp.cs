@@ -159,7 +159,7 @@ namespace MayhemCompanion {
    target = app.Preview && !app.Game.InGame && !app.Game.InSelection ? IntPtr.Zero : app.Game.Window;
    if (target == IntPtr.Zero && !app.Preview && (app.IsOverlayEditing || app.InGameSheet)) target = Native.Target(app.Game.InGame);
    bool modeAllowed = app.Game.Mayhem || app.Config.ShowBuildOverlay || app.Config.OcrAllModes || app.Config.ShowPerfStrip || app.Config.ShowJungleWidget || app.Config.ShowBenchBar;
-   bool active = app.OverlayVisible && (app.Preview || (app.Config.Overlay && (app.IsOverlayEditing || app.InGameSheet || ((app.Game.InGame || app.Game.InSelection) && modeAllowed))));
+   bool active = app.OverlayVisible && (app.Preview || (app.Config.Overlay && (app.IsOverlayEditing || app.InGameSheet || ((app.Game.InGame || app.Game.InSelection) && app.Game.ModeKey != "" && modeAllowed))));
    bool desktopPreview = app.Preview && (target == IntPtr.Zero || !Native.IsWindow(target) || !Native.IsWindowVisible(target) || Native.IsIconic(target));
    if (!desktopPreview && (target == IntPtr.Zero || !Native.IsWindow(target) || Native.IsIconic(target))) active = false;
    var fg = Native.GetForegroundWindow();
@@ -578,7 +578,7 @@ namespace MayhemCompanion {
    ocrTimer.Tick += async (s, e) => {
     ocrTimer.Interval = TimeSpan.FromMilliseconds(offerSession.Visible ? 75 : 110);
     bool allowOcr = Game.InGame && Config.Ocr && Config.Connected && !HubActive && !InGameSheet && !IsOverlayEditing && !ocrBusy && (Game.Mayhem || Config.OcrAllModes);
-    if (!allowOcr) return;
+    if (!allowOcr || Game.ModeKey == "") return;
     await ReadAugments(false);
    };
    ocrTimer.Start();
@@ -708,7 +708,7 @@ namespace MayhemCompanion {
 
   void HotkeyDestination(string destination, bool fromGlobal) {
    // In-game: ZERO-LAG centered overlay sheet instead of spawning the heavy desktop Hub!
-   if (Game.InGame && overlay != null && Config.Overlay) {
+   if (Game.InGame && Game.ModeKey != "" && overlay != null && Config.Overlay) {
     string tab = destination == "Live" ? "live" : (destination == "Build" ? "build" : "build");
     ToggleInGameSheet(tab);
     return;
@@ -875,11 +875,11 @@ namespace MayhemCompanion {
    selectionBusy = true;
    try {
     string alias = await Bridge.ReadSelectedChampion();
-    if (alias == "" || closing) return;
+    if (alias == "" || closing || Game.InGame) return;
     fastChampion = alias; lastFastSelection = DateTime.UtcNow;
     if (!Game.InSelection) displayedClientChampion = "";
     Game.Champion = alias; Game.InSelection = true; Game.Window = Native.Target(false);
-    FollowPage(alias);
+    if (Game.ModeKey != "") FollowPage(alias);
    } catch { } finally { selectionBusy = false; }
   }
 
@@ -902,7 +902,11 @@ namespace MayhemCompanion {
     Game = fresh;
     plannedItems.RemoveWhere(id => Game.Owned.Contains(id));
     lastGoodGame = DateTime.UtcNow;
-    ConnectionText = Game.InSelection ? "Champ Select · " + Game.Mode : Game.InGame ? "Live · " + (Game.Mayhem ? "ARAM Mayhem" : Game.Mode) + (Game.Gold >= 0 ? " · " + ((int)Game.Gold).ToString("N0") + "g" : "") : "Client connected · " + Game.Phase + (String.IsNullOrEmpty(Game.Mode) ? "" : " · " + Game.Mode);
+    bool matchPhase = Game.InSelection || Game.InGame;
+    ConnectionText = matchPhase
+     ? (Game.InGame ? "Live · " : "Champ Select · ") + Game.ModeLabel +
+       (Game.ModeKey == "" && Game.ModeLabel != "Unsupported mode" ? " · Unsupported mode" : "")
+     : "Client connected · " + Game.Phase + (String.IsNullOrEmpty(Game.Mode) ? "" : " · " + Game.ModeLabel);
 
     bool enteringMatch = (!oldGame.InSelection && Game.InSelection) || (!wasInGame && Game.InGame);
     if (enteringMatch) {
@@ -914,9 +918,9 @@ namespace MayhemCompanion {
     bool inQueue = Game.Phase == "Matchmaking" || Game.Phase == "ReadyCheck";
     bool hasModeSignal = Game.InSelection || Game.InGame || (Game.Phase == "Lobby" && (!String.IsNullOrEmpty(Game.Mode) || Game.QueueId > 0 || Game.Mayhem));
     if (hasModeSignal) {
-     string detected = GameBridge.DetectModeKey(Game.Mode, Game.QueueId, Game.Mayhem);
+     string detected = Game.ModeKey;
      DetectedMode = detected;
-     if (!manualModeOverride && ActiveMode != detected) {
+     if (!manualModeOverride && detected != "" && ActiveMode != detected) {
       ActiveMode = detected;
       if (ActiveMode != "SR") { ActiveRole = ""; DetectedRole = ""; }
       EnforceModeView();
@@ -931,7 +935,7 @@ namespace MayhemCompanion {
       string roleDet = MultiModeParser.NormalizeRole(Game.AssignedRole);
       if (roleDet != "") {
        DetectedRole = roleDet;
-       if (!manualRoleOverride && ActiveMode == "SR" && ActiveRole != roleDet) {
+       if (!manualRoleOverride && detected == "SR" && ActiveMode == "SR" && ActiveRole != roleDet) {
         ActiveRole = roleDet;
         if (Selected != null) { var _ = SelectChampion(Selected, false, roleDet); }
        }
@@ -948,10 +952,11 @@ namespace MayhemCompanion {
      wasInGame = true;
      if (Game.Window != IntPtr.Zero && Native.IsWindow(Game.Window) && Native.IsWindowVisible(Game.Window)) hadGameWindow = true;
     }
-    if (!Game.InGame && offerSession.Visible) ResetOfferSession();
+    if ((!Game.InGame || Game.ModeKey == "") && offerSession.Visible) ResetOfferSession();
+    if (matchPhase && Game.ModeKey == "" && InGameSheet && !Preview) CloseInGameSheet(false);
     if (Game.InSelection && String.IsNullOrEmpty(Game.Champion) && DateTime.UtcNow - lastFastSelection < TimeSpan.FromSeconds(2)) Game.Champion = fastChampion;
     if (!oldGame.InGame && Game.InGame) displayedClientChampion = "";
-    FollowPage(Game.Champion);
+    if (Game.ModeKey != "") FollowPage(Game.Champion);
     await SyncLoadout();
     if (overlay != null) overlay.Sync();
     PushState();
@@ -974,9 +979,9 @@ namespace MayhemCompanion {
   async Task SyncLoadout() {
    if (loadoutBusy) return;
    if (!Game.InSelection && !Game.InGame) { Bridge.ResetSpellSelection(); return; }
-   if (Selected == null || !ChampionMatches(Selected, Game.Champion)) return;
+   if (Game.ModeKey != ActiveMode || Selected == null || !ChampionMatches(Selected, Game.Champion)) return;
    // CRITICAL: Ensure ModeData has actually finished loading for THIS champion and THIS mode before pushing runes/spells/shop!
-   if (ModeData == null || ModeData.ChampionSlug != Selected.Slug || (ActiveMode == "SR" && ModeData.ModeKey != "SR")) return;
+   if (ModeData == null || ModeData.ChampionSlug != Selected.Slug || ModeData.ModeKey != ActiveMode) return;
    if (DateTime.UtcNow - loadoutAttempt < TimeSpan.FromSeconds(0.9)) return;
    loadoutBusy = true;
    loadoutAttempt = DateTime.UtcNow;
@@ -1013,7 +1018,7 @@ namespace MayhemCompanion {
   async void TriggerRead() { await ReadAugments(true); }
 
   async Task ReadAugments(bool requested) {
-   if (ocrBusy || !Config.Connected) return;
+   if (ocrBusy || !Config.Connected || (Game.InGame && Game.ModeKey == "")) return;
    EnsureAugmentCatalog();
    if (Game.InGame && (Selected == null || !ChampionMatches(Selected, Game.Champion))) {
     var played = Champions.FirstOrDefault(c => ChampionMatches(c, Game.Champion));
@@ -1334,7 +1339,7 @@ namespace MayhemCompanion {
     tierList = TierList.Take(320).Select(t => new { id = t.Id, slug = t.Slug, name = t.Name, icon = t.Icon, role = t.Role, tier = t.Tier, rank = t.Rank, winRate = t.WinRate, pickRate = t.PickRate, banRate = t.BanRate, kda = t.Kda, games = t.Games, counters = t.Counters.ToArray() }).ToArray(),
     selected = Selected == null ? null : new { name = Selected.Name, slug = Selected.Slug, tier = selMode != null ? selMode.Tier : Selected.Tier, win = selMode != null ? selMode.WinRate : Selected.Win, pick = selMode != null ? selMode.PickRate : Selected.Pick, icon = Selected.Icon, assetKey = Selected.AssetKey },
     game = new {
-     phase = Game.Phase, mode = Game.Mode, champion = Game.Champion, inGame = Game.InGame, inSelection = Game.InSelection, mayhem = Game.Mayhem, gold = Game.Gold,
+     phase = Game.Phase, mode = Game.Mode, modeKey = Game.ModeKey, modeLabel = Game.ModeLabel, champion = Game.Champion, inGame = Game.InGame, inSelection = Game.InSelection, mayhem = Game.Mayhem, gold = Game.Gold,
      owned = Game.Owned.ToArray(), planned = plannedItems.ToArray(),
      bench = (Preview ? Champions.Take(6) : Game.Bench.Select(FromId).Where(c => c != null)).Select(c => { var be = modeEntryFor(c); return new { name = c.Name, slug = c.Slug, tier = be != null ? be.Tier : c.Tier, win = be != null ? be.WinRate : c.Win, pick = be != null ? be.PickRate : c.Pick, icon = MultiModeParser.ChampIconOf(c), assetKey = c.AssetKey }; }).OrderByDescending(c => c.win).ToArray(),
      team = Game.Team.Select(FromId).Where(c => c != null).Select(c => new { name = c.Name, slug = c.Slug, tier = c.Tier, win = c.Win, pick = c.Pick, icon = MultiModeParser.ChampIconOf(c), assetKey = c.AssetKey }).ToArray(),
@@ -1345,6 +1350,8 @@ namespace MayhemCompanion {
       activeLevel = Game.Live.ActiveLevel, q = Game.Live.AbilityQ, w = Game.Live.AbilityW, e = Game.Live.AbilityE, r = Game.Live.AbilityR,
       blueDragons = Game.Live.BlueDragons, redDragons = Game.Live.RedDragons, lastDragonType = Game.Live.LastDragonType,
       events = Game.Live.Events.ToArray(),
+      inventoryValue = Game.InGame && Game.ModeKey != "" ? Game.Live.InventoryValue(ActiveItemsMap()) : null,
+      inhibitors = Game.Live.Inhibitors.Select(o => new { key = o.Key, name = o.Name, status = o.Status, alive = o.Alive, secondsLeft = o.SecondsLeft }).ToArray(),
       objectives = Game.Live.Objectives.Select(o => new { key = o.Key, name = o.Name, status = o.Status, alive = o.Alive, secondsLeft = o.SecondsLeft }).ToArray(),
       spellCooldowns = activeCds.ToArray(),
       players = Game.Live.Players.Select(p => {

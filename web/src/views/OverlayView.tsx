@@ -507,12 +507,12 @@ function InGameCommandSheet({ state }: { state: AppState }) {
   const csPerMin = me && live.seconds > 20 ? me.cs / minutes : 0;
   const focuses = ['Adaptive', 'Ability power', 'On-hit', 'Critical strike', 'Survival'];
 
-  const modeLabel =
+  const modeLabel = (!state.preview && state.game.modeLabel) || (
     state.activeMode === 'MAYHEM'
       ? 'ARAM Mayhem'
       : state.activeMode === 'ARAM'
         ? 'ARAM'
-        : `Summoner's Rift${state.activeRole ? ' · ' + state.activeRole.toUpperCase() : ''}`;
+        : "Summoner's Rift");
 
   const blueTeam = live.players.filter((p) => p.team === 'ORDER');
   const redTeam = live.players.filter((p) => p.team === 'CHAOS');
@@ -523,6 +523,8 @@ function InGameCommandSheet({ state }: { state: AppState }) {
   }, [live.spellCooldowns]);
   const myTeam = me?.team ?? 'ORDER';
   const laneOpp = live.players.find((p) => p.isLaneOpponent) ?? null;
+  const inventory = live.inventoryValue;
+  const inventoryDifference = inventory ? inventory.blue - inventory.red : 0;
 
   const renderPlayerRow = (p: LivePlayer) => {
     const pCsMin = live.seconds > 20 ? (p.cs / minutes).toFixed(1) : '0.0';
@@ -1207,9 +1209,26 @@ function InGameCommandSheet({ state }: { state: AppState }) {
                 )}
               </div>
 
-              {live.objectives.length > 0 && (
+              {inventory && (
+                <div data-inventory-comparison className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-2.5 text-xs">
+                  <div className="text-zinc-300">
+                    Inventory value{inventory.partial && <span className="ml-2 text-amber-200">Partial data</span>}
+                  </div>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 tabular-nums">
+                    <span className="text-sky-300">Blue <strong>{inventory.blue.toLocaleString()}g</strong></span>
+                    <span className="text-rose-300">Red <strong>{inventory.red.toLocaleString()}g</strong></span>
+                    {!inventory.partial && inventoryDifference !== 0 && (
+                      <span className="text-zinc-300">
+                        {inventoryDifference > 0 ? 'Blue' : 'Red'} +{Math.abs(inventoryDifference).toLocaleString()}g
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {(live.objectives.length > 0 || !!live.inhibitors?.length) && (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  {live.objectives.map((obj) => (
+                  {[...live.objectives, ...(live.inhibitors ?? [])].map((obj) => (
                     <div
                       key={obj.key}
                       className="rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 flex items-center justify-between"
@@ -1328,7 +1347,8 @@ export function OverlayView({ state }: { state: AppState }) {
     return () => window.removeEventListener('keydown', onKey, true);
   }, [state.inGameSheet]);
 
-  if ((!state.settings.overlay && !state.preview) || !state.overlayVisible) {
+  if ((!state.settings.overlay && !state.preview) || !state.overlayVisible ||
+      (!state.preview && state.game.modeKey === '')) {
     return null;
   }
 
@@ -1389,7 +1409,9 @@ export function OverlayView({ state }: { state: AppState }) {
     !showAugments;
   const showBuildHud = showInGameHud && state.settings.showBuildOverlay && state.buildPath.length > 0;
   const showPerfStrip = showInGameHud && state.settings.showPerfStrip && (me !== null || state.preview);
-  const isSR = pScene === 'sr_hud' || (state.game.inGame ? state.game.mode === 'CLASSIC' : state.activeMode === 'SR');
+  const isSR = pScene === 'sr_hud' || (state.game.inGame
+    ? (state.game.modeKey ?? (['CLASSIC', 'SWIFTPLAY'].includes(state.game.mode) ? 'SR' : '')) === 'SR'
+    : state.activeMode === 'SR');
   const showJungleWidget =
     showInGameHud &&
     state.settings.showJungleWidget &&
@@ -1431,7 +1453,7 @@ export function OverlayView({ state }: { state: AppState }) {
           ]
         : [];
   const dragonObj = previewObjs.find((o) => o.key === 'dragon') ?? null;
-  const topPitCandidates = previewObjs.filter((o) => o.key !== 'dragon');
+  const topPitCandidates = previewObjs.filter((o) => o.key !== 'dragon' && o.status !== 'DONE');
   const topPitObj =
     topPitCandidates.find((o) => o.alive) ??
     [...topPitCandidates].sort((a, b) => a.secondsLeft - b.secondsLeft)[0] ??

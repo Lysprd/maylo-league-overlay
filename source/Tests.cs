@@ -68,6 +68,45 @@ namespace MayhemCompanion {
     Req(onD[0] == 4 && onF[1] == 4, "Flash D/F ordering");
     var aramLive = LiveParser.Parse(new Dictionary<string, object> { { "gameData", new Dictionary<string, object> { { "gameMode", "ARAM" }, { "gameTime", 400.0 } } } });
     Req(aramLive.Objectives.Count == 0, "Objectives must be empty outside Summoner's Rift");
+    Req(GameBridge.DetectModeKey("CLASSIC", 480, false) == "SR" &&
+        GameBridge.DetectModeKey("ARAM", 2400, false) == "MAYHEM" &&
+        GameBridge.DetectModeKey("ARAM", 720, false) == "ARAM" &&
+        GameBridge.DetectModeKey("CLASSIC", 1700, true) == "" &&
+        GameBridge.DetectModeKey("CHERRY", 0, false) == "" &&
+        GameBridge.DetectModeKey("CLASSIC", 99999, false) == "",
+        "Queue context must override generic or stale game modes");
+    var modeFixture = Json.Serializer().Deserialize<Dictionary<string, object>>(@"{
+     ""gameData"":{""gameMode"":""CLASSIC"",""gameTime"":410},
+     ""events"":{""Events"":[
+      {""EventName"":""InhibKilled"",""InhibKilled"":""Inhib_TOrder_L1_P1_10"",""EventTime"":380},
+      {""EventName"":""InhibKilled"",""InhibKilled"":""Inhib_TChaos_L2_P1_11"",""EventTime"":400},
+      {""EventName"":""InhibRespawned"",""InhibRespawned"":""Inhib_TChaos_L2_P1_11"",""EventTime"":403}
+     ]},
+     ""allPlayers"":[
+      {""team"":""ORDER"",""items"":[{""itemID"":100},{""itemID"":100}]},
+      {""team"":""CHAOS"",""items"":[{""itemID"":200}]}
+     ]
+    }");
+    var standard = LiveParser.Parse(modeFixture, "SR", 420);
+    var swift = LiveParser.Parse(modeFixture, "SR", 480);
+    Req(standard.Objectives.Single(x => x.Key == "grubs").SecondsLeft == 70 &&
+        standard.Objectives.Single(x => x.Key == "herald").SecondsLeft == 490 &&
+        standard.Objectives.Single(x => x.Key == "baron").SecondsLeft == 790, "Standard SR uses current objective schedule");
+    Req(swift.Objectives.Count == 2 && swift.Objectives.Single(x => x.Key == "baron").SecondsLeft == 310 &&
+        swift.Inhibitors.Count == 0 && LiveParser.Parse(modeFixture, "", 1700).Objectives.Count == 0,
+        "Swiftplay uses its own objectives and Arena receives no SR timers");
+    Req(standard.Inhibitors.Count == 1 && standard.Inhibitors[0].SecondsLeft == 270 &&
+        standard.Inhibitors[0].Name == "Blue Mid inhibitor", "Inhibitor events use their own clocks and respawn clears the matching inhibitor");
+    var priceFixture = new Dictionary<int, Dictionary<string, object>> {
+     { 100, new Dictionary<string, object> { { "priceTotal", 200 } } },
+     { 200, new Dictionary<string, object> { { "priceTotal", 350 } } }
+    };
+    var value = Json.D(Json.Serializer().DeserializeObject(Json.Serializer().Serialize(standard.InventoryValue(priceFixture))));
+    Req(Json.I(value, "blue") == 400 && Json.I(value, "red") == 350 && !String.Equals(Json.S(value, "partial"), "true", StringComparison.OrdinalIgnoreCase),
+     "Inventory totals count duplicate slots and are comparable only with complete prices");
+    priceFixture.Remove(200);
+    var partialInventory = Json.D(Json.Serializer().DeserializeObject(Json.Serializer().Serialize(standard.InventoryValue(priceFixture))));
+    Req(String.Equals(Json.S(partialInventory, "partial"), "true", StringComparison.OrdinalIgnoreCase), "Missing item prices are flagged as partial data");
 
     // 4. Multi-Language (FR + EN) Title-Band OCR + BandSignature skip + Single-card fallback
     int w = 1920, h = 1080;

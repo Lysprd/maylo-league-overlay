@@ -112,6 +112,8 @@ namespace MayhemCompanion {
  public class GameSnapshot {
   public string Phase = "Disconnected", Champion = "", Mode = "", AssignedRole = "";
   public int QueueId = 0;
+  public string ModeKey { get { return GameBridge.DetectModeKey(Mode, QueueId, Mayhem); } }
+  public string ModeLabel { get { return GameBridge.DescribeMode(Mode, QueueId, ModeKey); } }
   public List<int> Bench = new List<int>(), Team = new List<int>();
   public HashSet<int> Owned = new HashSet<int>();
   public double Gold = -1;

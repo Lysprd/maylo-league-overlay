@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.1.0-beta.8
+
+- Identify League queues separately and pause mode-specific overlays and automatic loadouts when the match mode is unsupported.
+- Restore the Swiftplay minimap with its own objectives and update the standard Rift objective schedule.
+- Compare the gold value of reported inventory items in Alt+G → Live. Incomplete totals are marked as partial.
+- Show standard Rift inhibitor respawn timers after confirmed destruction events.
+- List supported modes alongside overlay settings.
+
 ## v0.1.0-beta.7
 
 - Keep the augment badges in place during reroll animations and update the changed card as soon as OCR reads it.

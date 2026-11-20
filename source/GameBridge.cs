@@ -76,10 +76,45 @@ namespace MayhemCompanion {
   }
 
   public static string DetectModeKey(string mode, int queueId, bool mayhem) {
-   if (mayhem || IsMayhemMode(mode, queueId)) return "MAYHEM";
-   if (queueId == 450 || String.Equals(mode, "ARAM", StringComparison.OrdinalIgnoreCase)) return "ARAM";
-   if (queueId == 420 || queueId == 440 || queueId == 400 || queueId == 430 || queueId == 480 || queueId == 490 || String.Equals(mode, "CLASSIC", StringComparison.OrdinalIgnoreCase) || String.Equals(mode, "SWIFTPLAY", StringComparison.OrdinalIgnoreCase)) return "SR";
-   return "MAYHEM";
+   switch (queueId) {
+    case 2400: return "MAYHEM";
+    case 450: case 720: return "ARAM";
+    case 400: case 420: case 430: case 440: case 480: case 490: case 700:
+    case 830: case 840: case 850: case 870: case 880: case 890: return "SR";
+   }
+   // Published queue IDs take precedence over a generic map mode such as CLASSIC.
+   if (queueId > 0) return "";
+   if (mayhem || IsMayhemMode(mode)) return "MAYHEM";
+   if (String.Equals(mode, "ARAM", StringComparison.OrdinalIgnoreCase)) return "ARAM";
+   if (String.Equals(mode, "CLASSIC", StringComparison.OrdinalIgnoreCase) ||
+       String.Equals(mode, "SWIFTPLAY", StringComparison.OrdinalIgnoreCase) ||
+       String.Equals(mode, "PRACTICETOOL", StringComparison.OrdinalIgnoreCase)) return "SR";
+   return "";
+  }
+
+  public static string DescribeMode(string mode, int queueId, string modeKey) {
+   switch (queueId) {
+    case 400: return "Normal Draft";
+    case 420: return "Ranked Solo/Duo";
+    case 430: return "Normal Blind Pick";
+    case 440: return "Ranked Flex";
+    case 480: return "Swiftplay";
+    case 490: return "Quickplay";
+    case 700: return "Summoner's Rift Clash";
+    case 720: return "ARAM Clash";
+    case 830: case 840: case 850: case 870: case 880: case 890: return "Co-op vs. AI";
+    case 1700: case 1710: return "Arena";
+   }
+   if (modeKey == "MAYHEM") return "ARAM Mayhem";
+   if (modeKey == "ARAM") return "ARAM";
+   if (modeKey == "SR") {
+    if (String.Equals(mode, "SWIFTPLAY", StringComparison.OrdinalIgnoreCase)) return "Swiftplay";
+    if (String.Equals(mode, "PRACTICETOOL", StringComparison.OrdinalIgnoreCase)) return "Practice Tool";
+    return "Summoner's Rift";
+   }
+   if (String.Equals(mode, "CHERRY", StringComparison.OrdinalIgnoreCase)) return "Arena";
+   if (String.Equals(mode, "JADE", StringComparison.OrdinalIgnoreCase)) return "League Classic";
+   return "Unsupported mode";
   }
 
   public static async Task<string> Request(string method, string url, string authorization = null, string jsonBody = null) {
@@ -293,7 +328,7 @@ namespace MayhemCompanion {
     if (DateTime.UtcNow < nextLiveProbe) throw new Exception("Client phase cached");
     var game = Json.Serializer().Deserialize<Dictionary<string, object>>(await Get("https://127.0.0.1:2999/liveclientdata/allgamedata"));
     if (game == null) throw new Exception("Empty live game data");
-    snapshot.Live = LiveParser.Parse(game); var active = game.ContainsKey("activePlayer") ? Json.D(game["activePlayer"]) : null;
+    var active = game.ContainsKey("activePlayer") ? Json.D(game["activePlayer"]) : null;
     var me = Json.A(game, "allPlayers").Select(Json.D).FirstOrDefault(p => p != null && new[] { "riotId", "summonerName" }.Any(k => Json.S(p, k) != "" && Json.S(p, k) == Json.S(active, k)));
     if (me != null) {
      snapshot.InGame = true; snapshot.Phase = "In game";
@@ -301,12 +336,6 @@ namespace MayhemCompanion {
      if (snapshot.Champion == "") snapshot.Champion = Json.S(me, "championName");
      snapshot.Gold = active != null && active.ContainsKey("currentGold") ? Convert.ToDouble(active["currentGold"], System.Globalization.CultureInfo.InvariantCulture) : -1;
      foreach (var i in Json.A(me, "items")) snapshot.Owned.Add(Json.I(Json.D(i), "itemID"));
-     var meLive = snapshot.Live.Players.FirstOrDefault(p => p.Me);
-     string livePos = meLive != null ? MultiModeParser.NormalizeRole(meLive.Position) : "";
-     if (livePos != "") snapshot.AssignedRole = livePos;
-     else if (meLive != null && (String.Equals(meLive.SpellKey1, "SummonerSmite", StringComparison.OrdinalIgnoreCase) || String.Equals(meLive.SpellKey2, "SummonerSmite", StringComparison.OrdinalIgnoreCase))) snapshot.AssignedRole = "jungle";
-     else if (snapshot.Owned.Any(id => id == 3865 || id == 3866 || id == 3867 || id == 3869 || id == 3870 || id == 3871 || id == 3876 || id == 3877)) snapshot.AssignedRole = "support";
-     else snapshot.AssignedRole = lastAssignedRole;
      var data = game.ContainsKey("gameData") ? Json.D(game["gameData"]) : null;
      snapshot.Mode = Json.S(data, "gameMode"); snapshot.Mayhem = IsMayhemMode(snapshot.Mode);
      try {
@@ -319,8 +348,16 @@ namespace MayhemCompanion {
        string qMode = Json.S(q, "gameMode");
        if (qMode != "" && snapshot.Mode == "") snapshot.Mode = qMode;
        snapshot.Mayhem |= IsMayhemMode(qMode, snapshot.QueueId);
-      } else snapshot.Mayhem |= lastMayhem;
-     } catch { snapshot.Mayhem |= lastMayhem; }
+      }
+     } catch { }
+     if (snapshot.QueueId == 0 && (snapshot.Mode == "" || snapshot.Mode == "ARAM")) snapshot.Mayhem |= lastMayhem;
+     snapshot.Live = LiveParser.Parse(game, snapshot.ModeKey, snapshot.QueueId);
+     var meLive = snapshot.Live.Players.FirstOrDefault(p => p.Me);
+     string livePos = meLive != null ? MultiModeParser.NormalizeRole(meLive.Position) : "";
+     if (livePos != "") snapshot.AssignedRole = livePos;
+     else if (meLive != null && (String.Equals(meLive.SpellKey1, "SummonerSmite", StringComparison.OrdinalIgnoreCase) || String.Equals(meLive.SpellKey2, "SummonerSmite", StringComparison.OrdinalIgnoreCase))) snapshot.AssignedRole = "jungle";
+     else if (snapshot.Owned.Any(id => id == 3865 || id == 3866 || id == 3867 || id == 3869 || id == 3870 || id == 3871 || id == 3876 || id == 3877)) snapshot.AssignedRole = "support";
+     else snapshot.AssignedRole = lastAssignedRole;
      snapshot.Window = Native.Target(true);
      return snapshot;
     }
@@ -374,7 +411,7 @@ namespace MayhemCompanion {
      var gd = flow != null && flow.ContainsKey("gameData") ? Json.D(flow["gameData"]) : null;
      var q = gd != null && gd.ContainsKey("queue") ? Json.D(gd["queue"]) : null;
      snapshot.Mode = Json.S(q, "gameMode"); snapshot.QueueId = Json.I(q, "id"); snapshot.Mayhem = IsMayhemMode(snapshot.Mode, snapshot.QueueId);
-    } catch { snapshot.Mayhem = lastMayhem; }
+    } catch { snapshot.Mayhem = lastMayhem && snapshot.Mode == ""; }
    }
    if (snapshot.Champion != "") lastChampion = snapshot.Champion;
    if (phase == "Lobby" || phase == "ChampSelect") lastMayhem = snapshot.Mayhem;
