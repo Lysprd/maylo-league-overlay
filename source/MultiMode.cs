@@ -634,7 +634,7 @@ namespace MayhemCompanion {
     if (pri > 0 && sec > 0 && p1.Count == 4 && p2.Count == 2) {
      var page = new RunePage {
       PrimaryStyle = pri, SecondaryStyle = sec,
-      Name = "MAYLO · " + champName + (modeKey == "SR" ? " " + RoleDisplay(role) : " ARAM"),
+      Name = "maylo · " + champName + (modeKey == "SR" ? " " + RoleDisplay(role) : " ARAM"),
       Source = data.SourceLabel
      };
      page.Perks.AddRange(p1);

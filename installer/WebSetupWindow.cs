@@ -25,8 +25,8 @@ namespace MayloSetup {
   public static int Run(string capture, bool record) {
    if (!InstallerEngine.IsWebView2Installed()) {
     if (capture != null) return 1;
-    var answer = MessageBox.Show("MAYLO needs Microsoft Edge WebView2. Open the official download page?",
-     "MAYLO setup", MessageBoxButton.YesNo, MessageBoxImage.Information);
+    var answer = MessageBox.Show("maylo needs Microsoft Edge WebView2. Open the official download page?",
+     "maylo setup", MessageBoxButton.YesNo, MessageBoxImage.Information);
     if (answer == MessageBoxResult.Yes)
      using (Process.Start(new ProcessStartInfo(RuntimePage) { UseShellExecute = true })) { }
     return 1;
@@ -42,7 +42,7 @@ namespace MayloSetup {
 
    try {
     using (var payload = Assembly.GetExecutingAssembly().GetManifestResourceStream("maylo-payload.zip")) {
-     if (payload == null) throw new IOException("MAYLO setup payload is missing.");
+     if (payload == null) throw new IOException("maylo setup payload is missing.");
      MayloRelease.InstallStore.Extract(payload, root);
     }
     loader = LoadLibrary(Path.Combine(root, "WebView2Loader.dll"));
@@ -50,7 +50,7 @@ namespace MayloSetup {
     AppDomain.CurrentDomain.AssemblyResolve += resolve;
     return RunWindow(root, capture, record);
    } catch (Exception ex) {
-    if (capture == null) MessageBox.Show(ex.Message, "MAYLO setup", MessageBoxButton.OK, MessageBoxImage.Error);
+    if (capture == null) MessageBox.Show(ex.Message, "maylo setup", MessageBoxButton.OK, MessageBoxImage.Error);
     else File.WriteAllText(capture + ".error.txt", ex.ToString());
     return 1;
    } finally {
@@ -75,7 +75,7 @@ namespace MayloSetup {
 
  internal sealed class WebSetupWindow : Window {
   const string Page = "https://setup.maylo.local/index.html#setup";
-  const string CapturePath = @"%LocalAppData%\MAYLO";
+  const string CapturePath = @"%LocalAppData%\maylo";
   readonly WebView2 web = new WebView2();
   readonly JavaScriptSerializer json = new JavaScriptSerializer { MaxJsonLength = 32768 };
   readonly TaskCompletionSource<bool> ready = new TaskCompletionSource<bool>();
@@ -89,7 +89,7 @@ namespace MayloSetup {
    this.root = root;
    this.capture = capture;
    this.record = record;
-   Title = "MAYLO Setup";
+   Title = "maylo setup";
    Width = Math.Min(914, SystemParameters.WorkArea.Width);
    Height = Math.Min(590, SystemParameters.WorkArea.Height);
    WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -130,7 +130,7 @@ namespace MayloSetup {
     if (closed) return;
     Result = 1;
     if (capture != null) File.WriteAllText(capture + ".error.txt", ex.ToString());
-    else MessageBox.Show(this, ex.Message, "MAYLO setup", MessageBoxButton.OK, MessageBoxImage.Error);
+    else MessageBox.Show(this, ex.Message, "maylo setup", MessageBoxButton.OK, MessageBoxImage.Error);
     Close();
    }
   }
@@ -176,7 +176,7 @@ namespace MayloSetup {
 
   void Browse(string path) {
    using (var dialog = new System.Windows.Forms.FolderBrowserDialog {
-    Description = "Choose the MAYLO install folder",
+    Description = "Choose the maylo install folder",
     SelectedPath = Directory.Exists(path) ? path : InstallerEngine.GetInstalledDir()
    }) {
     if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
@@ -212,7 +212,7 @@ namespace MayloSetup {
     using (Process.Start(new ProcessStartInfo(installedExe) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(installedExe) })) { }
     Close();
    } catch (Exception ex) {
-    MessageBox.Show(this, ex.Message, "Open MAYLO", MessageBoxButton.OK, MessageBoxImage.Error);
+    MessageBox.Show(this, ex.Message, "Open maylo", MessageBoxButton.OK, MessageBoxImage.Error);
    }
   }
 
@@ -225,7 +225,7 @@ namespace MayloSetup {
    Directory.CreateDirectory(capture);
    for (int frame = 0; frame < 36; frame++) {
     if (frame == 12) Progress(12, "Preparing files…");
-    if (frame == 17) Progress(54, "Installing MAYLO…");
+    if (frame == 17) Progress(54, "Installing maylo…");
     if (frame == 21) Progress(90, "Creating Windows shortcuts…");
     if (frame == 26) Send(new { type = "setupDone", path = CapturePath });
     await Task.Delay(115);

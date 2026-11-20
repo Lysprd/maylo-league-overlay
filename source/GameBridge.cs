@@ -182,13 +182,13 @@ namespace MayhemCompanion {
    };
    var blocks = new List<object>();
    if (starters.Count > 0) blocks.Add(makeBlock("Starters", starters));
-   if (coreIds.Count > 0) blocks.Add(makeBlock("MAYLO Core Build (" + modeLabel + ")", coreIds));
+   if (coreIds.Count > 0) blocks.Add(makeBlock("maylo Core Build (" + modeLabel + ")", coreIds));
    if (bootIds.Count > 0) blocks.Add(makeBlock("Boots", bootIds));
    if (situationalIds.Count > 0) blocks.Add(makeBlock("Situational", situationalIds));
 
    sets.Insert(0, new {
     uid = "maylo-" + Norm(championName),
-    title = "MAYLO · " + championName + " (" + modeLabel + ")",
+    title = "maylo · " + championName + " (" + modeLabel + ")",
     type = "custom",
     map = "any",
     mode = "any",
@@ -206,7 +206,7 @@ namespace MayhemCompanion {
    var pages = Json.Serializer().DeserializeObject(await LcuGet("/lol-perks/v1/pages")) as object[];
    var pageDicts = (pages ?? new object[0]).Select(Json.D).Where(d => d != null).ToList();
    foreach (var d in pageDicts) {
-    if (Json.S(d, "name").StartsWith("MAYLO") && Json.S(d, "isDeletable").Equals("true", StringComparison.OrdinalIgnoreCase)) {
+    if (Json.S(d, "name").StartsWith("maylo", StringComparison.OrdinalIgnoreCase) && Json.S(d, "isDeletable").Equals("true", StringComparison.OrdinalIgnoreCase)) {
      string pid = Json.S(d, "id");
      if (pid != "") try { await LcuRequest("DELETE", "/lol-perks/v1/pages/" + pid); } catch { }
     }

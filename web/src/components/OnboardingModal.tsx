@@ -174,7 +174,7 @@ export function OnboardingModal({ settings, onFinish }: OnboardingModalProps) {
                   Built for Instant Clarity
                 </h2>
                 <p className="mt-1.5 text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-                  Launch League and play normally. MAYLO detects your game mode, role, and champion automatically the second you enter Champ Select.
+                  Launch League and play normally. maylo detects your game mode, role, and champion automatically the second you enter Champ Select.
                 </p>
               </div>
             </div>

@@ -15,10 +15,10 @@ type SetupMessage =
   | { type: 'setupError'; message: string };
 
 const options = [
-  { key: 'desktop', label: 'Desktop shortcut', description: 'Open MAYLO from your desktop.' },
-  { key: 'startMenu', label: 'Start menu shortcuts', description: 'Add shortcuts for MAYLO and its uninstaller.' },
-  { key: 'startup', label: 'Launch with Windows', description: 'Open MAYLO when you sign in.' },
-  { key: 'openAfter', label: 'Open after installation', description: 'Start MAYLO as soon as setup finishes.' },
+  { key: 'desktop', label: 'Desktop shortcut', description: 'Open maylo from your desktop.' },
+  { key: 'startMenu', label: 'Start menu shortcuts', description: 'Add shortcuts for maylo and its uninstaller.' },
+  { key: 'startup', label: 'Launch with Windows', description: 'Open maylo when you sign in.' },
+  { key: 'openAfter', label: 'Open after installation', description: 'Start maylo as soon as setup finishes.' },
 ] as const;
 
 export function SetupView() {
@@ -69,7 +69,7 @@ export function SetupView() {
           <div className="relative flex flex-col items-center">
             <AnimatedMayloEmblem light={false} />
             <h1 className="mt-5 font-display text-[28px] font-semibold tracking-tight text-white">
-              {phase === 'done' ? 'Ready for the Rift' : 'Install MAYLO'}
+              {phase === 'done' ? 'Ready for the Rift' : 'Install maylo'}
             </h1>
             <p className="mt-1.5 max-w-64 text-[13px] leading-relaxed text-zinc-400">
               Your Windows companion for League of Legends and ARAM Mayhem.
@@ -106,7 +106,7 @@ export function SetupView() {
                 </>
               ) : phase === 'installing' ? (
                 <div className="my-auto py-8">
-                  <h2 className="font-display text-xl font-semibold text-white">Installing MAYLO</h2>
+                  <h2 className="font-display text-xl font-semibold text-white">Installing maylo</h2>
                   <div role="progressbar" aria-label="Installation progress" aria-valuenow={progress.percent}
                     className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
                     <div className="relative h-full overflow-hidden rounded-full bg-gradient-to-r from-indigo-600 via-indigo-500 to-indigo-400 transition-[width] duration-300 motion-reduce:transition-none"
@@ -121,7 +121,7 @@ export function SetupView() {
               ) : (
                 <div className="my-auto py-8">
                   <div className="mb-3 inline-flex size-10 items-center justify-center rounded-xl border border-emerald-400/30 bg-emerald-500/15 text-emerald-300"><Check className="size-5" /></div>
-                  <h2 className="font-display text-xl font-semibold text-white">MAYLO is installed</h2>
+                  <h2 className="font-display text-xl font-semibold text-white">maylo is installed</h2>
                   <p className="mt-2 text-[13px] leading-relaxed text-zinc-400">
                     In League, select Borderless video mode for the in-game overlay.
                   </p>
@@ -149,7 +149,7 @@ export function SetupView() {
               setPhase('installing');
               postAction('setupInstall', { path, ...choices });
             }}>
-            {phase === 'done' ? 'Open MAYLO' : 'Install MAYLO'} <ArrowRight className="size-4" />
+            {phase === 'done' ? 'Open maylo' : 'Install maylo'} <ArrowRight className="size-4" />
           </Button>
         </div>
       </footer>

@@ -25,7 +25,7 @@ namespace MayhemCompanion {
    bool first;
    using (var mutex = new Mutex(true, "Local\\MayhemCompanionV2", out first)) {
     if (!first) {
-     MessageBox.Show("MAYLO is already running. Open its tray icon or press Alt+G / F9.", "MAYLO");
+     MessageBox.Show("maylo is already running. Open its tray icon or press Alt+G / F9.", "maylo");
      return 0;
     }
 
@@ -33,7 +33,7 @@ namespace MayhemCompanion {
     var hub = new HybridHubWindow();
     app.SessionEnding += (s, e) => hub.PrepareQuit();
     app.DispatcherUnhandledException += (s, e) => {
-     MessageBox.Show(e.Exception.Message, "MAYLO");
+     MessageBox.Show(e.Exception.Message, "maylo");
      e.Handled = true;
     };
     using (var cancellation = new CancellationTokenSource()) {

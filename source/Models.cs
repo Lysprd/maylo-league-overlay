@@ -8,9 +8,9 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 
-[assembly: System.Reflection.AssemblyTitle("MAYLO")]
+[assembly: System.Reflection.AssemblyTitle("maylo")]
 [assembly: System.Reflection.AssemblyDescription("Multi-mode League & ARAM Mayhem companion")]
-[assembly: System.Reflection.AssemblyProduct("MAYLO")]
+[assembly: System.Reflection.AssemblyProduct("maylo")]
 [assembly: System.Runtime.Versioning.TargetFramework(".NETFramework,Version=v4.8", FrameworkDisplayName = ".NET Framework 4.8")]
 
 namespace MayhemCompanion {
@@ -47,7 +47,7 @@ namespace MayhemCompanion {
   public int PrimaryStyle;
   public int SecondaryStyle;
   public List<int> Perks = new List<int>();
-  public string Name = "MAYLO Runes";
+  public string Name = "maylo Runes";
   public string Source = "OP.GG";
  }
 
@@ -213,7 +213,7 @@ namespace MayhemCompanion {
 
   public static async Task<string> DownloadUrl(string url) {
    var req = (HttpWebRequest)WebRequest.Create(url);
-   req.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 MAYLO/12.0";
+   req.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 maylo/" + MayloRelease.BuildInfo.Version;
    req.Accept = "application/json, text/html;q=0.9";
    req.Headers["Accept-Language"] = "en-US,en;q=0.9";
    req.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate;

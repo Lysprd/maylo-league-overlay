@@ -18,9 +18,9 @@ using Microsoft.Win32;
 using MayloRelease;
 using IOPath = System.IO.Path;
 
-[assembly: AssemblyTitle("MAYLO Setup")]
+[assembly: AssemblyTitle("maylo setup")]
 [assembly: AssemblyDescription("Windows Installer for maylo — League of Legends & ARAM Mayhem Companion")]
-[assembly: AssemblyProduct("MAYLO")]
+[assembly: AssemblyProduct("maylo")]
 [assembly: AssemblyCompany("maylo")]
 
 namespace MayloSetup {
@@ -210,7 +210,7 @@ namespace MayloSetup {
    var release = ReleaseVersion.Parse(Version);
    using (InstallStore.Lock(targetDir))
    using (var res = asm.GetManifestResourceStream("maylo-payload.zip")) {
-    if (res == null) throw new Exception("Embedded MAYLO payload not found.");
+    if (res == null) throw new Exception("Embedded maylo payload not found.");
     var launcher = IOPath.Combine(targetDir, InstallStore.Launcher);
     var current = InstallStore.Current(targetDir);
     if (File.Exists(launcher) && current == null) throw new IOException("Choose a folder without another MAYLO.exe.");
@@ -230,12 +230,12 @@ namespace MayloSetup {
    progress(90, "Creating Windows shortcuts…");
    if (desktop) {
     CreateShortcut(IOPath.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "MAYLO.lnk"),
-     exe, directory, "MAYLO · League of Legends companion");
+     exe, directory, "maylo · League of Legends companion");
    }
    if (startMenu) {
     string menu = IOPath.Combine(Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "Programs", "MAYLO");
-    CreateShortcut(IOPath.Combine(menu, "MAYLO.lnk"), exe, directory, "MAYLO · League of Legends companion");
-    CreateShortcut(IOPath.Combine(menu, "Uninstall MAYLO.lnk"), exe, directory, "Uninstall MAYLO", "--uninstall");
+    CreateShortcut(IOPath.Combine(menu, "MAYLO.lnk"), exe, directory, "maylo · League of Legends companion");
+    CreateShortcut(IOPath.Combine(menu, "Uninstall MAYLO.lnk"), exe, directory, "Uninstall maylo", "--uninstall");
    }
    RegisterUninstall(directory, exe, exe, (int)Math.Max(1024, GetPayloadUncompressedBytes() / 1024));
    SetStartup(exe, startup);
@@ -247,10 +247,10 @@ namespace MayloSetup {
     var current = InstallStore.Current(root);
     var previous = InstallStore.Current(root, true);
     var release = current ?? previous;
-    if (release == null) throw new IOException("No valid MAYLO version is installed.");
+    if (release == null) throw new IOException("No valid maylo version is installed.");
     try {
      using (var app = InstallStore.Launch(root, release)) {
-      if (app.WaitForExit(2500) && app.ExitCode != 0) throw new IOException("MAYLO could not start.");
+      if (app.WaitForExit(2500) && app.ExitCode != 0) throw new IOException("maylo could not start.");
      }
     } catch (Exception) {
      if (previous == null || previous.Text == release.Text) throw;
@@ -320,8 +320,8 @@ namespace MayloSetup {
 
   public static void Uninstall(string installDir, bool removeUserData) {
    if (!File.Exists(IOPath.Combine(installDir, InstallStore.Launcher)) || InstallStore.Current(installDir) == null)
-    throw new IOException("MAYLO installation not found.");
-   if (InstallationIsRunning(installDir)) throw new IOException("Quit MAYLO from its tray icon, then try again.");
+    throw new IOException("maylo installation not found.");
+   if (InstallationIsRunning(installDir)) throw new IOException("Quit maylo from its tray icon, then try again.");
    using (InstallStore.Lock(installDir)) {
     foreach (var dir in Directory.GetDirectories(InstallStore.Versions(installDir))) {
      if (ReleaseVersion.Parse(IOPath.GetFileName(dir)) != null && (File.GetAttributes(dir) & FileAttributes.ReparsePoint) == 0)
@@ -393,13 +393,13 @@ namespace MayloSetup {
     head.Children.Add(tile);
    }
    var titles = new StackPanel();
-   titles.Children.Add(new TextBlock { Text = "Uninstall MAYLO", FontSize = 17, FontWeight = FontWeights.Bold, Foreground = Brushes.White });
+   titles.Children.Add(new TextBlock { Text = "Uninstall maylo", FontSize = 17, FontWeight = FontWeights.Bold, Foreground = Brushes.White });
    titles.Children.Add(new TextBlock { Text = installDir, FontFamily = new FontFamily("Consolas"), FontSize = 10.5, Foreground = UiAssets.Brush(138, 138, 150), TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 340 });
    head.Children.Add(titles);
    body.Children.Add(head);
 
    statusText = new TextBlock {
-    Text = "Remove MAYLO, its shortcuts and its Windows startup entry.",
+    Text = "Remove maylo, its shortcuts and its Windows startup entry.",
     FontSize = 12, Foreground = UiAssets.Brush(190, 190, 200), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 16, 0, 14)
    };
    body.Children.Add(statusText);
@@ -446,7 +446,7 @@ namespace MayloSetup {
     btnRemove.IsEnabled = false;
     try {
      InstallerEngine.Uninstall(installDir, chkPurge.IsChecked == true);
-     statusText.Text = "MAYLO has been uninstalled.";
+     statusText.Text = "maylo has been uninstalled.";
      btnCancel.Content = "Close";
     } catch (Exception ex) {
      statusText.Text = ex.Message;
@@ -486,7 +486,7 @@ namespace MayloSetup {
      using (Process.Start(new ProcessStartInfo(temp, "--remove-installed") { UseShellExecute = false })) { }
      return 0;
     } catch (Exception ex) {
-     MessageBox.Show(ex.Message, "MAYLO");
+     MessageBox.Show(ex.Message, "maylo");
      return 1;
     }
    }
@@ -499,7 +499,7 @@ namespace MayloSetup {
 
    if (String.Equals(IOPath.GetFileName(Assembly.GetExecutingAssembly().Location), InstallStore.Launcher, StringComparison.OrdinalIgnoreCase)) {
     try { InstallerEngine.LaunchCurrent(AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\')); }
-    catch (Exception ex) { MessageBox.Show(ex.Message, "MAYLO"); return 1; }
+    catch (Exception ex) { MessageBox.Show(ex.Message, "maylo"); return 1; }
     return 0;
    }
 

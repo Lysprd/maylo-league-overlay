@@ -221,10 +221,10 @@ namespace MayhemCompanion {
       new ObjectiveTimer { Key = "dragon", Name = "Dragon", Status = "1:42", Alive = false, SecondsLeft = 102 },
       new ObjectiveTimer { Key = "grubs", Name = "Voidgrubs", Status = "UP", Alive = true, SecondsLeft = 0 }
      };
-     w.Game.Live.Players.Add(new LivePlayer { Champion = "Briar", Name = "Maylo#EUW", Team = "ORDER", Position = "JUNGLE", Me = true, Level = 4, Kills = 2, Deaths = 0, Assists = 2, Cs = 28, Spell1 = "Smite", Spell2 = "Flash", SpellKey1 = "SummonerSmite", SpellKey2 = "SummonerFlash", Keystone = "Press the Attack", RuneTree = "Precision" });
+     w.Game.Live.Players.Add(new LivePlayer { Champion = "Briar", Name = "maylo#EUW", Team = "ORDER", Position = "JUNGLE", Me = true, Level = 4, Kills = 2, Deaths = 0, Assists = 2, Cs = 28, Spell1 = "Smite", Spell2 = "Flash", SpellKey1 = "SummonerSmite", SpellKey2 = "SummonerFlash", Keystone = "Press the Attack", RuneTree = "Precision" });
      w.Game.Live.Players.Add(new LivePlayer { Champion = "Aatrox", Name = "EnemyTop", Team = "CHAOS", Position = "TOP", Level = 4, Kills = 1, Deaths = 1, Assists = 0, Cs = 31, Spell1 = "Flash", Spell2 = "Teleport", SpellKey1 = "SummonerFlash", SpellKey2 = "SummonerTeleport", Keystone = "Conqueror", RuneTree = "Precision" });
      w.Game.Live.Players.Add(new LivePlayer { Champion = "Viego", Name = "EnemyJg", Team = "CHAOS", Position = "JUNGLE", Level = 4, Kills = 0, Deaths = 2, Assists = 1, Cs = 24, Spell1 = "Flash", Spell2 = "Smite", SpellKey1 = "SummonerFlash", SpellKey2 = "SummonerSmite", Keystone = "Conqueror", RuneTree = "Inspiration" });
-     w.Profile.Account = new AccountProfile { Name = "Maylo", Tag = "EUW", Level = 184, Region = "EUW1", ProfileIconId = 5367 };
+     w.Profile.Account = new AccountProfile { Name = "maylo", Tag = "EUW", Level = 184, Region = "EUW1", ProfileIconId = 5367 };
      var top3AugIds = mayhemGwen.Augments.Take(3).Select(a => a.Id).ToList();
      int[] kArr = { 12, 6, 14, 9, 4, 15, 11, 8, 13, 7 };
      int[] dArr = { 2, 5, 3, 2, 6, 1, 4, 3, 2, 4 };

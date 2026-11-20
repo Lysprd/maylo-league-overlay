@@ -56,7 +56,7 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             if (!($existing | ConvertFrom-Json).isDraft) { throw 'This release already exists' }
           } else {
-            $releaseArgs = @('release', 'create', $tag, '--target', $env:GITHUB_SHA, '--draft', '--generate-notes', '--title', "MAYLO $tag")
+            $releaseArgs = @('release', 'create', $tag, '--target', $env:GITHUB_SHA, '--draft', '--generate-notes', '--title', "maylo $tag")
             if ($env:MAYLO_VERSION.Contains('-beta.')) { $releaseArgs += '--prerelease' }
             gh @releaseArgs
             if ($LASTEXITCODE) { throw 'Could not create draft' }

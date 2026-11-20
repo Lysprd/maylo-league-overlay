@@ -772,7 +772,7 @@ export function HubView({ state }: { state: AppState }) {
 
           <button
             type="button"
-            title={state.pinned ? 'Unpin window (Always on Top ON)' : 'Pin MAYLO above League window'}
+            title={state.pinned ? 'Unpin window (Always on Top ON)' : 'Pin maylo above League window'}
             onClick={() => postAction('togglePin')}
             className={cn(
               'flex size-8 items-center justify-center rounded-lg cursor-pointer transition-colors',
@@ -3402,7 +3402,7 @@ export function HubView({ state }: { state: AppState }) {
             <div className="flex items-center justify-between border-b border-zinc-200/80 dark:border-white/[0.08] px-5 py-4 shrink-0">
               <div>
                 <h3 className="text-base font-bold text-zinc-900 dark:text-white">
-                  MAYLO Settings & Overlay Modules
+                  maylo settings & overlay modules
                 </h3>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">
                   Enable or disable individual overlay widgets and Champ Select automation
@@ -3466,7 +3466,7 @@ export function HubView({ state }: { state: AppState }) {
                   checked={state.settings.autoExportShop}
                   onChange={(v) => postAction('updateSetting', { key: 'autoExportShop', value: v })}
                   label="Auto-Export Build to In-Game Shop"
-                  description="Automatically creates a custom MAYLO Item Set in League shop in Champ Select & In-Game"
+                  description="Automatically creates a custom maylo item set in League shop in Champ Select & In-Game"
                 />
                 <Switch
                   checked={state.settings.autoAccept}
@@ -3478,7 +3478,7 @@ export function HubView({ state }: { state: AppState }) {
                   checked={state.settings.autoPage}
                   onChange={(v) => postAction('updateSetting', { key: 'autoPage', value: v })}
                   label="Auto-Follow Champion"
-                  description="Automatically switches MAYLO to your picked champion and detected game mode"
+                  description="Automatically switches maylo to your picked champion and detected game mode"
                 />
               </div>
 
@@ -3598,14 +3598,14 @@ export function HubView({ state }: { state: AppState }) {
                 <Switch
                   checked={state.settings.launchWithWindows}
                   onChange={(v) => postAction('updateSetting', { key: 'launchWithWindows', value: v })}
-                  label="Launch MAYLO with Windows"
-                  description="Automatically starts MAYLO when you sign in to Windows (no admin needed)"
+                  label="Launch maylo with Windows"
+                  description="Automatically starts maylo when you sign in to Windows (no admin needed)"
                 />
                 <Switch
                   checked={state.settings.minimizeToTray}
                   onChange={(v) => postAction('updateSetting', { key: 'minimizeToTray', value: v })}
                   label="Minimize to System Tray on Close"
-                  description="Closing the window keeps MAYLO running quietly in the taskbar tray"
+                  description="Closing the window keeps maylo running quietly in the taskbar tray"
                 />
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 px-2.5 pt-2">
                   {[

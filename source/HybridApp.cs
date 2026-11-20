@@ -71,7 +71,7 @@ namespace MayhemCompanion {
 
   public HybridOverlayWindow(HybridHubWindow owner) {
    app = owner;
-   Title = "MAYLO · Overlay";
+   Title = "maylo · Overlay";
    WindowStyle = WindowStyle.None;
    AllowsTransparency = true;
    Background = Brushes.Transparent;
@@ -237,7 +237,7 @@ namespace MayhemCompanion {
   public bool BootReady = false;
   public int BootProgress = 12;
   public string BootStage = "Loading…";
-  public string ConnectionText = "Connecting to League client…", StatusText = "MAYLO · Ready", OcrStatus = "Auto-scan ready · Alt+A", ImportStatus = "";
+  public string ConnectionText = "Connecting to League client…", StatusText = "maylo · Ready", OcrStatus = "Auto-scan ready · Alt+A", ImportStatus = "";
   public double OcrLastMs;
   public List<string> OcrLastLines = new List<string>();
   byte[] lastDebugPng;
@@ -307,7 +307,7 @@ namespace MayhemCompanion {
     Save();
    }
 
-   Title = "MAYLO · League & Mayhem Companion";
+   Title = "maylo · League & Mayhem Companion";
    MinWidth = 960; MinHeight = 640;
    Width = Math.Max(MinWidth, Math.Min(1220, SystemParameters.WorkArea.Width - 40));
    Height = Math.Max(MinHeight, Math.Min(790, SystemParameters.WorkArea.Height - 45));
@@ -513,12 +513,12 @@ namespace MayhemCompanion {
    try {
     tray = new System.Windows.Forms.NotifyIcon {
      Icon = System.Drawing.Icon.ExtractAssociatedIcon(System.Reflection.Assembly.GetExecutingAssembly().Location),
-     Text = "MAYLO · Alt+" + Config.HotkeySheet + " / F9 in game",
+     Text = "maylo · Alt+" + Config.HotkeySheet + " / F9 in game",
      Visible = true
     };
     var menu = new System.Windows.Forms.ContextMenuStrip();
-    menu.Items.Add("Open MAYLO", null, (s, e) => Dispatcher.Invoke(() => { Show(); WindowState = WindowState.Normal; Native.ForceForeground(handle); }));
-    menu.Items.Add("Quit MAYLO", null, (s, e) => Dispatcher.Invoke(() => { realQuit = true; Close(); }));
+    menu.Items.Add("Open maylo", null, (s, e) => Dispatcher.Invoke(() => { Show(); WindowState = WindowState.Normal; Native.ForceForeground(handle); }));
+    menu.Items.Add("Quit maylo", null, (s, e) => Dispatcher.Invoke(() => { realQuit = true; Close(); }));
     tray.ContextMenuStrip = menu;
     tray.DoubleClick += (s, e) => Dispatcher.Invoke(() => { Show(); WindowState = WindowState.Normal; Native.ForceForeground(handle); });
    } catch { }
@@ -1070,7 +1070,7 @@ namespace MayhemCompanion {
     Directory.CreateDirectory(WebCache.Root);
     if (lastDebugPng != null) File.WriteAllBytes(Path.Combine(WebCache.Root, "last-scan.png"), lastDebugPng);
     var sb = new StringBuilder();
-    sb.AppendLine("MAYLO " + MayloRelease.BuildInfo.Version + " OCR Diagnostic · " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+    sb.AppendLine("maylo " + MayloRelease.BuildInfo.Version + " OCR Diagnostic · " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
     sb.AppendLine("Status: " + OcrStatus);
     sb.AppendLine("Last scan ms: " + Math.Round(OcrLastMs));
     sb.AppendLine("Game: inGame=" + Game.InGame + " mode=" + Game.Mode + " mayhem=" + Game.Mayhem + " champ=" + Game.Champion);
@@ -1573,13 +1573,13 @@ namespace MayhemCompanion {
       OverlayVisible = true; if (overlay != null) overlay.Sync(); PushState(); break;
      case "exportConfig":
       try {
-       var sfd = new Microsoft.Win32.SaveFileDialog { Title = "Export MAYLO Settings", Filter = "MAYLO Config (*.json)|*.json", FileName = "maylo-settings.json" };
+       var sfd = new Microsoft.Win32.SaveFileDialog { Title = "Export maylo settings", Filter = "maylo config (*.json)|*.json", FileName = "maylo-settings.json" };
        if (sfd.ShowDialog(this) == true) { File.WriteAllText(sfd.FileName, Json.Serializer().Serialize(Config), Encoding.UTF8); StatusText = "Config exported to " + Path.GetFileName(sfd.FileName); PushState(); }
       } catch (Exception ex) { StatusText = "Export failed: " + ex.Message; PushState(); }
       break;
      case "importConfig":
       try {
-       var ofd = new Microsoft.Win32.OpenFileDialog { Title = "Import MAYLO Settings", Filter = "MAYLO Config (*.json)|*.json" };
+       var ofd = new Microsoft.Win32.OpenFileDialog { Title = "Import maylo settings", Filter = "maylo config (*.json)|*.json" };
        if (ofd.ShowDialog(this) == true) {
         var loaded = Json.Serializer().Deserialize<V2Settings>(File.ReadAllText(ofd.FileName, Encoding.UTF8));
         if (loaded != null) {
@@ -1623,7 +1623,7 @@ namespace MayhemCompanion {
      case "setHotkey":
       string hkField = Json.S(msg, "field"), hkKey = Json.S(msg, "key").Trim().ToUpperInvariant();
       if (hkKey.Length == 1 && hkKey[0] >= 'A' && hkKey[0] <= 'Z') {
-       if (hkKey == "H" || hkKey == "L") { StatusText = "Alt+" + hkKey + " is reserved by MAYLO."; PushState(); break; }
+       if (hkKey == "H" || hkKey == "L") { StatusText = "Alt+" + hkKey + " is reserved by maylo."; PushState(); break; }
        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
        if (hkField != "sheet") used.Add(Config.HotkeySheet);
        if (hkField != "overlay") used.Add(Config.HotkeyOverlay);
@@ -1634,7 +1634,7 @@ namespace MayhemCompanion {
        else if (hkField == "overlay") Config.HotkeyOverlay = hkKey;
        else if (hkField == "edit") Config.HotkeyEdit = hkKey;
        else if (hkField == "scan") Config.HotkeyScan = hkKey;
-       if (tray != null) tray.Text = "MAYLO · Alt+" + Config.HotkeySheet + " / F9 in game";
+       if (tray != null) tray.Text = "maylo · Alt+" + Config.HotkeySheet + " / F9 in game";
        Save(); RegisterAppHotkeys(); PushState();
       }
       break;
