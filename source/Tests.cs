@@ -26,6 +26,8 @@ namespace MayhemCompanion {
     var mayhemTier = MultiModeParser.LoadTierList("MAYHEM", "", "emerald_plus", champs, false).GetAwaiter().GetResult();
     Req(aramTier.Count >= 140, "OP.GG ARAM tier list must load 140+ champions (got " + aramTier.Count + ")");
     Req(String.Join(",", aramTier.Take(5).Select(x => x.Slug)) != String.Join(",", mayhemTier.Take(5).Select(x => x.Slug)), "ARAM top 5 must be distinct from Mayhem top 5");
+    var patchNotes = MultiModeParser.LoadPatchNotes(true).GetAwaiter().GetResult();
+    Req(patchNotes != null && patchNotes.Entries.Count >= 10 && !String.IsNullOrEmpty(patchNotes.PatchVersion), "OP.GG Patch Notes must load latest patch buffs/nerfs");
     Req(MultiModeParser.DDragonRunes.ContainsKey(8005) && MultiModeParser.DDragonRunes.ContainsKey(5008), "DDragon Runes & Stat Shards must be loaded");
     MultiModeParser.EnsureAugmentMeta().GetAwaiter().GetResult();
     string adaptDesc = MultiModeParser.GetAugmentDescription(1205, "ADAPt", null);
@@ -201,9 +203,9 @@ namespace MayhemCompanion {
       Req(actualPick.TrackClick(xs4[1], 0.50, t0.AddMilliseconds(50)), "Direct card click should be tracked");
       actualPick.Observe(emptyHits, t0.AddMilliseconds(210));
       Req(actualPick.Visible && actualPick.ConfirmedPick == null, "One empty frame cannot confirm a pick");
-      actualPick.Observe(emptyHits, t0.AddMilliseconds(1600));
+      actualPick.Observe(emptyHits, t0.AddMilliseconds(470));
       Req(!actualPick.Visible && actualPick.ConfirmedPick != null && actualPick.ConfirmedPick.Id == scan4.Hits[1].Stat.Id,
-       "A sustained disappearance after clicking a card confirms the pick");
+       "Two sustained empty frames (~250ms) after clicking a card must confirm the pick promptly without 1.5s lag");
 
       var ambiguous = new OfferSession();
       ambiguous.Observe(scan4.Hits, t0);
@@ -277,6 +279,7 @@ namespace MayhemCompanion {
      w.Champions = Parser.Champions(File.ReadAllText(Path.Combine(WebCache.Root, "champions.html")));
      var mayhemGwen = MultiModeParser.ParseMayhem(File.ReadAllText(Path.Combine(WebCache.Root, "gwen.html")));
      MultiModeParser.EnsureAugmentMeta().GetAwaiter().GetResult();
+     MultiModeParser.LoadPatchNotes(false).GetAwaiter().GetResult();
      w.ActiveMode = "SR"; w.DetectedMode = "SR";
      w.Config.TierRole = "JUNGLE"; w.Config.TierElo = "emerald_plus"; w.Config.FlashKey = "F"; w.Config.Theme = "dark"; w.Config.OnboardingSeen = true;
      w.Config.Panels.Clear();
@@ -342,6 +345,11 @@ namespace MayhemCompanion {
      await Task.Delay(700);
      await snap("Hub-Matchups-v12.png");
 
+     // 2c. Patch Notes (Buffs / Nerfs / Augments / Items!)
+     w.View = "PatchNotes"; w.PushState();
+     await Task.Delay(700);
+     await snap("Hub-PatchNotes-v12.png");
+
      // 3. Augment Detail Modal (Real CommunityDragon Effect Description!)
      w.ActiveMode = "MAYHEM"; w.View = "Augments";
      var adapt = mayhemGwen.Augments.FirstOrDefault(a => a.Id == 1205) ?? mayhemGwen.Augments[0];
@@ -366,6 +374,12 @@ namespace MayhemCompanion {
      await w.WebControl.CoreWebView2.ExecuteScriptAsync("document.documentElement.style.setProperty('background','#12151C','important');document.body.style.setProperty('background','#12151C','important');");
      await Task.Delay(900);
      await snap("Overlay-SR-SkillBar-v12.png");
+
+     // 5b. Alt+G In-Game Command Sheet (Verify crisp rounded corners with zero square bleed!)
+     w.PreviewScene = "altg"; w.InGameSheet = true; w.InGameSheetTab = "build"; w.PushState();
+     await Task.Delay(700);
+     await snap("Overlay-AltG-v12.png");
+     w.InGameSheet = false;
 
      // 6. Non-Blocking Champ Select Overlay (Bottom-Center Bench Bar + Bottom-Left Safe HUD!)
      w.Game.InGame = false; w.Game.InSelection = true; w.Game.Mayhem = true; w.ActiveMode = "MAYHEM";

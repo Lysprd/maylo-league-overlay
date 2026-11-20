@@ -30,6 +30,15 @@ try {
     } finally { Pop-Location }
 
     & (Join-Path $root 'source\build.ps1') -Destination (Join-Path $files 'MAYLO-Hub.exe')
+    # Build lightweight standalone MAYLO.exe launcher inside the payload ZIP so Setup & Auto-Updates install a fresh launcher cleanly
+    $launcherArgs = @('/nologo','/target:winexe','/platform:x64','/optimize+','/define:LAUNCHER_ONLY',
+        "/out:$(Join-Path $files 'MAYLO.exe')","/win32icon:$assets\maylo.ico","/win32manifest:$root\source\app.manifest",
+        "/resource:$assets\maylo.png,maylo.png",
+        '/r:System.dll','/r:System.Core.dll','/r:System.Drawing.dll','/r:System.Windows.Forms.dll','/r:System.IO.Compression.dll','/r:System.IO.Compression.FileSystem.dll','/r:System.Xaml.dll','/r:Microsoft.CSharp.dll',
+        "/r:$wpf\WindowsBase.dll","/r:$wpf\PresentationCore.dll","/r:$wpf\PresentationFramework.dll",
+        (Join-Path $root 'installer\Setup.cs'),(Join-Path $root 'shared\InstallStore.cs'),(Join-Path $stage 'BuildInfo.cs'))
+    & (Join-Path $framework 'csc.exe') @launcherArgs
+    if ($LASTEXITCODE -ne 0) { throw 'Launcher build failed.' }
     Copy-Item -LiteralPath (Join-Path $assets 'maylo.ico'),(Join-Path $assets 'maylo.png') -Destination (Join-Path $files 'assets')
     Get-ChildItem -LiteralPath (Join-Path $root 'lib') -Filter '*.dll' | Copy-Item -Destination $files
     Copy-Item -LiteralPath (Join-Path $root 'LICENSE'),(Join-Path $root 'QUICKSTART.txt') -Destination $files

@@ -447,6 +447,140 @@ function SkillOrderCard({
   );
 }
 
+function PatchTagBadge({ tag, compact = false }: { tag?: string; compact?: boolean }) {
+  if (!tag) return null;
+  const t = tag.toLowerCase();
+  const label =
+    t === 'buff'
+      ? compact
+        ? '▲'
+        : 'BUFF'
+      : t === 'nerf'
+        ? compact
+          ? '▼'
+          : 'NERF'
+        : t === 'added'
+          ? 'NEW'
+          : t === 'system'
+            ? 'SYS'
+            : compact
+              ? '~'
+              : 'ADJ';
+  const cls =
+    t === 'buff'
+      ? 'border-emerald-500/35 bg-emerald-500/12 text-emerald-600 dark:text-emerald-300'
+      : t === 'nerf'
+        ? 'border-rose-500/35 bg-rose-500/12 text-rose-600 dark:text-rose-300'
+        : t === 'added'
+          ? 'border-indigo-500/35 bg-indigo-500/12 text-indigo-600 dark:text-indigo-300'
+          : 'border-amber-500/35 bg-amber-500/12 text-amber-600 dark:text-amber-300';
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded border px-1.5 py-0.5 font-mono-tech text-[9px] font-bold uppercase tracking-wider leading-none shrink-0',
+        cls
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
+function GameLengthScalingCard({ points }: { points: { minutes: number; winRate: number }[] }) {
+  if (!points || points.length < 2) return null;
+  const sorted = [...points].sort((a, b) => a.minutes - b.minutes);
+  const first = sorted[0].winRate;
+  const last = sorted[sorted.length - 1].winRate;
+  const peak = sorted.reduce((best, p) => (p.winRate > best.winRate ? p : best), sorted[0]);
+  const delta = last - first;
+  const profile =
+    delta >= 2.2
+      ? { label: 'Late Scaling', tone: 'text-indigo-600 dark:text-indigo-300 bg-indigo-500/12 border-indigo-500/30' }
+      : delta <= -2.2
+        ? { label: 'Early Dominant', tone: 'text-amber-600 dark:text-amber-300 bg-amber-500/12 border-amber-500/30' }
+        : peak.minutes >= 25 && peak.minutes <= 35
+          ? { label: 'Mid-Game Spike', tone: 'text-teal-600 dark:text-teal-300 bg-teal-500/12 border-teal-500/30' }
+          : { label: 'Balanced Curve', tone: 'text-zinc-600 dark:text-zinc-300 bg-zinc-500/10 border-zinc-500/25' };
+
+  const minWr = Math.min(44, ...sorted.map((p) => p.winRate - 1.5));
+  const maxWr = Math.max(56, ...sorted.map((p) => p.winRate + 1.5));
+  const range = Math.max(4, maxWr - minWr);
+  const W = 380;
+  const H = 84;
+  const padX = 24;
+  const padY = 14;
+  const coords = sorted.map((p, i) => {
+    const x = padX + (i / Math.max(1, sorted.length - 1)) * (W - padX * 2);
+    const y = padY + (1 - (p.winRate - minWr) / range) * (H - padY * 2);
+    return { ...p, x, y };
+  });
+  const linePath = coords.map((c, i) => `${i === 0 ? 'M' : 'L'} ${c.x.toFixed(1)} ${c.y.toFixed(1)}`).join(' ');
+  const midY = padY + (1 - (50 - minWr) / range) * (H - padY * 2);
+
+  return (
+    <GlassCard surface="hub" className="p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div>
+          <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-800 dark:text-zinc-100">
+            Power Spike by Game Length
+          </h3>
+          <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+            Win rate scaling across match duration (dashed line = 50% WR)
+          </p>
+        </div>
+        <span className={cn('rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider', profile.tone)}>
+          {profile.label}
+        </span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[84px] overflow-visible">
+        <line
+          x1={padX}
+          x2={W - padX}
+          y1={midY}
+          y2={midY}
+          stroke="currentColor"
+          strokeOpacity="0.18"
+          strokeDasharray="3 3"
+        />
+        <path
+          d={linePath}
+          fill="none"
+          stroke="#6366F1"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {coords.map((c) => (
+          <g key={c.minutes}>
+            <circle cx={c.x} cy={c.y} r="3.6" fill={c.winRate >= 50 ? '#6366F1' : '#F43F5E'} />
+          </g>
+        ))}
+      </svg>
+      <div className="mt-1 grid gap-1 text-center" style={{ gridTemplateColumns: `repeat(${sorted.length}, minmax(0, 1fr))` }}>
+        {sorted.map((p) => (
+          <div key={p.minutes} className="rounded-lg bg-zinc-50/80 dark:bg-white/[0.025] py-1 px-1">
+            <div className="font-mono-tech text-[10px] text-zinc-400">
+              {p.minutes === 0 ? '0–25m' : `${p.minutes}m+`}
+            </div>
+            <div
+              className={cn(
+                'text-xs font-bold tabular-nums',
+                p.winRate >= 51
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : p.winRate < 49
+                    ? 'text-rose-600 dark:text-rose-400'
+                    : 'text-zinc-800 dark:text-zinc-200'
+              )}
+            >
+              {fmtPct(p.winRate)}
+            </div>
+          </div>
+        ))}
+      </div>
+    </GlassCard>
+  );
+}
+
 export function HubView({ state }: { state: AppState }) {
   const [modal, setModal] = useState<'none' | 'settings' | 'shortcuts'>('none');
   const [replayTutorial, setReplayTutorial] = useState(false);
@@ -460,6 +594,10 @@ export function HubView({ state }: { state: AppState }) {
   const [liveFilter, setLiveFilter] = useState<'Overview' | 'Your team' | 'Opponents'>('Overview');
   const [tierSearch, setTierSearch] = useState('');
   const [historySearch, setHistorySearch] = useState('');
+  const [patchCat, setPatchCat] = useState<'champion' | 'augment' | 'item' | 'system'>('champion');
+  const [patchFilter, setPatchFilter] = useState<'all' | 'buff' | 'nerf' | 'adjust'>('all');
+  const [patchMode, setPatchMode] = useState<'ALL' | 'SR' | 'ARAM' | 'MAYHEM'>('ALL');
+  const [patchSearch, setPatchSearch] = useState('');
   const [noteDraft, setNoteDraft] = useState<string | null>(null);
   const [toastText, setToastText] = useState<string | null>(null);
   const lastStatusRef = useRef<string | null>(null);
@@ -534,13 +672,14 @@ export function HubView({ state }: { state: AppState }) {
       items.push({ id: 'Augments', label: 'Augments', icon: Sparkles });
     }
     items.push(
+      { id: 'PatchNotes', label: state.patchNotes?.version ? `Patch ${state.patchNotes.version}` : 'Patch Notes', icon: Flame },
       { id: 'Live', label: 'Live game', icon: Activity },
       { id: 'History', label: 'Match history', icon: History },
       { id: 'Synergies', label: isMayhem ? 'Synergies' : 'Matchups', icon: Link2 },
       { id: 'Notes', label: 'Notes', icon: FileText }
     );
     return items;
-  }, [isMayhem, isSR]);
+  }, [isMayhem, isSR, state.patchNotes?.version]);
 
   const filteredTierList = useMemo(() => {
     const q = tierSearch.trim().toLowerCase();
@@ -566,6 +705,7 @@ export function HubView({ state }: { state: AppState }) {
         pick: t.pickRate,
         icon: t.icon || ref?.icon || '',
         assetKey: ref?.assetKey || t.slug,
+        patchTag: t.patchTag || ref?.patchTag || '',
       });
     }
     for (const c of base) {
@@ -986,6 +1126,7 @@ export function HubView({ state }: { state: AppState }) {
                           {selected.name}
                         </h1>
                         <TierBadge tier={selected.tier} size="md" />
+                        <PatchTagBadge tag={selected.patchTag} />
                         <span className="inline-flex items-center rounded-lg border border-indigo-200 dark:border-indigo-400/30 bg-indigo-50 dark:bg-indigo-500/15 px-2.5 py-1 text-[11px] font-semibold leading-none text-indigo-700 dark:text-indigo-300">
                           {state.modeSource || state.activeMode}
                         </span>
@@ -1258,10 +1399,22 @@ export function HubView({ state }: { state: AppState }) {
                                 : 'grid-cols-[44px_minmax(220px,1.8fr)_76px_110px_110px]'
                             )}
                           >
-                            <div className="text-center text-xs font-semibold text-zinc-400 tabular-nums">
-                              {row.rank || idx + 1}
+                            <div className="flex flex-col items-center justify-center text-xs font-semibold text-zinc-400 tabular-nums leading-tight">
+                              <span>{row.rank || idx + 1}</span>
+                              {row.rankDelta ? (
+                                <span
+                                  className={cn(
+                                    'font-mono-tech text-[9px] font-bold',
+                                    row.rankDelta > 0
+                                      ? 'text-emerald-600 dark:text-emerald-400'
+                                      : 'text-rose-500 dark:text-rose-400'
+                                  )}
+                                >
+                                  {row.rankDelta > 0 ? `▲${row.rankDelta}` : `▼${Math.abs(row.rankDelta)}`}
+                                </span>
+                              ) : null}
                             </div>
-                            <div className="flex items-center gap-3 min-w-0">
+                            <div className="flex items-center gap-2.5 min-w-0">
                               {row.icon && (
                                 <ChampAvatar
                                   src={row.icon}
@@ -1272,6 +1425,7 @@ export function HubView({ state }: { state: AppState }) {
                               <span className="truncate text-[13px] font-semibold text-zinc-900 dark:text-white">
                                 {row.name}
                               </span>
+                              <PatchTagBadge tag={row.patchTag} />
                             </div>
                             {isSR && (
                               <div className="text-center">
@@ -1961,6 +2115,11 @@ export function HubView({ state }: { state: AppState }) {
                   ))}
                 </div>
 
+                {/* Early / Mid / Late Game Scaling Curve */}
+                {state.gameLengths && state.gameLengths.length >= 2 && (
+                  <GameLengthScalingCard points={state.gameLengths} />
+                )}
+
                 {/* Clickable Top Augments Preview (ONLY in Mayhem mode!) */}
                 {isMayhem && state.allAugments.length > 0 && (
                   <GlassCard surface="hub" className="p-5">
@@ -2645,8 +2804,11 @@ export function HubView({ state }: { state: AppState }) {
                             />
                           )}
                           <div className="min-w-0">
-                            <div className="truncate text-[13px] font-semibold text-zinc-900 dark:text-white">
-                              {c.name}
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="truncate text-[13px] font-semibold text-zinc-900 dark:text-white">
+                                {c.name}
+                              </span>
+                              <PatchTagBadge tag={c.patchTag} compact />
                             </div>
                             <div className="text-[11px] text-zinc-500 dark:text-zinc-400 tabular-nums">
                               {fmtPct(c.win)} WR · {fmtPct(c.pick)} PR
@@ -2908,6 +3070,204 @@ export function HubView({ state }: { state: AppState }) {
                       </div>
                     </GlassCard>
                   ))}
+                </div>
+              );
+            })()}
+
+            {/* VIEW: PATCH NOTES (BUFFS / NERFS / ADJUSTMENTS) */}
+            {view === 'PatchNotes' && (() => {
+              const pn = state.patchNotes;
+              const allEntries = pn?.entries || [];
+              const q = patchSearch.trim().toLowerCase();
+              const catCounts = {
+                champion: allEntries.filter((e) => e.category === 'champion').length,
+                augment: allEntries.filter((e) => e.category === 'augment').length,
+                item: allEntries.filter((e) => e.category === 'item').length,
+                system: allEntries.filter((e) => e.category === 'system').length,
+              };
+              const filtered = allEntries.filter((e) => {
+                if (e.category !== patchCat) return false;
+                if (patchMode !== 'ALL' && e.mode !== patchMode) return false;
+                if (patchFilter !== 'all') {
+                  if (patchFilter === 'adjust') {
+                    if (e.changeType !== 'adjust' && e.changeType !== 'added' && e.changeType !== 'system') return false;
+                  } else if (e.changeType !== patchFilter) {
+                    return false;
+                  }
+                }
+                if (q && !e.title.toLowerCase().includes(q) && !e.summary.toLowerCase().includes(q)) return false;
+                return true;
+              });
+              const buffCount = allEntries.filter((e) => e.category === patchCat && e.changeType === 'buff').length;
+              const nerfCount = allEntries.filter((e) => e.category === patchCat && e.changeType === 'nerf').length;
+              return (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="font-display text-lg font-bold tracking-tight text-zinc-900 dark:text-white">
+                          Patch {pn?.version || state.ddVersion || 'Latest'} · Buffs &amp; Nerfs
+                        </h2>
+                        {buffCount > 0 && (
+                          <span className="rounded-full border border-emerald-500/30 bg-emerald-500/12 px-2 py-0.5 font-mono-tech text-[10px] font-bold text-emerald-600 dark:text-emerald-300">
+                            {buffCount} Buffs
+                          </span>
+                        )}
+                        {nerfCount > 0 && (
+                          <span className="rounded-full border border-rose-500/30 bg-rose-500/12 px-2 py-0.5 font-mono-tech text-[10px] font-bold text-rose-600 dark:text-rose-300">
+                            {nerfCount} Nerfs
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                        Live balance changes across Summoner&apos;s Rift, ARAM, and ARAM Mayhem augments
+                      </p>
+                    </div>
+                    <SegmentedTabs<'champion' | 'augment' | 'item' | 'system'>
+                      size="sm"
+                      value={patchCat}
+                      onChange={setPatchCat}
+                      options={[
+                        { value: 'champion', label: `Champions (${catCounts.champion})` },
+                        { value: 'augment', label: `Augments (${catCounts.augment})` },
+                        { value: 'item', label: `Items (${catCounts.item})` },
+                        { value: 'system', label: `Systems (${catCounts.system})` },
+                      ]}
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2.5">
+                    <div className="relative flex-1 min-w-[200px] max-w-xs">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-zinc-400" />
+                      <input
+                        value={patchSearch}
+                        onChange={(e) => setPatchSearch(e.target.value)}
+                        placeholder="Search champion, augment, item…"
+                        className="w-full rounded-xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#14151B] pl-8 pr-3 py-1.5 text-xs text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:border-indigo-400 focus:outline-none"
+                      />
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <SegmentedTabs<'all' | 'buff' | 'nerf' | 'adjust'>
+                        size="sm"
+                        value={patchFilter}
+                        onChange={setPatchFilter}
+                        options={[
+                          { value: 'all', label: 'All' },
+                          { value: 'buff', label: 'Buffs' },
+                          { value: 'nerf', label: 'Nerfs' },
+                          { value: 'adjust', label: 'Adjusted' },
+                        ]}
+                      />
+                      <SegmentedTabs<'ALL' | 'SR' | 'ARAM' | 'MAYHEM'>
+                        size="sm"
+                        value={patchMode}
+                        onChange={setPatchMode}
+                        options={[
+                          { value: 'ALL', label: 'All' },
+                          { value: 'SR', label: 'SR' },
+                          { value: 'ARAM', label: 'ARAM' },
+                          { value: 'MAYHEM', label: 'Mayhem' },
+                        ]}
+                      />
+                    </div>
+                  </div>
+
+                  {allEntries.length === 0 ? (
+                    <GlassCard surface="hub" className="p-10 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                      Loading latest patch notes…
+                    </GlassCard>
+                  ) : filtered.length === 0 ? (
+                    <GlassCard surface="hub" className="p-10 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                      No patch changes match your current filters.
+                    </GlassCard>
+                  ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
+                      {filtered.map((entry, idx) => (
+                        <GlassCard
+                          key={`${entry.category}-${entry.id}-${entry.title}-${idx}`}
+                          surface="hub"
+                          className="p-4 flex flex-col gap-2.5"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-3 min-w-0">
+                              {entry.category === 'champion' ? (
+                                <ChampAvatar
+                                  src={entry.icon}
+                                  alt={entry.title}
+                                  className="size-10 rounded-xl border border-zinc-200 dark:border-white/12"
+                                />
+                              ) : entry.category === 'augment' ? (
+                                <AugmentIcon
+                                  src={entry.icon}
+                                  alt={entry.title}
+                                  className="size-10 rounded-xl border border-zinc-200 dark:border-white/12"
+                                />
+                              ) : entry.category === 'item' && entry.icon ? (
+                                <img
+                                  src={iconUrl(entry.icon)}
+                                  alt={entry.title}
+                                  className="size-10 rounded-xl border border-zinc-200 dark:border-white/12 bg-zinc-900 shrink-0"
+                                />
+                              ) : (
+                                <div className="flex size-10 items-center justify-center rounded-xl border border-indigo-500/25 bg-indigo-500/10 text-indigo-500 dark:text-indigo-300 shrink-0">
+                                  <Flame className="size-4" />
+                                </div>
+                              )}
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className="truncate text-sm font-bold text-zinc-900 dark:text-white">
+                                    {entry.title}
+                                  </span>
+                                  <PatchTagBadge tag={entry.changeType} />
+                                  <span className="rounded bg-zinc-100 dark:bg-white/[0.06] px-1.5 py-0.5 font-mono-tech text-[9px] font-semibold uppercase text-zinc-500 dark:text-zinc-400">
+                                    {entry.mode}
+                                  </span>
+                                </div>
+                                {entry.summary && (
+                                  <p className="mt-1 text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
+                                    {entry.summary}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            {entry.category === 'champion' && entry.slug && (
+                              <Button
+                                size="xs"
+                                variant="secondary"
+                                onClick={() => postAction('selectChampion', { slug: entry.slug, view: 'Build' })}
+                                className="shrink-0"
+                              >
+                                Build
+                              </Button>
+                            )}
+                          </div>
+
+                          {entry.details.length > 0 && (
+                            <div className="space-y-1 rounded-xl border border-zinc-200/70 dark:border-white/[0.06] bg-zinc-50/75 dark:bg-white/[0.02] p-2.5">
+                              {entry.details.slice(0, 4).map((dl, di) => (
+                                <div key={di} className="text-[11px] leading-snug text-zinc-600 dark:text-zinc-300">
+                                  {dl.text || (
+                                    <span>
+                                      <span className="text-zinc-400 line-through mr-1.5">{dl.oldValue}</span>
+                                      <span className="font-semibold text-indigo-600 dark:text-indigo-300">
+                                        → {dl.newValue}
+                                      </span>
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {entry.playerNote && (
+                            <div className="text-[11px] text-indigo-600 dark:text-indigo-300/90 font-medium">
+                              Tip · {entry.playerNote}
+                            </div>
+                          )}
+                        </GlassCard>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })()}

@@ -9,6 +9,7 @@ export interface Champion {
   icon: string;
   assetKey: string;
   favorite?: boolean;
+  patchTag?: string;
 }
 
 export interface StatItem {
@@ -97,12 +98,40 @@ export interface TierListEntry {
   role: string;
   tier: string;
   rank: number;
+  rankDelta?: number;
+  patchTag?: string;
   winRate: number;
   pickRate: number;
   banRate: number;
   kda: number;
   games: number;
   counters: string[];
+}
+
+export interface PatchDetailLine {
+  text: string;
+  oldValue: string;
+  newValue: string;
+  type: string;
+}
+
+export interface PatchEntry {
+  id: number;
+  category: 'champion' | 'augment' | 'item' | 'system' | string;
+  mode: 'SR' | 'ARAM' | 'MAYHEM' | string;
+  slug: string;
+  title: string;
+  icon: string;
+  changeType: 'buff' | 'nerf' | 'adjust' | 'added' | 'removed' | 'system' | string;
+  summary: string;
+  playerNote: string;
+  details: PatchDetailLine[];
+}
+
+export interface PatchNotesData {
+  version: string;
+  officialUrl: string;
+  entries: PatchEntry[];
 }
 
 export interface SpellCooldown {
@@ -330,6 +359,8 @@ export interface AppState {
   teammates: StatItem[];
   matchups: StatItem[];
   combos: StatItem[];
+  gameLengths?: { minutes: number; winRate: number }[];
+  patchNotes?: PatchNotesData;
   runes: RunePage | null;
   skills: SkillOrder | null;
   offered: OfferedSlot[];

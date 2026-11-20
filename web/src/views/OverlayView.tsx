@@ -681,18 +681,21 @@ function InGameCommandSheet({ state }: { state: AppState }) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.14 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-[3px] p-4 pointer-events-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/58 p-4 pointer-events-auto"
       onClick={() => postAction('closeInGameSheet')}
     >
       <motion.div
-        initial={{ opacity: 0, scale: 0.96, y: 8 }}
+        initial={{ opacity: 0, scale: 0.97, y: 6 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
         onClick={(e) => e.stopPropagation()}
+        style={{ clipPath: 'inset(0 round 16px)' }}
+        className="rounded-2xl overflow-hidden shadow-[0_28px_80px_rgba(0,0,0,0.75)]"
       >
       <GlassCard
         surface="overlay"
-        className="w-[min(980px,94vw)] h-[min(640px,88vh)] flex flex-col border-white/[0.14] bg-[#0E1016]/96 shadow-[0_28px_80px_rgba(0,0,0,0.75)]"
+        style={{ clipPath: 'inset(0 round 16px)' }}
+        className="w-[min(980px,94vw)] h-[min(640px,88vh)] flex flex-col rounded-2xl overflow-hidden backdrop-blur-none border-white/[0.15] bg-[#0E1016]/97 shadow-none"
       >
         {/* Top Command Bar */}
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-white/[0.08] px-3 py-2.5 sm:px-5 sm:py-3.5">
@@ -712,6 +715,20 @@ function InGameCommandSheet({ state }: { state: AppState }) {
                   {champ?.name ?? 'Champion'}
                 </span>
                 {champ && <TierBadge tier={champ.tier} size="sm" dark />}
+                {champ?.patchTag && (
+                  <span
+                    className={cn(
+                      'rounded-md border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider',
+                      champ.patchTag === 'buff'
+                        ? 'border-emerald-400/45 bg-emerald-500/18 text-emerald-300'
+                        : champ.patchTag === 'nerf'
+                          ? 'border-rose-400/45 bg-rose-500/18 text-rose-300'
+                          : 'border-amber-400/45 bg-amber-500/18 text-amber-200'
+                    )}
+                  >
+                    {champ.patchTag === 'adjust' ? 'ADJ' : champ.patchTag}
+                  </span>
+                )}
                 <span className="rounded-md border border-indigo-400/30 bg-indigo-500/15 px-2 py-0.5 text-[10px] font-semibold text-indigo-200">
                   {modeLabel}
                 </span>
@@ -1405,8 +1422,7 @@ export function OverlayView({ state }: { state: AppState }) {
     (state.game.inGame ||
       (state.preview && (pScene === 'sr_hud' || (pScene === '' && !state.game.inSelection)))) &&
     pScene !== 'augments' &&
-    pScene !== 'bench' &&
-    !showAugments;
+    pScene !== 'bench';
   const showBuildHud = showInGameHud && state.settings.showBuildOverlay && state.buildPath.length > 0;
   const showPerfStrip = showInGameHud && state.settings.showPerfStrip && (me !== null || state.preview);
   const isSR = pScene === 'sr_hud' || (state.game.inGame
@@ -1588,6 +1604,20 @@ export function OverlayView({ state }: { state: AppState }) {
                         )}
                         <span className="text-[10px] font-semibold text-white">{bc.name}</span>
                         <TierBadge tier={bc.tier} size="xs" dark />
+                        {bc.patchTag && (
+                          <span
+                            className={cn(
+                              'rounded px-1 py-0.25 text-[8px] font-extrabold uppercase leading-none',
+                              bc.patchTag === 'buff'
+                                ? 'bg-emerald-500/25 text-emerald-300'
+                                : bc.patchTag === 'nerf'
+                                  ? 'bg-rose-500/25 text-rose-300'
+                                  : 'bg-amber-500/25 text-amber-200'
+                            )}
+                          >
+                            {bc.patchTag === 'buff' ? '▲' : bc.patchTag === 'nerf' ? '▼' : '~'}
+                          </span>
+                        )}
                         <span className="text-[9px] font-bold text-indigo-300 tabular-nums">
                           {fmtPct(bc.win)}
                         </span>
@@ -1904,8 +1934,39 @@ export function OverlayView({ state }: { state: AppState }) {
                   <span className="font-semibold text-zinc-300">{liveClock}</span>
                 </>
               )}
+              {!isSR && liveSeconds > 0 && (() => {
+                // Howling Abyss Health Relics: first spawn at 1:45 (105s), then 90s cycle
+                const firstSpawn = 105;
+                const cycle = 90;
+                const rem = liveSeconds < firstSpawn ? firstSpawn - liveSeconds : (cycle - ((liveSeconds - firstSpawn) % cycle)) % cycle;
+                const ready = liveSeconds >= firstSpawn && (rem === 0 || rem >= cycle - 6);
+                const label = ready ? 'UP' : `${Math.floor(rem / 60)}:${String(Math.ceil(rem) % 60).padStart(2, '0')}`;
+                return (
+                  <>
+                    <div className="h-3 w-px bg-white/12" />
+                    <span className={cn('inline-flex items-center gap-1 font-bold', ready ? 'text-emerald-300' : 'text-teal-200')}>
+                      <span className={cn('size-1.5 rounded-full', ready ? 'bg-emerald-400 animate-pulse' : 'bg-teal-400/70')} />
+                      Relic {label}
+                    </span>
+                  </>
+                );
+              })()}
             </div>
           </GlassCard>
+          {isSR && live.inhibitors && live.inhibitors.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap items-center justify-center gap-1.5">
+              {live.inhibitors.slice(0, 3).map((inh) => (
+                <div
+                  key={inh.key}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/45 bg-[#12131B]/95 px-2 py-0.5 text-[10px] font-bold text-amber-200 tabular-nums shadow-lg"
+                >
+                  <Timer className="size-2.5 text-amber-300" />
+                  <span>{inh.name.replace(' inhibitor', '')}</span>
+                  <span className="text-white">{inh.status}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </DraggableSlot>
       )}
 

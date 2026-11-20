@@ -217,9 +217,13 @@ namespace MayloSetup {
     if (File.Exists(launcher) && current == null) throw new IOException("Choose a folder without another MAYLO.exe.");
     if (current == null || current.CompareTo(release) < 0) {
      InstallStore.Stage(targetDir, release, res, progress);
-     CopyLauncher(asm.Location, launcher);
      InstallStore.Activate(targetDir, release);
-    } else if (!File.Exists(launcher)) File.Copy(asm.Location, launcher);
+    }
+    if (!File.Exists(launcher)) {
+     var active = InstallStore.Current(targetDir) ?? release;
+     InstallStore.RefreshLauncherFromVersion(targetDir, active);
+     if (!File.Exists(launcher)) CopyLauncher(asm.Location, launcher);
+    }
    }
   }
 
@@ -495,7 +499,11 @@ namespace MayloSetup {
    }
 
    if (args.Length > 1 && (args[0] == "--verify-ui" || args[0] == "--verify-motion"))
+#if LAUNCHER_ONLY
+    return 1;
+#else
     return SetupExperience.Run(args[1], args[0] == "--verify-motion");
+#endif
 
    if (args.Length > 0 && args[0] == "--uninstall") {
     try {
@@ -515,6 +523,11 @@ namespace MayloSetup {
     return 0;
    }
 
+#if LAUNCHER_ONLY
+   try { InstallerEngine.LaunchCurrent(AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\'), args); }
+   catch (Exception ex) { MessageBox.Show(ex.Message, "maylo"); return 1; }
+   return 0;
+#else
    if (String.Equals(IOPath.GetFileName(Assembly.GetExecutingAssembly().Location), InstallStore.Launcher, StringComparison.OrdinalIgnoreCase)) {
     try { InstallerEngine.LaunchCurrent(AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\'), args); }
     catch (Exception ex) { MessageBox.Show(ex.Message, "maylo"); return 1; }
@@ -522,6 +535,7 @@ namespace MayloSetup {
    }
 
    return SetupExperience.Run(null, false);
+#endif
   }
  }
 }

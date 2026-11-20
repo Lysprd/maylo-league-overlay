@@ -72,12 +72,45 @@ namespace MayhemCompanion {
   public string Role = "ALL"; // TOP, JUNGLE, MID, ADC, SUPPORT, ARAM, MAYHEM
   public string Tier = "B";   // S+, S, A, B, C, D
   public int Rank;
+  public int RankDelta;
   public double WinRate;
   public double PickRate;
   public double BanRate;
   public double Kda;
   public int Games;
   public List<string> Counters = new List<string>();
+ }
+
+ public class GameLengthPoint {
+  public int Minutes;
+  public double WinRate;
+ }
+
+ public class PatchDetailLine {
+  public string Text = "";
+  public string OldValue = "";
+  public string NewValue = "";
+  public string Type = "";
+ }
+
+ public class PatchEntry {
+  public int Id;
+  public string Category = "champion"; // champion | augment | item | system
+  public string Mode = "SR";           // SR | ARAM | MAYHEM
+  public string Slug = "";
+  public string Title = "";
+  public string Icon = "";
+  public string ChangeType = "adjust"; // buff | nerf | adjust | added | system
+  public string Summary = "";
+  public string PlayerNote = "";
+  public List<PatchDetailLine> Details = new List<PatchDetailLine>();
+ }
+
+ public class PatchNotesBundle {
+  public string PatchVersion = "";
+  public string OfficialUrl = "";
+  public List<PatchEntry> Entries = new List<PatchEntry>();
+  public Dictionary<string, string> ChampionTagBySlug = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
  }
 
  public class Placement {

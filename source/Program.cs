@@ -50,6 +50,7 @@ namespace MayhemCompanion {
      try {
       if (startMinimized) {
        hub.WindowState = WindowState.Minimized;
+       if (hub.Config.MinimizeToTray) hub.ShowInTaskbar = false;
       }
       app.Run(hub);
      } finally {

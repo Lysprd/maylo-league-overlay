@@ -96,6 +96,25 @@ namespace MayloRelease {
    } finally {
     if (File.Exists(pending)) File.Delete(pending);
    }
+   RefreshLauncherFromVersion(root, release);
+  }
+
+  public static void RefreshLauncherFromVersion(string root, ReleaseVersion release) {
+   try {
+    string stagedLauncher = Path.Combine(Versions(root), release.Text, Launcher);
+    if (!File.Exists(stagedLauncher)) return;
+    string target = Path.Combine(root, Launcher);
+    string temp = target + "." + Guid.NewGuid().ToString("N").Substring(0, 8) + ".tmp";
+    try {
+     using (var input = new FileStream(stagedLauncher, FileMode.Open, FileAccess.Read, FileShare.Read))
+     using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+      input.CopyTo(output);
+     if (File.Exists(target)) File.Replace(temp, target, null);
+     else File.Move(temp, target);
+    } finally {
+     if (File.Exists(temp)) File.Delete(temp);
+    }
+   } catch { }
   }
 
   /// <summary>

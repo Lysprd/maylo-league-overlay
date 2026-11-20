@@ -13,7 +13,8 @@ namespace MayhemCompanion {
   DateTime missingSince = DateTime.MinValue;
   public const int HoldMilliseconds = 750;
   const int SlotHoldMilliseconds = 2400;
-  const int ClickHoldMilliseconds = 1500;
+  const int ClickRerollHoldMilliseconds = 1500;
+  const int ClickPickHoldMilliseconds = 240;
   AugmentHit clickedSlot;
   bool clickCanPick;
   DateTime clickUntil;
@@ -28,11 +29,12 @@ namespace MayhemCompanion {
     .Select(p => Math.Abs(p.X - nearest.X) / 2).DefaultIfEmpty(0.115).Min();
    if (Math.Abs(nearest.X - x) >= Math.Min(halfWidth, 0.115)) return false;
 
-   clickUntil = now.AddMilliseconds(ClickHoldMilliseconds);
-   // A click lower down can be a reroll or a dismiss control. Give OCR time to read the row again.
+   // A click lower down can be a reroll button (keep 1500ms grace so reroll animations never blink).
+   // A click inside the card is likely a pick: close quickly (~240ms + 2 empty frames) once the offer disappears.
    bool cardInterior = y >= nearest.Y - 0.14 && y <= nearest.Y + 0.22;
    clickedSlot = nearest;
-   clickCanPick = cardInterior && (now - SlotLastSeen[Array.IndexOf(Positions, nearest)]).TotalMilliseconds <= ClickHoldMilliseconds;
+   clickCanPick = cardInterior && (now - SlotLastSeen[Array.IndexOf(Positions, nearest)]).TotalMilliseconds <= ClickRerollHoldMilliseconds;
+   clickUntil = now.AddMilliseconds(clickCanPick ? ClickPickHoldMilliseconds : ClickRerollHoldMilliseconds);
    missingFrames = 0;
    return true;
   }
@@ -64,7 +66,8 @@ namespace MayhemCompanion {
      missingSince = now;
     }
     missingFrames++;
-    if (now < clickUntil || (now - missingSince).TotalMilliseconds < HoldMilliseconds || missingFrames < 2) return false;
+    int requiredHold = clickCanPick ? ClickPickHoldMilliseconds : HoldMilliseconds;
+    if (now < clickUntil || (now - missingSince).TotalMilliseconds < requiredHold || missingFrames < 2) return false;
     var pick = clickCanPick && clickedSlot != null ? clickedSlot.Stat : null;
     Reset();
     ConfirmedPick = pick;

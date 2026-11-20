@@ -369,6 +369,10 @@ namespace MayhemCompanion {
      BootProgress = 94; BootStage = "Syncing Tier List & Match History…"; PushState();
      await RefreshTierList(false);
      var _ = RefreshProfile(true);
+     var _pn = MultiModeParser.LoadPatchNotes(false).ContinueWith(t => {
+      if (!closing && t.Status == TaskStatus.RanToCompletion && t.Result != null && t.Result.Entries.Count > 0)
+       Dispatcher.BeginInvoke((Action)(() => { if (!closing) PushState(); }));
+     });
      BootProgress = 100; BootStage = "Ready"; BootReady = true; PushState();
     } catch (Exception ex) {
      RevealWebSurface();
@@ -739,6 +743,7 @@ namespace MayhemCompanion {
     }
    }
    hubOpened = DateTime.UtcNow; View = destination; Topmost = true; Show(); Activate();
+   if (handle != IntPtr.Zero) Native.RoundWindow(handle, !String.Equals(Config.Theme, "light", StringComparison.OrdinalIgnoreCase));
    Native.ForceForeground(handle);
    if (overlay != null) overlay.Sync();
    PushState();
@@ -1292,6 +1297,11 @@ namespace MayhemCompanion {
     return TierList.FirstOrDefault(t => t.Slug == ch.Slug);
    };
    var selMode = modeEntryFor(Selected);
+   Func<string, string> patchTagOf = sl => {
+    string pt;
+    return !String.IsNullOrEmpty(sl) && MultiModeParser.PatchNotes != null && MultiModeParser.PatchNotes.ChampionTagBySlug.TryGetValue(sl, out pt) ? pt : "";
+   };
+   var pn = MultiModeParser.PatchNotes ?? new PatchNotesBundle();
 
    var updateStatus = GitHubUpdater.GetStatus();
    var payload = new {
@@ -1335,13 +1345,13 @@ namespace MayhemCompanion {
      profileIconId = Profile.Account.ProfileIconId,
      profileIconUrl = Profile.Account.ProfileIconId > 0 ? ("https://ddragon.leagueoflegends.com/cdn/" + MultiModeParser.DDragonVersion + "/img/profileicon/" + Profile.Account.ProfileIconId + ".png") : ""
     },
-    champions = Champions.Select(c => new { name = c.Name, slug = c.Slug, tier = c.Tier, win = c.Win, pick = c.Pick, icon = c.Icon, assetKey = c.AssetKey }).ToArray(),
-    tierList = TierList.Take(320).Select(t => new { id = t.Id, slug = t.Slug, name = t.Name, icon = t.Icon, role = t.Role, tier = t.Tier, rank = t.Rank, winRate = t.WinRate, pickRate = t.PickRate, banRate = t.BanRate, kda = t.Kda, games = t.Games, counters = t.Counters.ToArray() }).ToArray(),
-    selected = Selected == null ? null : new { name = Selected.Name, slug = Selected.Slug, tier = selMode != null ? selMode.Tier : Selected.Tier, win = selMode != null ? selMode.WinRate : Selected.Win, pick = selMode != null ? selMode.PickRate : Selected.Pick, icon = Selected.Icon, assetKey = Selected.AssetKey },
+    champions = Champions.Select(c => new { name = c.Name, slug = c.Slug, tier = c.Tier, win = c.Win, pick = c.Pick, icon = c.Icon, assetKey = c.AssetKey, patchTag = patchTagOf(c.Slug) }).ToArray(),
+    tierList = TierList.Take(320).Select(t => new { id = t.Id, slug = t.Slug, name = t.Name, icon = t.Icon, role = t.Role, tier = t.Tier, rank = t.Rank, rankDelta = t.RankDelta, patchTag = patchTagOf(t.Slug), winRate = t.WinRate, pickRate = t.PickRate, banRate = t.BanRate, kda = t.Kda, games = t.Games, counters = t.Counters.ToArray() }).ToArray(),
+    selected = Selected == null ? null : new { name = Selected.Name, slug = Selected.Slug, tier = selMode != null ? selMode.Tier : Selected.Tier, win = selMode != null ? selMode.WinRate : Selected.Win, pick = selMode != null ? selMode.PickRate : Selected.Pick, icon = Selected.Icon, assetKey = Selected.AssetKey, patchTag = patchTagOf(Selected.Slug) },
     game = new {
      phase = Game.Phase, mode = Game.Mode, modeKey = Game.ModeKey, modeLabel = Game.ModeLabel, champion = Game.Champion, inGame = Game.InGame, inSelection = Game.InSelection, mayhem = Game.Mayhem, gold = Game.Gold,
      owned = Game.Owned.ToArray(), planned = plannedItems.ToArray(),
-     bench = (Preview ? Champions.Take(6) : Game.Bench.Select(FromId).Where(c => c != null)).Select(c => { var be = modeEntryFor(c); return new { name = c.Name, slug = c.Slug, tier = be != null ? be.Tier : c.Tier, win = be != null ? be.WinRate : c.Win, pick = be != null ? be.PickRate : c.Pick, icon = MultiModeParser.ChampIconOf(c), assetKey = c.AssetKey }; }).OrderByDescending(c => c.win).ToArray(),
+     bench = (Preview ? Champions.Take(6) : Game.Bench.Select(FromId).Where(c => c != null)).Select(c => { var be = modeEntryFor(c); return new { name = c.Name, slug = c.Slug, tier = be != null ? be.Tier : c.Tier, win = be != null ? be.WinRate : c.Win, pick = be != null ? be.PickRate : c.Pick, icon = MultiModeParser.ChampIconOf(c), assetKey = c.AssetKey, patchTag = patchTagOf(c.Slug) }; }).OrderByDescending(c => c.win).ToArray(),
      team = Game.Team.Select(FromId).Where(c => c != null).Select(c => new { name = c.Name, slug = c.Slug, tier = c.Tier, win = c.Win, pick = c.Pick, icon = MultiModeParser.ChampIconOf(c), assetKey = c.AssetKey }).ToArray(),
      live = new {
       clock = Game.Live.Clock, seconds = Game.Live.Seconds, health = Game.Live.Health, maxHealth = Game.Live.MaxHealth,
@@ -1396,6 +1406,16 @@ namespace MayhemCompanion {
     teammates = ModeData.Teammates.Select(s => SerializeStat(s)).ToArray(),
     matchups = ModeData.Matchups.Select(s => SerializeStat(s)).ToArray(),
     combos = ModeData.Combos.Select(s => SerializeStat(s)).ToArray(),
+    gameLengths = ModeData.GameLengths.Select(g => new { minutes = g.Minutes, winRate = g.WinRate }).ToArray(),
+    patchNotes = new {
+     version = pn.PatchVersion,
+     officialUrl = pn.OfficialUrl,
+     entries = pn.Entries.Select(e => new {
+      id = e.Id, category = e.Category, mode = e.Mode, slug = e.Slug, title = e.Title, icon = e.Icon,
+      changeType = e.ChangeType, summary = e.Summary, playerNote = e.PlayerNote,
+      details = e.Details.Select(dl => new { text = dl.Text, oldValue = dl.OldValue, newValue = dl.NewValue, type = dl.Type }).ToArray()
+     }).ToArray()
+    },
     runes = ModeData.Runes == null ? null : new {
      primaryStyle = ModeData.Runes.PrimaryStyle, secondaryStyle = ModeData.Runes.SecondaryStyle,
      primaryMeta = runeMetaObj(ModeData.Runes.PrimaryStyle), secondaryMeta = runeMetaObj(ModeData.Runes.SecondaryStyle),
@@ -1546,6 +1566,7 @@ namespace MayhemCompanion {
       await MultiModeParser.EnsureDDragon(Champions, true);
       await LoadHome(true);
       await RefreshTierList(true);
+      await MultiModeParser.LoadPatchNotes(true);
       StatusText = "Databases synced · Patch " + MultiModeParser.DDragonVersion;
       PushState();
       break;

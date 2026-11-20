@@ -23,12 +23,15 @@ namespace MayhemCompanion {
   public List<Stat> Teammates = new List<Stat>();
   public List<Stat> Matchups = new List<Stat>();
   public List<CoreBuildPath> CorePaths = new List<CoreBuildPath>();
+  public List<GameLengthPoint> GameLengths = new List<GameLengthPoint>();
   public RunePage Runes;
   public SkillOrder Skills;
  }
 
  public static class MultiModeParser {
   public static string DDragonVersion = "";
+  public static PatchNotesBundle PatchNotes = new PatchNotesBundle();
+  static Task<PatchNotesBundle> patchTask = null;
   public static Dictionary<int, Champion> DDragonChamps = new Dictionary<int, Champion>();
   public static Dictionary<string, int> ChampIdBySlug = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
   public static Dictionary<int, string> DDragonItemNames = new Dictionary<int, string>();
@@ -378,10 +381,12 @@ namespace MayhemCompanion {
      var td = st.ContainsKey("tier_data") ? Json.D(st["tier_data"]) : null;
      int tierNum = td != null ? Json.I(td, "tier") : Json.I(st, "tier");
      int rankNum = td != null ? Json.I(td, "rank") : Json.I(st, "rank");
+     int prevPatch = td != null ? Json.I(td, "rank_prev_patch") : 0;
      if (tierNum <= 0) tierNum = 5;
      result.Add(new TierListEntry {
       Id = id, Slug = ch.Slug, Name = ch.Name, Icon = ChampIconOf(ch),
       Role = "ARAM", Tier = MapOpGgTier(tierNum), Rank = rankNum > 0 ? rankNum : 999,
+      RankDelta = (rankNum > 0 && prevPatch > 0) ? (prevPatch - rankNum) : 0,
       WinRate = Math.Round(Dbl(st, "win_rate") * 100.0, 2),
       PickRate = Math.Round(Dbl(st, "pick_rate") * 100.0, 2),
       BanRate = 0, Kda = Math.Round(Dbl(st, "kda"), 2), Games = Json.I(st, "play")
@@ -411,6 +416,7 @@ namespace MayhemCompanion {
      var td = st.ContainsKey("tier_data") ? Json.D(st["tier_data"]) : null;
      int tierNum = td != null ? Json.I(td, "tier") : 5;
      int rankNum = td != null ? Json.I(td, "rank") : 999;
+     int prevPatch = td != null ? Json.I(td, "rank_prev_patch") : 0;
      if (tierNum <= 0) tierNum = 5;
      var counterIcons = new List<string>();
      foreach (var co in Json.A(pd, "counters").Take(3)) {
@@ -420,6 +426,7 @@ namespace MayhemCompanion {
      result.Add(new TierListEntry {
       Id = id, Slug = ch.Slug, Name = ch.Name, Icon = ChampIconOf(ch),
       Role = pName.ToUpperInvariant(), Tier = MapOpGgTier(tierNum), Rank = rankNum > 0 ? rankNum : 999,
+      RankDelta = (rankNum > 0 && prevPatch > 0) ? (prevPatch - rankNum) : 0,
       WinRate = Math.Round(Dbl(st, "win_rate") * 100.0, 2),
       PickRate = Math.Round(Dbl(st, "pick_rate") * 100.0, 2),
       BanRate = Math.Round(Dbl(st, "ban_rate") * 100.0, 2),
@@ -647,6 +654,15 @@ namespace MayhemCompanion {
    // Exact 1-18 Skill Order + Priority
    data.Skills = ParseOpGgJsonSkills(d, data.SourceLabel);
 
+   // Game-Length Scaling Curve (Early / Mid / Late win rate %!)
+   foreach (var gl in Json.A(d, "game_lengths")) {
+    var gd = Json.D(gl); if (gd == null) continue;
+    int mins = Json.I(gd, "game_length");
+    double rate = Math.Round(Dbl(gd, "rate") * 100.0, 1);
+    if (rate > 1 && rate < 99) data.GameLengths.Add(new GameLengthPoint { Minutes = mins, WinRate = rate });
+   }
+   data.GameLengths = data.GameLengths.OrderBy(x => x.Minutes).ToList();
+
    // Exact Counters / Matchups: split into Strong Against (Teammates slot in SR/ARAM) & Tough Matchups!
    var allCounters = new List<Stat>();
    foreach (var co in Json.A(d, "counters")) {
@@ -716,14 +732,116 @@ namespace MayhemCompanion {
    string mayhemHtml = await WebCache.Page(champ.Slug, "https://mayhemmeta.com/champions/" + champ.Slug, force, h => Parser.Section(h, "Most Common Items").Count > 0);
    var mayhem = ParseMayhem(mayhemHtml);
    mayhem.ChampionSlug = champ.Slug;
-   // Enrich Mayhem with exact OP.GG ARAM JSON skill order!
+   // Enrich Mayhem with exact OP.GG ARAM JSON skill order & game-length scaling!
    try {
     string aramJson = await WebCache.Page("opgg-aram-" + champ.Slug, "https://lol-api-champion.op.gg/api/global/champions/aram/" + opSlug + "/none", false, s => s.Contains("\"skills\""), ".json", 120);
     var root = Json.D(Json.Serializer().DeserializeObject(aramJson));
     var d = root != null && root.ContainsKey("data") ? Json.D(root["data"]) : null;
     mayhem.Skills = ParseOpGgJsonSkills(d, "OP.GG · ARAM");
+    foreach (var gl in Json.A(d, "game_lengths")) {
+     var gd = Json.D(gl); if (gd == null) continue;
+     int mins = Json.I(gd, "game_length");
+     double rate = Math.Round(Dbl(gd, "rate") * 100.0, 1);
+     if (rate > 1 && rate < 99) mayhem.GameLengths.Add(new GameLengthPoint { Minutes = mins, WinRate = rate });
+    }
+    mayhem.GameLengths = mayhem.GameLengths.OrderBy(x => x.Minutes).ToList();
    } catch { }
    return mayhem;
+  }
+
+  static string ModeFromPatchId(string id) {
+   string s = (id ?? "").ToLowerInvariant();
+   if (s.Contains("mayhem")) return "MAYHEM";
+   if (s.Contains("-aram-")) return "ARAM";
+   if (s.Contains("-arena-") || s.Contains("-cherry-")) return "ARENA";
+   return "SR";
+  }
+
+  static string NormPatchType(string raw) {
+   string t = (raw ?? "").Trim().ToLowerInvariant();
+   if (t == "buff" || t == "nerf" || t == "added" || t == "removed" || t == "system") return t;
+   if (t.Contains("buff")) return "buff";
+   if (t.Contains("nerf")) return "nerf";
+   return "adjust";
+  }
+
+  public static Task<PatchNotesBundle> LoadPatchNotes(bool force = false) {
+   if (!force && PatchNotes != null && PatchNotes.Entries.Count > 0) return Task.FromResult(PatchNotes);
+   if (!force && patchTask != null && !patchTask.IsCompleted) return patchTask;
+   patchTask = LoadPatchNotesCore(force);
+   return patchTask;
+  }
+
+  static async Task<PatchNotesBundle> LoadPatchNotesCore(bool force) {
+   var bundle = new PatchNotesBundle();
+   try {
+    await EnsureDDragon();
+    bool isFr = String.Equals(System.Globalization.CultureInfo.InstalledUICulture.TwoLetterISOLanguageName, "fr", StringComparison.OrdinalIgnoreCase);
+    string hl = isFr ? "fr_FR" : "en_US";
+    string raw = await WebCache.Page("opgg-patch-notes-" + hl, "https://lol-api-champion.op.gg/api/meta/patch-notes?hl=" + hl, force, s => s.Contains("\"champions\""), ".json", 180);
+    var root = Json.D(Json.Serializer().DeserializeObject(raw));
+    var meta = root != null && root.ContainsKey("meta") ? Json.D(root["meta"]) : null;
+    var data = root != null && root.ContainsKey("data") ? Json.D(root["data"]) : null;
+    if (meta != null) {
+     bundle.PatchVersion = Json.S(meta, "patch_version");
+     bundle.OfficialUrl = Json.S(meta, "official_url");
+    }
+    if (data == null) return bundle;
+
+    Action<Dictionary<string, object>, string, int, string, string, string> addChanges = (chObj, cat, id, slug, icon, fallbackTitle) => {
+     foreach (var co in Json.A(chObj, "changes")) {
+      var cd = Json.D(co); if (cd == null) continue;
+      string changeId = Json.S(cd, "id");
+      string ctype = NormPatchType(Json.S(cd, "type"));
+      string title = Json.S(cd, "title");
+      if (title == "") title = fallbackTitle;
+      string mode = ModeFromPatchId(changeId);
+      if (mode == "ARENA") continue; // Keep Patch Notes focused on MAYLO's supported modes (SR, ARAM, ARAM Mayhem)
+      var entry = new PatchEntry {
+       Id = id, Category = cat, Mode = mode, Slug = slug, Title = title, Icon = icon,
+       ChangeType = ctype, Summary = Json.S(cd, "summary"), PlayerNote = Json.S(cd, "player_note")
+      };
+      foreach (var detObj in Json.A(cd, "details").Take(6)) {
+       var dd = Json.D(detObj); if (dd == null) continue;
+       string txt = Json.S(dd, "text");
+       string oldV = Json.S(dd, "old_value");
+       string newV = Json.S(dd, "new_value");
+       if (txt != "" || oldV != "" || newV != "") {
+        entry.Details.Add(new PatchDetailLine { Text = txt, OldValue = oldV, NewValue = newV, Type = NormPatchType(Json.S(dd, "type")) });
+       }
+      }
+      bundle.Entries.Add(entry);
+      if (cat == "champion" && !String.IsNullOrEmpty(slug) && (ctype == "buff" || ctype == "nerf" || ctype == "adjust")) {
+       if (!bundle.ChampionTagBySlug.ContainsKey(slug) || mode == "SR") bundle.ChampionTagBySlug[slug] = ctype;
+      }
+     }
+    };
+
+    foreach (var o in Json.A(data, "champions")) {
+     var d = Json.D(o); if (d == null) continue;
+     int cid = Json.I(d, "id");
+     Champion ch; DDragonChamps.TryGetValue(cid, out ch);
+     addChanges(d, "champion", cid, ch != null ? ch.Slug : "", ch != null ? ChampIconOf(ch) : "", ch != null ? ch.Name : ("Champion " + cid));
+    }
+    foreach (var o in Json.A(data, "augments")) {
+     var d = Json.D(o); if (d == null) continue;
+     int aid = Json.I(d, "id");
+     addChanges(d, "augment", aid, "", "/icons/augments/" + aid + ".png", "Augment " + aid);
+    }
+    foreach (var o in Json.A(data, "items")) {
+     var d = Json.D(o); if (d == null) continue;
+     int iid = Json.I(d, "id");
+     addChanges(d, "item", iid, "", ItemIconOf(iid), ItemNameOf(iid));
+    }
+    foreach (var o in Json.A(data, "systems")) {
+     var d = Json.D(o); if (d == null) continue;
+     var disp = d.ContainsKey("display") ? Json.D(d["display"]) : null;
+     addChanges(d, "system", 0, "", "", disp != null ? Json.S(disp, "label") : "System");
+    }
+
+    if (bundle.Entries.Count > 0) PatchNotes = bundle;
+   } catch { }
+   return PatchNotes;
   }
  }
 }
