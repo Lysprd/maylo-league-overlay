@@ -1,18 +1,29 @@
-maylo — Windows beta
-===================
+maylo — Windows companion & overlay for League of Legends
+=========================================================
 
-Download the latest setup at https://github.com/Lysprd/maylo-league-overlay/releases.
-Run the setup and open maylo from its shortcut. Updates download in the
-background and are applied the next time you open maylo.
-For portable use, extract the entire ZIP and run MAYLO-Hub.exe.
+Modes: Summoner's Rift · Arena 2v2 · ARAM · ARAM Mayhem · Practice Tool / Custom
 
-Requires Windows 10/11 x64 and Microsoft Edge WebView2 Runtime.
-In League, select Borderless video mode to use the in-game overlay.
+Install
+-------
+1. Download the latest MAYLO-Setup.exe from:
+   https://github.com/Lysprd/maylo-league-overlay/releases/latest
+2. Run the setup and open maylo from its desktop or Start menu shortcut.
+   Background updates download automatically with SHA-256 verification;
+   click "Restart & Update" after leaving a match.
+3. For portable use, extract MAYLO-win-x64.zip and run MAYLO-Hub.exe.
 
-Alt+G or F9   Open the in-game sheet
-Ctrl+Tab      Hold to move widgets
-Alt+O         Toggle overlay editing
-Alt+A         Scan augment titles
-Alt+M         Show or hide overlays
-Alt+L         Open live match stats
-Escape        Close the in-game sheet
+Requirements
+------------
+- Windows 10/11 x64 and Microsoft Edge WebView2 Runtime
+- League of Legends set to Borderless video mode for the in-game overlay
+
+Shortcuts
+---------
+Alt+G / F9      Toggle in-game command sheet (Build, Augments, Live)
+Tab (hold)      Hover minimap RED/BLUE clear toggle or left HUD controls
+Ctrl+Tab (hold) Drag & reposition overlay widgets
+Alt+O           Toggle persistent overlay edit & minimap resize mode
+Alt+A           Force immediate Augment OCR scan
+Alt+M           Show or hide all overlays
+Alt+L           Open Live Match view
+Esc             Close in-game sheet or Champ Select Tier List drawer

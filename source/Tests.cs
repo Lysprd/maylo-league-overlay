@@ -362,6 +362,29 @@ namespace MayhemCompanion {
      await Task.Delay(700);
      await snap("Hub-PatchNotes-v12.png");
 
+     // 2d. Arena 2v2 Tier List & Gwen Arena Build (Prismatic Items + Augments + Gold Beam!)
+     var savedModeData = w.ModeData;
+     var savedSelected = w.Selected;
+     var savedTierList = w.TierList;
+     var gwenArenaChamp = w.Champions.First(c => c.Slug == "gwen");
+     w.ActiveMode = "ARENA"; w.DetectedMode = "ARENA";
+     w.TierList = MultiModeParser.LoadTierList("ARENA", "", "emerald_plus", w.Champions, false).GetAwaiter().GetResult();
+     w.Selected = gwenArenaChamp;
+     w.ModeData = MultiModeParser.LoadChampionMode(gwenArenaChamp, "ARENA", "", "emerald_plus", false, null, w.Champions).GetAwaiter().GetResult();
+     w.View = "TierList"; w.PushState();
+     await Task.Delay(700);
+     await snap("Hub-Arena-TierList-v12.png");
+     w.View = "Build"; w.PushState();
+     await Task.Delay(800);
+     await w.WebControl.CoreWebView2.ExecuteScriptAsync("var m=document.querySelector('main'); if(m) m.scrollTop=380;");
+     await Task.Delay(350);
+     await snap("Hub-Arena-Build-v12.png");
+     await w.WebControl.CoreWebView2.ExecuteScriptAsync("var m=document.querySelector('main'); if(m) m.scrollTop=0;");
+     w.ActiveMode = "SR"; w.DetectedMode = "SR";
+     w.TierList = savedTierList;
+     w.Selected = savedSelected;
+     w.ModeData = savedModeData;
+
      // 3. Augment Detail Modal (Real CommunityDragon Effect Description!)
      w.ActiveMode = "MAYHEM"; w.View = "Augments";
      var adapt = mayhemGwen.Augments.FirstOrDefault(a => a.Id == 1205) ?? mayhemGwen.Augments[0];
@@ -393,12 +416,30 @@ namespace MayhemCompanion {
      await snap("Overlay-AltG-v12.png");
      w.InGameSheet = false;
 
-     // 6. Non-Blocking Champ Select Overlay (Bottom-Center Bench Bar + Bottom-Left Safe HUD!)
+     // 6. Non-Blocking Champ Select Overlay (Cards & Bench Ribbon + Open Arena Tier List Drawer!)
      w.Game.InGame = false; w.Game.InSelection = true; w.Game.Mayhem = true; w.ActiveMode = "MAYHEM";
-     w.Preview = true; w.PreviewScene = "bench";
+     w.Preview = true; w.PreviewScene = "bench"; w.ChampTierOpen = false;
      w.PushState();
      await Task.Delay(700);
      await snap("Overlay-Bench-Safe-v12.png");
+
+     w.ActiveMode = "ARENA";
+     w.TierList = MultiModeParser.LoadTierList("ARENA", "", "emerald_plus", w.Champions, false).GetAwaiter().GetResult();
+     w.ChampTierOpen = true;
+     w.PushState();
+     await Task.Delay(700);
+     await snap("Overlay-ChampSelect-TierOpen-v12.png");
+     w.ChampTierOpen = false;
+
+     // 7. In-Game 4-Card Augment OCR Badges + Reroll Reference Bar
+     w.ActiveMode = "MAYHEM"; w.Game.InGame = true; w.Game.InSelection = false; w.Game.Mayhem = true;
+     w.Preview = true; w.PreviewScene = "augments"; w.Editing = false;
+     w.ModeData = mayhemGwen; w.Selected = w.Champions.First(c => c.Slug == "gwen");
+     w.HandleWebMessage("{\"type\":\"setPreviewScene\",\"scene\":\"augments\",\"count\":4}");
+     w.Editing = false;
+     w.PushState();
+     await Task.Delay(700);
+     await snap("Overlay-Augments-v12.png");
 
      w.Game = new GameSnapshot();
      w.Editing = false;
