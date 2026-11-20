@@ -371,16 +371,32 @@ namespace MayhemCompanion {
    if (phase == "ChampSelect") {
     var session = Json.Serializer().Deserialize<Dictionary<string, object>>(await LcuGet("/lol-champ-select/v1/session"));
     int cell = session != null && session.ContainsKey("localPlayerCellId") ? Json.I(session, "localPlayerCellId") : -1;
+    int selfId = 0;
     foreach (var v in Json.A(session, "myTeam")) {
-     var d = Json.D(v); if (d == null) continue; int id = Json.I(d, "championId"); snapshot.Team.Add(id);
+     var d = Json.D(v); if (d == null) continue;
+     int id = Json.I(d, "championId");
+     int intent = Json.I(d, "championPickIntent");
+     int effectiveId = id > 0 ? id : intent;
+     if (effectiveId > 0) snapshot.Team.Add(effectiveId);
      if (Json.I(d, "cellId") == cell) {
-      if (ChampionNames.ContainsKey(id)) snapshot.Champion = ChampionNames[id];
+      selfId = effectiveId;
+      if (ChampionNames.ContainsKey(effectiveId)) snapshot.Champion = ChampionNames[effectiveId];
       string pos = MultiModeParser.NormalizeRole(Json.S(d, "assignedPosition"));
       if (pos != "") { snapshot.AssignedRole = pos; lastAssignedRole = pos; }
      }
     }
-    foreach (var v in Json.A(session, "benchChampions")) snapshot.Bench.Add(Json.I(Json.D(v), "championId"));
-    int selected = SelectionResolver.Champion(session, 0); if (ChampionNames.ContainsKey(selected)) snapshot.Champion = ChampionNames[selected];
+    foreach (var v in Json.A(session, "benchChampions")) {
+     var bd = Json.D(v); if (bd == null) continue;
+     int bcid = Json.I(bd, "championId");
+     if (bcid <= 0) continue;
+     if (!snapshot.Bench.Contains(bcid)) snapshot.Bench.Add(bcid);
+     if (Json.S(bd, "isPriority").Equals("true", StringComparison.OrdinalIgnoreCase) && !snapshot.PriorityCards.Contains(bcid)) {
+      snapshot.PriorityCards.Add(bcid);
+     }
+    }
+    int selected = SelectionResolver.Champion(session, 0);
+    if (selected > 0) selfId = selected;
+    if (ChampionNames.ContainsKey(selected)) snapshot.Champion = ChampionNames[selected];
     snapshot.InSelection = true;
     try {
      var flow = Json.Serializer().Deserialize<Dictionary<string, object>>(await LcuGet("/lol-gameflow/v1/session"));
@@ -391,6 +407,20 @@ namespace MayhemCompanion {
      snapshot.Mayhem = IsMayhemMode(snapshot.Mode, snapshot.QueueId);
     } catch { }
     if (!snapshot.Mayhem && snapshot.Mode == "" && snapshot.Bench.Count > 0) snapshot.Mode = "ARAM";
+    // Capture ARAM / ARAM Mayhem Champion Cards during the opening flip window if bench hasn't populated yet
+    if ((snapshot.Mayhem || snapshot.Mode == "ARAM" || snapshot.QueueId == 2400 || snapshot.QueueId == 450) && snapshot.PriorityCards.Count == 0 && snapshot.Bench.Count <= 2) {
+     try {
+      var pickable = Json.Serializer().DeserializeObject(await LcuGet("/lol-champ-select/v1/pickable-champion-ids")) as object[];
+      if (pickable != null && pickable.Length >= 2 && pickable.Length <= 4) {
+       foreach (var item in pickable) {
+        int pid = Json.ToInt(item);
+        if (pid <= 0 || pid == selfId) continue;
+        if (!snapshot.PriorityCards.Contains(pid)) snapshot.PriorityCards.Add(pid);
+        if (!snapshot.Bench.Contains(pid)) snapshot.Bench.Add(pid);
+       }
+      }
+     } catch { }
+    }
    }
    if (phase == "Lobby") {
     lastChampion = ""; lastAssignedRole = ""; lastMayhem = false;

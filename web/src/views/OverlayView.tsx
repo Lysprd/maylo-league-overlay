@@ -351,21 +351,39 @@ function AugmentBadgeCard({
                 {delta.toFixed(1)}%
               </span>
             )}
-            {parsePct(stat.pick) && (
+            {stat.synergy && typeof stat.synergyBonus === 'number' && stat.synergyBonus !== 0 && (
+              <span
+                className={cn(
+                  'text-[10px] font-bold',
+                  stat.synergyBonus > 0 ? 'text-indigo-300' : 'text-rose-300'
+                )}
+              >
+                · {stat.synergyBonus > 0 ? '+' : ''}
+                {stat.synergyBonus.toFixed(1)}% syn
+              </span>
+            )}
+            {parsePct(stat.pick) && !stat.synergy && (
               <span className="text-[10px] text-zinc-400">· PR {parsePct(stat.pick)}</span>
             )}
           </div>
         </div>
       </div>
 
-      {/* Synergy or Track Row */}
-      {(stat.synergy || editing || tracked) && (
+      {/* Synergy, Top Combo Potential, or Track Row */}
+      {(stat.synergy || stat.topCombo || editing || tracked) && (
         <div className="mt-2 flex items-center justify-between gap-1.5 border-t border-white/[0.08] pt-1.5">
           {stat.synergy ? (
             <span className="inline-flex items-center gap-1 truncate text-[10px] font-medium text-indigo-200">
               <Sparkles className="size-3 text-indigo-400 shrink-0" />
               <span className="truncate">
                 +{stat.synergy.partner} ({fmtPct(stat.synergy.rate)})
+              </span>
+            </span>
+          ) : stat.topCombo ? (
+            <span className="inline-flex items-center gap-1 truncate text-[10px] font-medium text-zinc-300">
+              <Sparkles className="size-2.5 text-indigo-300/80 shrink-0" />
+              <span className="truncate">
+                Combo +{stat.topCombo.partner} ({fmtPct(stat.topCombo.rate)})
               </span>
             </span>
           ) : (
@@ -1523,12 +1541,13 @@ export function OverlayView({ state }: { state: AppState }) {
         </div>
       )}
 
-      {/* NON-BLOCKING CHAMP SELECT TOP-CENTER RIBBON (Sits in empty top client chrome — NEVER blocks portraits, bench, chat, or runes!) */}
+      {/* NON-BLOCKING CHAMP SELECT TOP-CENTER RIBBON (Winrate + Team Synergy on Pick, Priority Cards & Bench!) */}
       {showChampSelect && (() => {
         const hasRealPick = Boolean(state.game.champion) || pScene === 'bench';
         const showPicked = hasRealPick && state.selected !== null;
         const showBench = state.settings.showBenchBar && state.game.bench.length > 0;
         if (!showPicked && !showBench) return null;
+        const hasCards = state.game.bench.some((b) => b.isCard);
         return (
           <DraggableSlot
             panelKey="champ_select_ribbon"
@@ -1547,7 +1566,7 @@ export function OverlayView({ state }: { state: AppState }) {
             >
               <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
                 {showPicked && state.selected && (
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-1.5 shrink-0">
                     {state.selected.icon && (
                       <div className="size-6 rounded-md border border-white/15 overflow-hidden bg-black/50 shrink-0">
                         <img
@@ -1557,19 +1576,30 @@ export function OverlayView({ state }: { state: AppState }) {
                         />
                       </div>
                     )}
-                    <span className="text-xs font-bold text-white">{state.selected.name}</span>
+                    <span className="text-xs font-bold text-white whitespace-nowrap">{state.selected.name}</span>
                     <TierBadge tier={state.selected.tier} size="xs" dark />
-                    <span className="text-[11px] font-bold text-indigo-300 tabular-nums">
+                    <span className="text-[11px] font-bold text-indigo-300 tabular-nums whitespace-nowrap">
                       {fmtPct(state.selected.win)}
                     </span>
+                    {state.selected.synergyLabel && (
+                      <span
+                        className={cn(
+                          'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[9px] font-bold leading-none whitespace-nowrap',
+                          synergyPillClass(state.selected.synergyTone)
+                        )}
+                      >
+                        <Sparkles className="size-2.5 shrink-0" />
+                        {state.selected.synergyLabel}
+                      </span>
+                    )}
                     {state.runeStatus && !state.runeStatus.toLowerCase().includes('waiting') && (
-                      <span className="inline-flex items-center gap-1 rounded-md bg-teal-500/18 px-2 py-1 text-[9px] font-semibold leading-none text-teal-200">
+                      <span className="inline-flex items-center gap-1 rounded-md bg-teal-500/18 px-1.5 py-1 text-[9px] font-semibold leading-none text-teal-200 whitespace-nowrap">
                         <Check className="size-2.5" />
                         Runes
                       </span>
                     )}
                     {state.spellStatus && !state.spellStatus.toLowerCase().includes('waiting') && (
-                      <span className="inline-flex items-center gap-1 rounded-md bg-indigo-500/18 px-2 py-1 text-[9px] font-semibold leading-none text-indigo-200">
+                      <span className="inline-flex items-center gap-1 rounded-md bg-indigo-500/18 px-1.5 py-1 text-[9px] font-semibold leading-none text-indigo-200 whitespace-nowrap">
                         <Zap className="size-2.5" />
                         Spells
                       </span>
@@ -1579,50 +1609,81 @@ export function OverlayView({ state }: { state: AppState }) {
 
                 {showBench && (
                   <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                    <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-amber-300 shrink-0">
+                    <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-amber-300 shrink-0 whitespace-nowrap">
                       <Crown className="size-3" />
-                      Bench
+                      {hasCards ? 'Cards & Bench' : 'Bench'}
                     </span>
-                    {state.game.bench.slice(0, 4).map((bc, idx) => (
-                      <div
-                        key={bc.slug}
-                        className={cn(
-                          'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 whitespace-nowrap',
-                          idx === 0
-                            ? 'border-amber-400/60 bg-amber-500/15'
-                            : 'border-white/10 bg-white/[0.04]'
-                        )}
-                      >
-                        {bc.icon && (
-                          <div className="size-4 rounded overflow-hidden bg-black/50 shrink-0">
-                            <img
-                              src={iconUrl(bc.icon)}
-                              alt={bc.name}
-                              className="size-full object-cover scale-[1.14]"
-                            />
-                          </div>
-                        )}
-                        <span className="text-[10px] font-semibold text-white">{bc.name}</span>
-                        <TierBadge tier={bc.tier} size="xs" dark />
-                        {bc.patchTag && (
+                    {state.game.bench.slice(0, 5).map((bc, idx) => {
+                      const isTop = Boolean(bc.bestPick) || idx === 0;
+                      const up = typeof bc.upgradeDelta === 'number' ? bc.upgradeDelta : 0;
+                      return (
+                        <div
+                          key={bc.slug}
+                          className={cn(
+                            'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 whitespace-nowrap',
+                            isTop
+                              ? 'border-amber-400/70 bg-amber-500/18 shadow-[0_0_12px_rgba(251,191,36,0.14)]'
+                              : bc.isCard
+                                ? 'border-indigo-400/50 bg-indigo-500/14'
+                                : 'border-white/10 bg-white/[0.04]'
+                          )}
+                        >
+                          {bc.isCard && (
+                            <span className="rounded bg-indigo-500/30 px-1 py-0.25 text-[7px] font-extrabold uppercase tracking-wider text-indigo-200 leading-none">
+                              Card
+                            </span>
+                          )}
+                          {bc.icon && (
+                            <div className="size-4 rounded overflow-hidden bg-black/50 shrink-0">
+                              <img
+                                src={iconUrl(bc.icon)}
+                                alt={bc.name}
+                                className="size-full object-cover scale-[1.14]"
+                              />
+                            </div>
+                          )}
+                          <span className="text-[10px] font-semibold text-white">{bc.name}</span>
+                          <TierBadge tier={bc.tier} size="xs" dark />
+                          {bc.patchTag && (
+                            <span
+                              className={cn(
+                                'rounded px-1 py-0.25 text-[8px] font-extrabold uppercase leading-none',
+                                bc.patchTag === 'buff'
+                                  ? 'bg-emerald-500/25 text-emerald-300'
+                                  : bc.patchTag === 'nerf'
+                                    ? 'bg-rose-500/25 text-rose-300'
+                                    : 'bg-amber-500/25 text-amber-200'
+                              )}
+                            >
+                              {bc.patchTag === 'buff' ? '▲' : bc.patchTag === 'nerf' ? '▼' : '~'}
+                            </span>
+                          )}
                           <span
                             className={cn(
-                              'rounded px-1 py-0.25 text-[8px] font-extrabold uppercase leading-none',
-                              bc.patchTag === 'buff'
-                                ? 'bg-emerald-500/25 text-emerald-300'
-                                : bc.patchTag === 'nerf'
-                                  ? 'bg-rose-500/25 text-rose-300'
-                                  : 'bg-amber-500/25 text-amber-200'
+                              'text-[9px] font-bold tabular-nums',
+                              isTop ? 'text-amber-200' : 'text-indigo-300'
                             )}
                           >
-                            {bc.patchTag === 'buff' ? '▲' : bc.patchTag === 'nerf' ? '▼' : '~'}
+                            {fmtPct(bc.effectiveWin && bc.effectiveWin > 0 ? bc.effectiveWin : bc.win)}
                           </span>
-                        )}
-                        <span className="text-[9px] font-bold text-indigo-300 tabular-nums">
-                          {fmtPct(bc.win)}
-                        </span>
-                      </div>
-                    ))}
+                          {bc.synergyLabel && (
+                            <span
+                              className={cn(
+                                'rounded border px-1 py-0.25 text-[8px] font-bold leading-none',
+                                synergyPillClass(bc.synergyTone)
+                              )}
+                            >
+                              {bc.synergyLabel}
+                            </span>
+                          )}
+                          {up >= 1.0 && (
+                            <span className="rounded bg-emerald-500/25 px-1 py-0.25 font-mono-tech text-[8px] font-extrabold text-emerald-300 leading-none">
+                              +{up.toFixed(1)}%
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

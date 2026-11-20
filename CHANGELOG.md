@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.0-beta.12
+- **Instant Champ Select Win Rate & Team Synergy (`Cards & Bench`):** Speeds up Champ Select polling (`450ms`), pre-warms mode Tier Lists in memory (zero blank flash), captures ARAM / ARAM Mayhem priority Champion Cards (`isPriority` + pickable subset) and ally intents, and ranks every card & bench option by combined **Win Rate + Team Synergy** (real ally duo WR pre-fetched in background + instant 0ms DDragon comp synergy: `Frontline`, `AP Carry`, `AD DPS`, `Enchanter`). Highlights top upgrade picks with a golden glow and `+X.X%` upgrade delta so you never miss a winning pick.
+- **Faster In-Game Augment Card Flip & Synergy Visibility:** Accelerates OCR scanning to `55ms` and keeps wide multi-card capture active during the first 2.5s of card reveal so all 3–4 augment cards lock in the exact frame they flip. Displays active synergy bonus (`+X.X% syn`) right alongside Win Rate plus top combo synergy hints (`Combo +Partner`) even on Augment #1.
+
 ## v0.1.0-beta.11
 - **Mode-scoped, lighter Patch Notes UI:** Patch notes now automatically follow the active mode in the top bar (`Ranked SR`, `ARAM`, or `ARAM Mayhem`) — removing redundant mode tabs and empty categories. Entries are cleanly grouped into **Buffs**, **Nerfs**, and **New & Adjusted** with compact expandable cards (click to reveal formatted `old → new` stat lines), clickable summary filter pills, and mode-accurate `BUFF`/`NERF` badges across Tier List, Bench, and `Alt+G`.
 - **Single-line update buttons:** Fixed the topbar update pill, sidebar `Restart & Update` button, and Settings update button with `whitespace-nowrap` and compact labels so they never wrap onto two lines.

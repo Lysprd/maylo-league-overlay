@@ -34,6 +34,8 @@ namespace MayhemCompanion {
   static Task<PatchNotesBundle> patchTask = null;
   public static Dictionary<int, Champion> DDragonChamps = new Dictionary<int, Champion>();
   public static Dictionary<string, int> ChampIdBySlug = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+  public static Dictionary<string, List<string>> ChampTagsBySlug = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+  public static Dictionary<string, List<Stat>> ChampTeammatesBySlug = new Dictionary<string, List<Stat>>(StringComparer.OrdinalIgnoreCase);
   public static Dictionary<int, string> DDragonItemNames = new Dictionary<int, string>();
   public static Dictionary<int, int> DDragonItemPrices = new Dictionary<int, int>();
   public static Dictionary<int, Dictionary<string, object>> DDragonItems = new Dictionary<int, Dictionary<string, object>>();
@@ -165,6 +167,12 @@ namespace MayhemCompanion {
       ChampIdBySlug[slug] = id;
       ChampIdBySlug[GameBridge.Norm(alias)] = id;
       ChampIdBySlug[GameBridge.Norm(name)] = id;
+      var tags = Json.A(d, "tags").Select(Convert.ToString).Where(t => !String.IsNullOrEmpty(t)).ToList();
+      if (tags.Count > 0) {
+       ChampTagsBySlug[slug] = tags;
+       ChampTagsBySlug[GameBridge.Norm(alias)] = tags;
+       ChampTagsBySlug[GameBridge.Norm(name)] = tags;
+      }
      }
     }
 
@@ -456,6 +464,22 @@ namespace MayhemCompanion {
    data.Teammates = Parser.Section(html, "Best Teammates");
    data.Matchups = Parser.Section(html, "Worst Matchups");
    return data;
+  }
+
+  public static async Task<List<Stat>> LoadChampionTeammates(Champion champ) {
+   if (champ == null || String.IsNullOrEmpty(champ.Slug)) return new List<Stat>();
+   List<Stat> cached;
+   lock (ChampTeammatesBySlug) {
+    if (ChampTeammatesBySlug.TryGetValue(champ.Slug, out cached)) return cached;
+   }
+   try {
+    string html = await WebCache.Page(champ.Slug, "https://mayhemmeta.com/champions/" + champ.Slug, false, h => h.Contains("Best Teammates") || h.Contains("All Augments"), ".html", 360);
+    var mates = Parser.Section(html, "Best Teammates");
+    lock (ChampTeammatesBySlug) { ChampTeammatesBySlug[champ.Slug] = mates; }
+    return mates;
+   } catch {
+    return new List<Stat>();
+   }
   }
 
   public static SkillOrder ParseOpGgJsonSkills(Dictionary<string, object> rootData, string sourceLabel) {
