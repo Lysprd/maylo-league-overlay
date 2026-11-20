@@ -298,6 +298,21 @@ export interface AppSettings {
   panels: Record<string, { x: number; y: number }>;
 }
 
+export interface ChampCardOffer {
+  name: string;
+  slug: string;
+  tier: string;
+  win: number;
+  effectiveWin: number;
+  synergyBonus?: number;
+  synergyLabel?: string;
+  synergyTone?: string;
+  patchTag?: string;
+  bestPick?: boolean;
+  x: number;
+  y: number;
+}
+
 export interface PortraitHit {
   champion: Champion;
   x: number;
@@ -355,6 +370,7 @@ export interface AppState {
     owned: number[];
     planned: number[];
     bench: Champion[];
+    champCards?: ChampCardOffer[];
     team: Champion[];
     live: LiveSummary;
   };

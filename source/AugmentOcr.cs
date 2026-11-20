@@ -13,6 +13,7 @@ using Windows.Storage.Streams;
 namespace MayhemCompanion {
  public class OcrLine { public string Text; public double X, Y, Width, Height; }
  public class AugmentHit { public Stat Stat; public double X, Y; }
+ public class ChampionCardHit { public Champion Champion; public double X, Y; }
 
  public static class AugmentOcr {
   const double TitleBandTop = 0.27;
@@ -383,6 +384,174 @@ namespace MayhemCompanion {
     }
    }
 
+   sw.Stop();
+   output.Milliseconds = sw.Elapsed.TotalMilliseconds;
+   return output;
+  }
+
+  public class ChampCardScanOutput {
+   public List<ChampionCardHit> Hits = new List<ChampionCardHit>();
+   public ulong Signature;
+   public bool SkippedUnchanged;
+   public double Milliseconds;
+  }
+
+  static Champion MatchChampionName(string rawText, List<Champion> champions, Dictionary<string, Champion> exactMap) {
+   string folded = ShapeFold(rawText);
+   if (folded.Length < 2) return null;
+   Champion exact;
+   if (exactMap.TryGetValue(folded, out exact)) return exact;
+   if (folded.Length < 4) return null;
+   // Allow 1-2 char OCR noise for longer names (e.g. "WARW1CK", "AURELION S0L") requiring unique best match
+   Champion best = null;
+   int bestDist = 99, secondDist = 99;
+   int limit = folded.Length <= 6 ? 1 : 2;
+   foreach (var kv in exactMap) {
+    string key = kv.Key;
+    if (key.Length < 4 || Math.Abs(key.Length - folded.Length) > limit) continue;
+    int dist = EditDistance(key, folded, limit);
+    if (dist > limit) continue;
+    if (best != null && best.Slug == kv.Value.Slug) { if (dist < bestDist) bestDist = dist; continue; }
+    if (dist < bestDist) { secondDist = bestDist; bestDist = dist; best = kv.Value; }
+    else if (dist < secondDist) secondDist = dist;
+   }
+   return best != null && bestDist < secondDist ? best : null;
+  }
+
+  public static Dictionary<string, Champion> BuildChampionOcrMap(IEnumerable<Champion> champions, Dictionary<int, string> aliasById = null, Dictionary<int, string> localById = null) {
+   var map = new Dictionary<string, Champion>(StringComparer.OrdinalIgnoreCase);
+   var list = (champions ?? Enumerable.Empty<Champion>()).ToList();
+   foreach (var c in list) {
+    if (c == null) continue;
+    string fn = ShapeFold(c.Name); if (fn.Length >= 2 && !map.ContainsKey(fn)) map[fn] = c;
+    string fa = ShapeFold(c.AssetKey); if (fa.Length >= 2 && !map.ContainsKey(fa)) map[fa] = c;
+    string fs = ShapeFold(c.Slug); if (fs.Length >= 2 && !map.ContainsKey(fs)) map[fs] = c;
+   }
+   // Common localized French/client champion display names
+   var extras = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+    { "maitreyi", "masteryi" }, { "nunu", "nunu" }, { "nunuwillump", "nunu" }, { "nunuetwillump", "nunu" },
+    { "wukong", "monkeyking" }, { "drmundo", "drmundo" }, { "renata", "renata" }, { "renataglasc", "renata" }
+   };
+   foreach (var kv in extras) {
+    Champion target = list.FirstOrDefault(c => GameBridge.Norm(c.AssetKey) == kv.Value || GameBridge.Norm(c.Slug) == kv.Value || GameBridge.Norm(c.Name) == kv.Value);
+    if (target != null) { string fk = ShapeFold(kv.Key); if (!map.ContainsKey(fk)) map[fk] = target; }
+   }
+   if (aliasById != null && localById != null) {
+    foreach (var kv in localById) {
+     string alias;
+     if (!aliasById.TryGetValue(kv.Key, out alias) || String.IsNullOrEmpty(kv.Value)) continue;
+     Champion target = list.FirstOrDefault(c => GameBridge.Norm(c.AssetKey) == GameBridge.Norm(alias) || GameBridge.Norm(c.Name) == GameBridge.Norm(alias));
+     if (target != null) {
+      string fl = ShapeFold(kv.Value);
+      if (fl.Length >= 2 && !map.ContainsKey(fl)) map[fl] = target;
+     }
+    }
+   }
+   return map;
+  }
+
+  public static List<ChampionCardHit> FindChampionCards(List<OcrLine> lines, List<Champion> champions, Dictionary<string, Champion> exactMap, int clientW, int clientH, double offsetX, double offsetY) {
+   var hits = new List<ChampionCardHit>();
+   if (lines == null || lines.Count == 0 || exactMap == null || exactMap.Count == 0) return hits;
+   for (int i = 0; i < lines.Count; i++) {
+    var line = lines[i];
+    double left = line.X, right = line.X + line.Width, cx = line.X + line.Width * 0.5;
+    Champion matched = MatchChampionName(line.Text, champions, exactMap);
+    if (matched == null) {
+     var nearby = lines.Where((other, idx) => idx != i && other.Y > line.Y && other.Y - line.Y < Math.Max(45, clientH * 0.065) && Math.Abs((other.X + other.Width * 0.5) - cx) < clientW * 0.08).OrderBy(o => o.Y).FirstOrDefault();
+     if (nearby != null) {
+      matched = MatchChampionName(line.Text + " " + nearby.Text, champions, exactMap);
+      if (matched != null) { left = Math.Min(left, nearby.X); right = Math.Max(right, nearby.X + nearby.Width); }
+     }
+    }
+    if (matched == null) continue;
+    double x = offsetX + (left + right) * 0.5 / Math.Max(1, clientW);
+    double y = offsetY + (line.Y + line.Height * 0.5) / Math.Max(1, clientH);
+    if (x < 0.08 || x > 0.92 || y < 0.28 || y > 0.88) continue;
+    hits.Add(new ChampionCardHit { Champion = matched, X = x, Y = y });
+   }
+   if (hits.Count < 2) return new List<ChampionCardHit>();
+   // Select the largest horizontally aligned row of distinct champion cards (works for 2, 3, 4, 5+ cards!)
+   List<ChampionCardHit> bestRow = new List<ChampionCardHit>();
+   foreach (var anchor in hits) {
+    var row = new List<ChampionCardHit>();
+    foreach (var h in hits.Where(o => Math.Abs(o.Y - anchor.Y) < 0.05).OrderBy(o => o.X)) {
+     if (row.Count >= 5) break;
+     if (row.Any(r => r.Champion.Slug == h.Champion.Slug || Math.Abs(r.X - h.X) < 0.10)) continue;
+     row.Add(h);
+    }
+    if (row.Count > bestRow.Count) bestRow = row;
+   }
+   return bestRow.Count >= 2 ? bestRow : new List<ChampionCardHit>();
+  }
+
+  static Bitmap MakeHighContrastTextBitmap(Bitmap source) {
+   int w = source.Width, h = source.Height;
+   var dst = new Bitmap(w, h, PixelFormat.Format32bppArgb);
+   var srcData = source.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+   var dstData = dst.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+   try {
+    byte[] sBuf = new byte[Math.Abs(srcData.Stride) * h];
+    byte[] dBuf = new byte[Math.Abs(dstData.Stride) * h];
+    Marshal.Copy(srcData.Scan0, sBuf, 0, sBuf.Length);
+    int sStride = Math.Abs(srcData.Stride), dStride = Math.Abs(dstData.Stride);
+    for (int y = 0; y < h; y++) {
+     int sRow = y * sStride, dRow = y * dStride;
+     for (int x = 0; x < w; x++) {
+      int so = sRow + x * 4, dOff = dRow + x * 4;
+      int lum = (sBuf[so] * 114 + sBuf[so + 1] * 587 + sBuf[so + 2] * 299) / 1000;
+      byte v = lum >= 155 ? (byte)0 : (lum >= 115 ? (byte)((155 - lum) * 6) : (byte)255);
+      dBuf[dOff] = v; dBuf[dOff + 1] = v; dBuf[dOff + 2] = v; dBuf[dOff + 3] = 255;
+     }
+    }
+    Marshal.Copy(dBuf, 0, dstData.Scan0, dBuf.Length);
+   } finally {
+    source.UnlockBits(srcData);
+    dst.UnlockBits(dstData);
+   }
+   return dst;
+  }
+
+  public static async Task<ChampCardScanOutput> ScanChampSelectCards(Native.Rect clientRect, List<Champion> champions, Dictionary<string, Champion> exactMap, bool preferUserLang, ulong prevSignature = 0, Func<Native.Rect, Bitmap> capturer = null) {
+   var sw = System.Diagnostics.Stopwatch.StartNew();
+   var output = new ChampCardScanOutput();
+   int cw = clientRect.Width, ch = clientRect.Height;
+   if (cw < 400 || ch < 250) return output;
+   int cropLeft = clientRect.Left + (int)(cw * 0.06);
+   int cropTop = clientRect.Top + (int)(ch * 0.30);
+   int cropW = Math.Max(64, (int)(cw * 0.88));
+   int cropH = Math.Max(64, (int)(ch * 0.56));
+   var cropRect = new Native.Rect { Left = cropLeft, Top = cropTop, Right = cropLeft + cropW, Bottom = cropTop + cropH };
+   Func<Native.Rect, Bitmap> captureRect = r => {
+    if (capturer != null) return capturer(r);
+    var b = new Bitmap(r.Width, r.Height, PixelFormat.Format32bppArgb);
+    try {
+     using (var g = Graphics.FromImage(b)) g.CopyFromScreen(r.Left, r.Top, 0, 0, new Size(r.Width, r.Height));
+     return b;
+    } catch { b.Dispose(); throw; }
+   };
+   double ox = (cropLeft - clientRect.Left) / (double)cw;
+   double oy = (cropTop - clientRect.Top) / (double)ch;
+   using (var bmp = captureRect(cropRect)) {
+    ulong sig = BandSignature(bmp);
+    output.Signature = sig;
+    if (prevSignature != 0 && sig == prevSignature) {
+     output.SkippedUnchanged = true;
+     sw.Stop();
+     output.Milliseconds = sw.Elapsed.TotalMilliseconds;
+     return output;
+    }
+    double scale = Math.Max(1.4, Math.Min(2.0, 620.0 / Math.Max(1, bmp.Height)));
+    using (var hc = MakeHighContrastTextBitmap(bmp)) {
+     var lines = await RecognizeBitmap(hc, scale, preferUserLang);
+     output.Hits = FindChampionCards(lines, champions, exactMap, cw, ch, ox, oy);
+    }
+    if (output.Hits.Count < 2) {
+     var rawLines = await RecognizeBitmap(bmp, Math.Max(1.8, scale), preferUserLang);
+     var rawHits = FindChampionCards(rawLines, champions, exactMap, cw, ch, ox, oy);
+     if (rawHits.Count > output.Hits.Count) output.Hits = rawHits;
+    }
+   }
    sw.Stop();
    output.Milliseconds = sw.Elapsed.TotalMilliseconds;
    return output;

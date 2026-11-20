@@ -1541,6 +1541,82 @@ export function OverlayView({ state }: { state: AppState }) {
         </div>
       )}
 
+      {/* FLOATING CHAMPION CARD BADGES (Directly on 2, 3, 4, or 5 spawned ARAM / Mayhem Champion Cards!) */}
+      {showChampSelect && state.game.champCards && state.game.champCards.length >= 2 && (
+        <div className="pointer-events-none fixed inset-0 z-30">
+          {state.game.champCards.map((card) => {
+            const best = Boolean(card.bestPick);
+            const displayWin = card.effectiveWin > 0 ? card.effectiveWin : card.win;
+            const topPct = Math.max(12, Math.min(92, (card.y + 0.044) * 100));
+            return (
+              <div
+                key={`${card.slug}-${card.x.toFixed(2)}`}
+                className="pointer-events-none fixed -translate-x-1/2"
+                style={{ left: `${card.x * 100}vw`, top: `${topPct}vh`, zoom: scale }}
+              >
+                <div
+                  className={cn(
+                    'flex flex-col items-center gap-1 rounded-xl border px-2.5 py-1.5 shadow-[0_10px_28px_rgba(0,0,0,0.72)] backdrop-blur-md whitespace-nowrap',
+                    best
+                      ? 'border-amber-400/75 bg-[#12131C]/95 shadow-[0_0_22px_rgba(251,191,36,0.28)]'
+                      : 'border-white/15 bg-[#0E1017]/92'
+                  )}
+                >
+                  <div className="flex items-center gap-1.5">
+                    {best && (
+                      <span className="inline-flex items-center gap-0.5 rounded bg-amber-400/20 border border-amber-400/50 px-1.5 py-0.5 text-[8.5px] font-extrabold uppercase tracking-wider text-amber-200 leading-none">
+                        <Crown className="size-2.5 text-amber-300" />
+                        Best
+                      </span>
+                    )}
+                    <TierBadge tier={card.tier} size="sm" dark />
+                    <span
+                      className={cn(
+                        'font-mono-tech text-[13px] font-extrabold tabular-nums leading-none',
+                        best
+                          ? 'text-amber-200'
+                          : displayWin >= 52
+                            ? 'text-emerald-300'
+                            : displayWin < 48
+                              ? 'text-rose-300'
+                              : 'text-indigo-200'
+                      )}
+                    >
+                      {fmtPct(displayWin)}
+                    </span>
+                    {card.patchTag && (
+                      <span
+                        className={cn(
+                          'rounded px-1 py-0.5 text-[8px] font-extrabold uppercase leading-none',
+                          card.patchTag === 'buff'
+                            ? 'bg-emerald-500/25 text-emerald-300'
+                            : card.patchTag === 'nerf'
+                              ? 'bg-rose-500/25 text-rose-300'
+                              : 'bg-amber-500/25 text-amber-200'
+                        )}
+                      >
+                        {card.patchTag === 'buff' ? '▲' : card.patchTag === 'nerf' ? '▼' : '~'}
+                      </span>
+                    )}
+                  </div>
+                  {card.synergyLabel && (
+                    <span
+                      className={cn(
+                        'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[9px] font-bold leading-none',
+                        synergyPillClass(card.synergyTone)
+                      )}
+                    >
+                      <Sparkles className="size-2.5 shrink-0" />
+                      {card.synergyLabel}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* NON-BLOCKING CHAMP SELECT TOP-CENTER RIBBON (Winrate + Team Synergy on Pick, Priority Cards & Bench!) */}
       {showChampSelect && (() => {
         const hasRealPick = Boolean(state.game.champion) || pScene === 'bench';

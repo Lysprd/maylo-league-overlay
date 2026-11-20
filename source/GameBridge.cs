@@ -58,6 +58,7 @@ namespace MayhemCompanion {
   Task staticTask;
 
   public Dictionary<int, string> ChampionNames = new Dictionary<int, string>();
+  public Dictionary<int, string> ChampionLocalNames = new Dictionary<int, string>();
   public Dictionary<int, Dictionary<string, object>> Items = new Dictionary<int, Dictionary<string, object>>();
   public Dictionary<int, List<string>> AugmentTags = new Dictionary<int, List<string>>();
   public Dictionary<int, string> AugmentNames = new Dictionary<int, string>();
@@ -214,7 +215,14 @@ namespace MayhemCompanion {
   async Task LoadStaticCore() {
    await Connect(); if (staticReady) return;
    var champions = Json.Serializer().DeserializeObject(await LcuGet("/lol-game-data/assets/v1/champion-summary.json")) as object[];
-   if (champions != null) foreach (var entry in champions) { var d = Json.D(entry); if (d != null) ChampionNames[Json.I(d, "id")] = Json.S(d, "alias"); }
+   if (champions != null) foreach (var entry in champions) {
+    var d = Json.D(entry); if (d == null) continue;
+    int cid = Json.I(d, "id");
+    if (cid <= 0) continue;
+    ChampionNames[cid] = Json.S(d, "alias");
+    string loc = Json.S(d, "name");
+    if (loc != "") ChampionLocalNames[cid] = loc;
+   }
    try { var items = Json.Serializer().DeserializeObject(await LcuGet("/lol-game-data/assets/v1/items.json")) as object[]; foreach (var entry in items ?? new object[0]) { var d = Json.D(entry); if (d != null) Items[Json.I(d, "id")] = d; } } catch { }
    try { var augments = Json.Serializer().DeserializeObject(await LcuGet("/lol-game-data/assets/v1/cherry-augments.json")) as object[]; foreach (var entry in augments ?? new object[0]) { var d = Json.D(entry); if (d == null) continue; int id = Json.I(d, "id"); AugmentNames[id] = Json.S(d, "nameTRA"); AugmentDescriptions[id] = Parser.Clean(Json.S(d, "descTRA")); AugmentTags[id] = Json.A(d, "augmentDisplayTags").Select(Convert.ToString).ToList(); AugmentRarities[id] = Json.S(d, "rarity"); if (Json.S(d, "augmentNameId").StartsWith("ARAM_", StringComparison.OrdinalIgnoreCase)) MayhemAugmentIds.Add(id); } } catch { }
    staticReady = true;

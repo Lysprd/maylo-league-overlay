@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.2.0-beta.2
+- **Floating Tier, Win Rate & Synergy Badges Directly on Spawned Champion Cards:** Detects 2, 3, 4, or 5 ARAM / ARAM Mayhem Champion Cards the instant they appear on the `PICK YOUR CHAMPION` screen using fast localized OCR (~35 ms, zero flicker) and pins a click-through **Tier + Win Rate % + Team Synergy + Golden Best Pick** badge directly on every individual card.
+
 ## v0.2.0-beta.1
 ### Overlay & Champ Select
 - **Instant Win Rate & Team Synergy on Cards & Bench:** Speeds up Champ Select polling (`450 ms`), pre-warms ARAM & SR Tier Lists in memory, and ranks Champion Cards & Bench picks by combined **Win Rate + Team Synergy** (real ally duo WR + 0 ms DDragon comp synergy: `Frontline`, `AP Carry`, `AD DPS`, `Enchanter`) with a golden **Best Pick** highlight and `+X.X%` upgrade delta.

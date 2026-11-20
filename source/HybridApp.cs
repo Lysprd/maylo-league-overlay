@@ -241,12 +241,13 @@ namespace MayhemCompanion {
   public double OcrLastMs;
   public List<string> OcrLastLines = new List<string>();
   byte[] lastDebugPng;
-  ulong lastOcrSig;
+  ulong lastOcrSig, lastChampCardSig;
   DateTime nextOcrRecovery = DateTime.MinValue;
   DateTime offerAppearedAt = DateTime.MinValue;
-  int offerScanGeneration, lastRawHitCount;
+  int offerScanGeneration, lastRawHitCount, champCardMisses;
   int previewAugmentCount = 3;
-  bool manualRoleOverride, leftMouseWasDown, realQuit, wasInGame, hadGameWindow, loadoutBusy;
+  bool manualRoleOverride, leftMouseWasDown, realQuit, wasInGame, hadGameWindow, loadoutBusy, champCardBusy;
+  List<ChampionCardHit> champSelectCards = new List<ChampionCardHit>();
   readonly Dictionary<string, double> spellReadyAt = new Dictionary<string, double>();
   readonly Dictionary<string, List<TierListEntry>> tierListByMode = new Dictionary<string, List<TierListEntry>>(StringComparer.OrdinalIgnoreCase);
   readonly HashSet<string> synergyPrefetchInFlight = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -606,6 +607,18 @@ namespace MayhemCompanion {
 
    ocrTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
    ocrTimer.Tick += async (s, e) => {
+    if (Game.InSelection && !Game.InGame) {
+     ocrTimer.Interval = TimeSpan.FromMilliseconds(150);
+     bool allowCards = Config.Overlay && Config.Connected && !HubActive && !InGameSheet && !IsOverlayEditing && !champCardBusy
+      && (Game.ModeKey == "MAYHEM" || Game.ModeKey == "ARAM");
+     if (allowCards) await ReadChampSelectCards();
+     return;
+    }
+    if (champSelectCards.Count > 0) {
+     champSelectCards = new List<ChampionCardHit>();
+     lastChampCardSig = 0; champCardMisses = 0;
+     PushState();
+    }
     ocrTimer.Interval = TimeSpan.FromMilliseconds((offerSession.Visible || lastRawHitCount >= 1) ? 55 : 100);
     bool allowOcr = Game.InGame && Config.Ocr && Config.Connected && !HubActive && !InGameSheet && !IsOverlayEditing && !ocrBusy && (Game.Mayhem || Config.OcrAllModes);
     if (!allowOcr || Game.ModeKey == "") return;
@@ -830,6 +843,9 @@ namespace MayhemCompanion {
    if (!Game.InSelection || closing) return;
    var candidates = new List<Champion>();
    if (Selected != null) candidates.Add(Selected);
+   foreach (var card in champSelectCards) {
+    if (card != null && card.Champion != null && !candidates.Any(x => x.Slug == card.Champion.Slug)) candidates.Add(card.Champion);
+   }
    foreach (int cid in Game.PriorityCards.Concat(Game.Bench).Distinct()) {
     var ch = FromId(cid);
     if (ch != null && !candidates.Any(x => x.Slug == ch.Slug)) candidates.Add(ch);
@@ -1077,6 +1093,56 @@ namespace MayhemCompanion {
   async Task RefreshProfile(bool force) {
    if (!Config.Connected) return;
    if (await Profile.Refresh(Bridge, force) && !closing) PushState();
+  }
+
+  async Task ReadChampSelectCards() {
+   if (champCardBusy || closing || !Game.InSelection || Game.InGame || Champions.Count == 0) return;
+   IntPtr target = Game.Window != IntPtr.Zero ? Game.Window : Native.Target(false);
+   if (target == IntPtr.Zero || !Native.IsWindow(target) || !Native.IsWindowVisible(target) || Native.IsIconic(target)) return;
+   if (!Native.SameApplication(Native.GetForegroundWindow(), target)) return;
+   var rect = Native.Bounds(target);
+   if (rect.Width < 400 || rect.Height < 250) return;
+   champCardBusy = true;
+   try {
+    bool preferUserLang = Bridge.ChampionLocalNames.Values.Any(v => !String.IsNullOrEmpty(v) && v.Any(ch => ch > 127))
+     || !String.Equals(System.Globalization.CultureInfo.InstalledUICulture.TwoLetterISOLanguageName, "en", StringComparison.OrdinalIgnoreCase);
+    var champSnap = Champions.ToList();
+    var aliasSnap = new Dictionary<int, string>(Bridge.ChampionNames);
+    var localSnap = new Dictionary<int, string>(Bridge.ChampionLocalNames);
+    ulong prevSig = champSelectCards.Count >= 2 ? lastChampCardSig : 0UL;
+    var scan = await Task.Run(() => {
+     var map = AugmentOcr.BuildChampionOcrMap(champSnap, aliasSnap, localSnap);
+     return AugmentOcr.ScanChampSelectCards(rect, champSnap, map, preferUserLang, prevSig);
+    });
+    if (closing || !Game.InSelection || Game.InGame || !Native.SameApplication(Native.GetForegroundWindow(), target)) return;
+    if (scan.SkippedUnchanged) return;
+    if (scan.Hits.Count >= 2) {
+     lastChampCardSig = scan.Signature;
+     champCardMisses = 0;
+     var stabilized = new List<ChampionCardHit>();
+     foreach (var h in scan.Hits) {
+      var prev = champSelectCards.FirstOrDefault(p => p.Champion != null && p.Champion.Slug == h.Champion.Slug);
+      double x = prev != null && Math.Abs(prev.X - h.X) < 0.015 ? prev.X : h.X;
+      double y = prev != null && Math.Abs(prev.Y - h.Y) < 0.015 ? prev.Y : h.Y;
+      stabilized.Add(new ChampionCardHit { Champion = h.Champion, X = x, Y = y });
+     }
+     bool changed = stabilized.Count != champSelectCards.Count
+      || stabilized.Where((c, i) => champSelectCards[i].Champion.Slug != c.Champion.Slug || Math.Abs(champSelectCards[i].X - c.X) > 0.012 || Math.Abs(champSelectCards[i].Y - c.Y) > 0.012).Any();
+     champSelectCards = stabilized;
+     if (changed) {
+      PrefetchChampSelectSynergies();
+      PushState();
+     }
+    } else if (champSelectCards.Count > 0) {
+     champCardMisses++;
+     if (champCardMisses >= 2) {
+      champSelectCards = new List<ChampionCardHit>();
+      lastChampCardSig = 0;
+      champCardMisses = 0;
+      PushState();
+     }
+    }
+   } catch { } finally { champCardBusy = false; }
   }
 
   async void TriggerRead() { await ReadAugments(true); }
@@ -1485,6 +1551,23 @@ namespace MayhemCompanion {
     bestPick = idx == 0 && (selEffWin <= 0 || x.upgradeDelta >= 0.8),
     icon = MultiModeParser.ChampIconOf(x.champ), assetKey = x.champ.AssetKey, patchTag = patchTagOf(x.champ.Slug)
    }).ToArray();
+
+   var rawCards = Game.InSelection && !Game.InGame ? champSelectCards.Where(h => h != null && h.Champion != null).ToList() : new List<ChampionCardHit>();
+   var scoredCards = rawCards.Select(h => {
+    var ce = modeEntryFor(h.Champion);
+    double cw = ce != null ? ce.WinRate : h.Champion.Win;
+    var cs = ComputeChampSynergy(h.Champion, cw, teamChamps);
+    double ew = Math.Round(cw + cs.Bonus, 1);
+    return new { hit = h, tier = ce != null ? ce.Tier : h.Champion.Tier, win = cw, effectiveWin = ew, syn = cs };
+   }).ToList();
+   double topCardEff = scoredCards.Count > 0 ? scoredCards.Max(x => x.effectiveWin) : 0;
+   var champCardsPayload = scoredCards.Select(x => new {
+    name = x.hit.Champion.Name, slug = x.hit.Champion.Slug, tier = x.tier, win = x.win,
+    effectiveWin = x.effectiveWin, synergyBonus = x.syn.Bonus, synergyLabel = x.syn.Label, synergyTone = x.syn.Tone,
+    patchTag = patchTagOf(x.hit.Champion.Slug),
+    bestPick = scoredCards.Count >= 2 && x.effectiveWin >= topCardEff - 0.05,
+    x = x.hit.X, y = x.hit.Y
+   }).ToArray();
    var pn = MultiModeParser.PatchNotes ?? new PatchNotesBundle();
 
    var updateStatus = GitHubUpdater.GetStatus();
@@ -1536,6 +1619,7 @@ namespace MayhemCompanion {
      phase = Game.Phase, mode = Game.Mode, modeKey = Game.ModeKey, modeLabel = Game.ModeLabel, champion = Game.Champion, inGame = Game.InGame, inSelection = Game.InSelection, mayhem = Game.Mayhem, gold = Game.Gold,
      owned = Game.Owned.ToArray(), planned = plannedItems.ToArray(),
      bench = benchPayload,
+     champCards = champCardsPayload,
      team = Game.Team.Select(FromId).Where(c => c != null).Select(c => new { name = c.Name, slug = c.Slug, tier = c.Tier, win = c.Win, pick = c.Pick, icon = MultiModeParser.ChampIconOf(c), assetKey = c.AssetKey }).ToArray(),
      live = new {
       clock = Game.Live.Clock, seconds = Game.Live.Seconds, health = Game.Live.Health, maxHealth = Game.Live.MaxHealth,
