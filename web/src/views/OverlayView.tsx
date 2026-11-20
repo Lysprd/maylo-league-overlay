@@ -365,17 +365,6 @@ function AugmentBadgeCard({
                 {delta.toFixed(1)}%
               </span>
             )}
-            {stat.synergy && typeof stat.synergyBonus === 'number' && stat.synergyBonus !== 0 && (
-              <span
-                className={cn(
-                  'text-[10px] font-bold',
-                  stat.synergyBonus > 0 ? 'text-indigo-300' : 'text-rose-300'
-                )}
-              >
-                · {stat.synergyBonus > 0 ? '+' : ''}
-                {stat.synergyBonus.toFixed(1)}% syn
-              </span>
-            )}
             {parsePct(stat.pick) && !stat.synergy && (
               <span className="text-[10px] text-zinc-400">· PR {parsePct(stat.pick)}</span>
             )}
@@ -534,6 +523,7 @@ function InGameCommandSheet({ state }: { state: AppState }) {
   const isMayhem = state.activeMode === 'MAYHEM';
   const isArena = state.activeMode === 'ARENA';
   const hasAugments = isMayhem || isArena;
+  const isRift = (state.game.modeKey ?? state.activeMode) === 'SR';
   const rawTab = state.inGameSheetTab || 'build';
   const tab = !hasAugments && rawTab === 'augments' ? 'build' : rawTab;
   const live = state.game.live;
@@ -635,7 +625,7 @@ function InGameCommandSheet({ state }: { state: AppState }) {
             {p.kills}/{p.deaths}/{p.assists}
           </div>
           <div className="text-center text-[11px] tabular-nums text-zinc-300">
-            {p.cs} <span className="text-zinc-500">({pCsMin})</span>
+            {p.cs}{isRift && <span className="text-zinc-500"> ({pCsMin})</span>}
           </div>
           <div className="flex items-center justify-end gap-1">
             {renderSpellIcon(1, p.spell1, p.spellKey1)}
@@ -718,12 +708,12 @@ function InGameCommandSheet({ state }: { state: AppState }) {
                     KDA <strong className="text-zinc-100">{me.kills}/{me.deaths}/{me.assists}</strong>
                   </span>
                 )}
-                {csPerMin > 0 && (
+                {isRift && csPerMin > 0 && (
                   <span>
                     CS <strong className="text-zinc-100">{me?.cs}</strong> ({csPerMin.toFixed(1)}/m)
                   </span>
                 )}
-                {state.game.gold >= 0 && (
+                {isRift && state.game.gold >= 0 && (
                   <span className="inline-flex items-center gap-1 text-amber-300 font-semibold">
                     <Coins className="size-3" />
                     {fmtGold(state.game.gold)}
@@ -1195,7 +1185,7 @@ function InGameCommandSheet({ state }: { state: AppState }) {
                       ) : null}
                     </span>
                   ) : (
-                    <span className="text-zinc-400">Live match scoreboard · items, CS/min, keystones &amp; public objectives</span>
+                    <span className="text-zinc-400">Live match scoreboard · items, keystones &amp; public objectives</span>
                   )}
                 </div>
                 {((live.blueDragons || 0) > 0 || (live.redDragons || 0) > 0) && (
@@ -1644,10 +1634,10 @@ export function OverlayView({ state }: { state: AppState }) {
     pScene !== 'augments' &&
     pScene !== 'bench';
   const showBuildHud = showInGameHud && state.settings.showBuildOverlay && state.buildPath.length > 0;
-  const showPerfStrip = showInGameHud && state.settings.showPerfStrip && (me !== null || state.preview);
   const isSR = pScene === 'sr_hud' || (state.game.inGame
     ? (state.game.modeKey ?? (['CLASSIC', 'SWIFTPLAY'].includes(state.game.mode) ? 'SR' : '')) === 'SR'
     : state.activeMode === 'SR');
+  const showPerfStrip = isSR && showInGameHud && state.settings.showPerfStrip && (me !== null || state.preview);
   const showJungleWidget =
     showInGameHud &&
     state.settings.showJungleWidget &&
@@ -1748,7 +1738,7 @@ export function OverlayView({ state }: { state: AppState }) {
         <div className="pointer-events-none fixed inset-0 z-30">
           {state.game.champCards.map((card) => {
             const best = Boolean(card.bestPick);
-            const displayWin = card.effectiveWin > 0 ? card.effectiveWin : card.win;
+            const displayWin = card.win;
             const topPct = Math.max(12, Math.min(92, (card.y + 0.044) * 100));
             return (
               <motion.div
@@ -1807,17 +1797,6 @@ export function OverlayView({ state }: { state: AppState }) {
                       </span>
                     )}
                   </div>
-                  {card.synergyLabel && (
-                    <span
-                      className={cn(
-                        'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[9px] font-bold leading-none',
-                        synergyPillClass(card.synergyTone)
-                      )}
-                    >
-                      <Sparkles className="size-2.5 shrink-0" />
-                      {card.synergyLabel}
-                    </span>
-                  )}
                 </div>
               </motion.div>
             );
@@ -1825,7 +1804,7 @@ export function OverlayView({ state }: { state: AppState }) {
         </div>
       )}
 
-      {/* NON-BLOCKING CHAMP SELECT TOP-CENTER RIBBON (Winrate + Team Synergy on Pick, Priority Cards & Bench!) */}
+      {/* NON-BLOCKING CHAMP SELECT TOP-CENTER RIBBON (Win rate on Pick, Priority Cards & Bench!) */}
       {showChampSelect && (() => {
         const hasRealPick = Boolean(state.game.champion) || pScene === 'bench';
         const showPicked = hasRealPick && state.selected !== null;
@@ -1865,17 +1844,6 @@ export function OverlayView({ state }: { state: AppState }) {
                     <span className="text-[11px] font-bold text-indigo-300 tabular-nums whitespace-nowrap">
                       {fmtPct(state.selected.win)}
                     </span>
-                    {state.selected.synergyLabel && (
-                      <span
-                        className={cn(
-                          'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[9px] font-bold leading-none whitespace-nowrap',
-                          synergyPillClass(state.selected.synergyTone)
-                        )}
-                      >
-                        <Sparkles className="size-2.5 shrink-0" />
-                        {state.selected.synergyLabel}
-                      </span>
-                    )}
                     {state.runeStatus && !state.runeStatus.toLowerCase().includes('waiting') && (
                       <span className="inline-flex items-center gap-1 rounded-md bg-teal-500/18 px-1.5 py-1 text-[9px] font-semibold leading-none text-teal-200 whitespace-nowrap">
                         <Check className="size-2.5" />
@@ -1948,18 +1916,8 @@ export function OverlayView({ state }: { state: AppState }) {
                               isTop ? 'text-amber-200' : 'text-indigo-300'
                             )}
                           >
-                            {fmtPct(bc.effectiveWin && bc.effectiveWin > 0 ? bc.effectiveWin : bc.win)}
+                            {fmtPct(bc.win)}
                           </span>
-                          {bc.synergyLabel && (
-                            <span
-                              className={cn(
-                                'rounded border px-1 py-0.25 text-[8px] font-bold leading-none',
-                                synergyPillClass(bc.synergyTone)
-                              )}
-                            >
-                              {bc.synergyLabel}
-                            </span>
-                          )}
                           {up >= 1.0 && (
                             <span className="rounded bg-emerald-500/25 px-1 py-0.25 font-mono-tech text-[8px] font-extrabold text-emerald-300 leading-none">
                               +{up.toFixed(1)}%
@@ -2165,7 +2123,7 @@ export function OverlayView({ state }: { state: AppState }) {
                         </div>
                         <div className="mt-0.5 flex items-center gap-2 text-[10px] tabular-nums">
                           <span className="font-bold text-indigo-300">{fmtPct(next.stat.rate)} WR</span>
-                          {state.game.gold >= 0 && (
+                          {isSR && state.game.gold >= 0 && (
                             <span className="inline-flex items-center gap-0.5 text-amber-300 font-semibold">
                               <Coins className="size-2.5" />
                               {fmtGold(state.game.gold)}

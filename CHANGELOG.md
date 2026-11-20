@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.0-beta.7
+
+- Keep the CS/min and personal-gold HUD on Summoner's Rift. ARAM and Mayhem retain purchase costs and affordability.
+- Rank champion cards and bench picks by their observed mode-specific win or top-four rate, with no simulated team-synergy adjustment.
+- Rank buyable items using the strength of the available item stats, purchase order, and bounded match context. Keep situational items out of the opening path, separate pins from inventory, and use the same ranked core items in the shop export.
+- Preserve Arena item IDs and stop loading a Mayhem build when another mode's data source is unavailable.
+
 ## v0.2.0-beta.6
 - **Deep UI, UX & Animation Polish Pass:**
   - **Eliminated `BorderBeam` double-curve seams everywhere:** Flush `inset-0` 1px perimeter mask with mode-matched luminous tones (**Gold** in Arena, **Sky** in ARAM, **Indigo** in Mayhem & Ranked SR) + subtle mode-aware top ambient wash across the Hub.

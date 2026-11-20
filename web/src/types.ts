@@ -5,10 +5,6 @@ export interface Champion {
   slug: string;
   tier: string;
   win: number;
-  effectiveWin?: number;
-  synergyBonus?: number;
-  synergyLabel?: string;
-  synergyTone?: string;
   isCard?: boolean;
   upgradeDelta?: number;
   bestPick?: boolean;
@@ -34,7 +30,6 @@ export interface StatItem {
   tracked?: boolean;
   recommended?: boolean;
   synergy?: { partner: string; rate: number } | null;
-  synergyBonus?: number;
   topCombo?: { partner: string; rate: number } | null;
 }
 
@@ -293,10 +288,6 @@ export interface ChampCardOffer {
   slug: string;
   tier: string;
   win: number;
-  effectiveWin: number;
-  synergyBonus?: number;
-  synergyLabel?: string;
-  synergyTone?: string;
   patchTag?: string;
   bestPick?: boolean;
   x: number;

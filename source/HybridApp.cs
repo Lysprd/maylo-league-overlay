@@ -252,16 +252,6 @@ namespace MayhemCompanion {
   bool manualRoleOverride, leftMouseWasDown, realQuit, wasInGame, hadGameWindow, loadoutBusy, champCardBusy;
   List<ChampionCardHit> champSelectCards = new List<ChampionCardHit>();
   readonly Dictionary<string, List<TierListEntry>> tierListByMode = new Dictionary<string, List<TierListEntry>>(StringComparer.OrdinalIgnoreCase);
-  readonly HashSet<string> synergyPrefetchInFlight = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-  class ChampSynergyInfo {
-   public double Bonus;
-   public string Label = "";
-   public string Tone = "indigo";
-   public string Partner = "";
-   public double DuoRate;
-  }
-
   public readonly OfferSession OfferSessionRef;
   readonly OfferSession offerSession = new OfferSession();
   readonly HashSet<int> plannedItems = new HashSet<int>();
@@ -929,33 +919,6 @@ namespace MayhemCompanion {
    } catch { }
   }
 
-  void PrefetchChampSelectSynergies() {
-   if (!Game.InSelection || closing) return;
-   var candidates = new List<Champion>();
-   if (Selected != null) candidates.Add(Selected);
-   foreach (var card in champSelectCards) {
-    if (card != null && card.Champion != null && !candidates.Any(x => x.Slug == card.Champion.Slug)) candidates.Add(card.Champion);
-   }
-   foreach (int cid in Game.PriorityCards.Concat(Game.Bench).Distinct()) {
-    var ch = FromId(cid);
-    if (ch != null && !candidates.Any(x => x.Slug == ch.Slug)) candidates.Add(ch);
-   }
-   foreach (var ch in candidates.Take(8)) {
-    List<Stat> existing;
-    lock (MultiModeParser.ChampTeammatesBySlug) {
-     if (MultiModeParser.ChampTeammatesBySlug.TryGetValue(ch.Slug, out existing)) continue;
-    }
-    if (!synergyPrefetchInFlight.Add(ch.Slug)) continue;
-    var cap = ch;
-    var _ = MultiModeParser.LoadChampionTeammates(cap).ContinueWith(t => {
-     Dispatcher.BeginInvoke((Action)(() => {
-      synergyPrefetchInFlight.Remove(cap.Slug);
-      if (!closing && Game.InSelection && t.Status == TaskStatus.RanToCompletion && t.Result != null && t.Result.Count > 0) PushState();
-     }));
-    });
-   }
-  }
-
   async Task LoadHome(bool force) {
    try {
     StatusText = "Updating champion meta…"; PushState();
@@ -1133,7 +1096,6 @@ namespace MayhemCompanion {
      champCardCooldownUntil = DateTime.UtcNow.AddMilliseconds(1100);
     }
     if (Game.ModeKey != "") FollowPage(Game.Champion);
-    if (Game.InSelection) PrefetchChampSelectSynergies();
     await SyncLoadout();
     if (overlay != null) overlay.Sync();
     PushState();
@@ -1173,7 +1135,7 @@ namespace MayhemCompanion {
      // Auto-Export Shop Item Set during Champ Select (League loads custom item sets at game start, not mid-game!)
      if (Config.AutoExportShop) {
       try {
-       var coreIds = ModeData.Items.Where(x => x.Id > 0).Select(x => x.Id).Take(6).ToList();
+       var coreIds = CurrentBuildPath().Where(x => !x.IsBoots && x.Role != "STARTER").Select(x => x.Stat.Id).ToList();
        var starterOrPrism = ActiveMode == "ARENA" && ModeData.PrismaticItems.Count > 0
         ? ModeData.PrismaticItems.Select(x => x.Id).ToList()
         : ModeData.Starters.Select(x => x.Id).ToList();
@@ -1231,7 +1193,6 @@ namespace MayhemCompanion {
       || stabilized.Where((c, i) => champSelectCards[i].Champion.Slug != c.Champion.Slug || Math.Abs(champSelectCards[i].X - c.X) > 0.012 || Math.Abs(champSelectCards[i].Y - c.Y) > 0.012).Any();
      champSelectCards = stabilized;
      if (changed) {
-      PrefetchChampSelectSynergies();
       PushState();
      }
     } else if (champSelectCards.Count > 0) {
@@ -1345,12 +1306,32 @@ namespace MayhemCompanion {
   }
 
   public List<BuildStep> CurrentBuildPath() {
+   if (Selected == null || ModeData.ChampionSlug != Selected.Slug || ModeData.ModeKey != ActiveMode ||
+       (Game.InGame && !Preview && (Game.ModeKey != ActiveMode || !ChampionMatches(Selected, Game.Champion))))
+    return new List<BuildStep>();
+
    var map = ActiveItemsMap();
-   var source = ModeData.Items.Concat(ModeData.BestItems).Concat(ModeData.Boots);
-   var candidates = source.Where(x => x.Id > 0 && x.Id < 220000 && (!map.ContainsKey(x.Id) || Json.I(map[x.Id], "priceTotal") >= 1500 || ModeData.Boots.Any(b => b.Id == x.Id)));
-   var complete = Game.Owned.Concat(plannedItems).Where(id => id > 0).Where(id => !map.ContainsKey(id) || (Json.A(map[id], "to").Length == 0 && Json.I(map[id], "priceTotal") >= 1500) || Json.I(map[id], "priceTotal") >= 2400 || ModeData.Boots.Any(b => BuildPlanner.Canonical(b.Id) == BuildPlanner.Canonical(id))).ToList();
+   var bootIds = new HashSet<int>(ModeData.Boots.Select(x => BuildPlanner.Canonical(x.Id)));
+   var nonShopPrismatics = new HashSet<int>(ModeData.PrismaticItems.Select(x => x.Id));
+   var statItems = ModeData.Items.Concat(ModeData.BestItems).Concat(ModeData.Boots);
+   var candidates = statItems.Where(x => x.Id > 0 && (ActiveMode == "ARENA" || BuildPlanner.Canonical(x.Id) == x.Id) &&
+    !nonShopPrismatics.Contains(x.Id) && !MultiModeParser.StarterIds.Contains(BuildPlanner.Canonical(x.Id)) &&
+    Price(x.Id) > 0 && (bootIds.Contains(BuildPlanner.Canonical(x.Id)) || Price(x.Id) >= 1500) &&
+    (x.Games > 0 || Parser.Number(x.Pick) > 0)).ToList();
+   var candidateIds = new HashSet<int>(candidates.Select(x => BuildPlanner.Canonical(x.Id)));
+   var complete = new List<int>();
+   foreach (int id in Game.Owned) {
+    int canonical = BuildPlanner.Canonical(id);
+    bool boots = canonical != 1001 && (bootIds.Contains(canonical) || ItemCategories(id).Contains("Boots", StringComparer.OrdinalIgnoreCase));
+    if (boots) { bootIds.Add(canonical); complete.Add(id); continue; }
+    Dictionary<string, object> item;
+    if (MultiModeParser.StarterIds.Contains(canonical) || !map.TryGetValue(id, out item)) continue;
+    int price = Json.I(item, "priceTotal");
+    if (candidateIds.Contains(canonical) || (price >= 1500 && Json.A(item, "to").Length == 0))
+     complete.Add(id);
+   }
    var themes = new List<string>();
-   foreach (int aid in chosenAugments) {
+   foreach (int aid in Game.InGame && IsAugmentMode ? (IEnumerable<int>)chosenAugments : Enumerable.Empty<int>()) {
     List<string> tags;
     if (Bridge.AugmentTags.TryGetValue(aid, out tags) && tags != null) themes.AddRange(tags);
     var augStat = ModeData.Augments.FirstOrDefault(x => x.Id == aid);
@@ -1365,13 +1346,15 @@ namespace MayhemCompanion {
     if (blob.Contains("armor") || blob.Contains("armure") || blob.Contains("magic resist") || blob.Contains("résistance magique") || blob.Contains("max health") || blob.Contains("pv max") || blob.Contains("tank")) themes.Add("kResilience");
     if (blob.Contains("move speed") || blob.Contains("vitesse de déplacement")) themes.Add("kSpeed");
    }
-   var threats = CurrentEnemyThreats();
-   var list = BuildPlanner.Plan(candidates, complete, ModeData.Boots.Select(x => x.Id), Selected == null ? 50 : Selected.Win, ItemCategories, Config.BuildFocus, themes, ModeData.CorePaths, threats, ItemName);
+   var threats = Game.InGame ? CurrentEnemyThreats() : null;
+   var list = BuildPlanner.Plan(candidates, complete, bootIds, SelectedModeBaseline(), ItemCategories,
+    Config.BuildFocus, themes, ModeData.CorePaths, threats, ItemName, plannedItems);
    // Integrate recommended Starter item at game start (step 0) until any starter is bought, 8 min elapses, or first core is completed!
    if (complete.Count == 0 && ModeData.Starters.Count > 0 && (!Game.InGame || Game.Live.Seconds < 480)) {
     bool ownsStarter = Game.Owned.Any(id => MultiModeParser.StarterIds.Contains(id))
-     || ModeData.Starters.Any(s => s.Id > 0 && (Game.Owned.Contains(s.Id) || plannedItems.Contains(s.Id)));
-    var topStarter = ModeData.Starters.FirstOrDefault(s => s.Id > 0);
+     || ModeData.Starters.Any(s => s.Id > 0 && (Game.Owned.Contains(s.Id)));
+    var topStarter = ModeData.Starters.Where(s => s.Id > 0 && Price(s.Id) > 0)
+     .OrderByDescending(s => Parser.Number(s.Pick)).ThenByDescending(s => s.Rate).FirstOrDefault();
     if (!ownsStarter && topStarter != null) {
      double sp = 0;
      double.TryParse((topStarter.Pick ?? "").Replace("%", "").Trim(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out sp);
@@ -1405,14 +1388,14 @@ namespace MayhemCompanion {
   }
 
   double SynergyBonus(Stat stat) {
-   if (stat == null || Selected == null) return 0;
+   if (stat == null || Selected == null || stat.Rate <= 0 || !Game.InGame || !IsAugmentMode) return 0;
    var names = new HashSet<string>(ModeData.Augments.Where(x => chosenAugments.Contains(x.Id) && x.Id != stat.Id).Select(x => x.Name));
    var rates = new List<double>();
    foreach (var pair in ModeData.Combos) {
     var parts = pair.Name.Split(new[] { " + " }, StringSplitOptions.None);
     if (parts.Length == 2 && parts.Contains(stat.Name) && names.Contains(parts.FirstOrDefault(x => x != stat.Name))) rates.Add(pair.Rate);
    }
-   return rates.Count == 0 ? 0 : Math.Max(-4, Math.Min(5, rates.Average(r => (r - Selected.Win) * .20)));
+   return rates.Count == 0 ? 0 : Math.Max(-2, Math.Min(2, rates.Average(r => (r - stat.Rate) * .15)));
   }
 
   object TopComboFor(Stat stat) {
@@ -1427,77 +1410,20 @@ namespace MayhemCompanion {
    return null;
   }
 
-  ChampSynergyInfo ComputeChampSynergy(Champion candidate, double baseWin, List<Champion> allies) {
-   var info = new ChampSynergyInfo();
-   if (candidate == null || allies == null || allies.Count == 0) return info;
-   var otherAllies = allies.Where(a => a != null && !String.Equals(a.Slug, candidate.Slug, StringComparison.OrdinalIgnoreCase)).ToList();
-   if (otherAllies.Count == 0) return info;
-
-   // Layer 1: Exact ally duo synergy winrate from real Mayhem / Arena Best Teammates data
-   List<Stat> mates = null;
-   if (Selected != null && String.Equals(Selected.Slug, candidate.Slug, StringComparison.OrdinalIgnoreCase) && IsAugmentMode && ModeData.Teammates.Count > 0) {
-    mates = ModeData.Teammates;
-   } else {
-    lock (MultiModeParser.ChampTeammatesBySlug) {
-     MultiModeParser.ChampTeammatesBySlug.TryGetValue(candidate.Slug, out mates);
-    }
-   }
-   double duoBonus = 0;
-   if (mates != null && mates.Count > 0) {
-    var allyNorms = new HashSet<string>(otherAllies.Select(a => GameBridge.Norm(a.Name)));
-    foreach (var a in otherAllies) allyNorms.Add(GameBridge.Norm(a.AssetKey));
-    var matched = new List<Stat>();
-    foreach (var m in mates) {
-     if (m.Rate <= 1 || m.Rate >= 99) continue;
-     if (allyNorms.Contains(GameBridge.Norm(m.Name))) matched.Add(m);
-    }
-    if (matched.Count > 0) {
-     var bestMate = matched.OrderByDescending(x => x.Rate).First();
-     duoBonus = Math.Max(-3.0, Math.Min(4.2, matched.Average(x => (x.Rate - baseWin) * 0.35)));
-     info.Partner = bestMate.Name;
-     info.DuoRate = bestMate.Rate;
-     info.Label = "+" + bestMate.Name + " " + Math.Round(bestMate.Rate, 1).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "%";
-     info.Tone = duoBonus >= 0.3 ? "indigo" : (duoBonus <= -0.8 ? "rose" : "teal");
-    }
-   }
-
-   // Layer 2: Instant 0ms Composition Synergy via Riot DDragon class tags
-   List<string> candTags;
-   if (!MultiModeParser.ChampTagsBySlug.TryGetValue(candidate.Slug, out candTags)) candTags = new List<string>();
-   int tanks = 0, mages = 0, marksmen = 0, supports = 0, adCarry = 0;
-   foreach (var a in otherAllies) {
-    List<string> atags;
-    if (!MultiModeParser.ChampTagsBySlug.TryGetValue(a.Slug, out atags)) continue;
-    if (atags.Contains("Tank")) tanks++;
-    if (atags.Contains("Mage")) mages++;
-    if (atags.Contains("Marksman")) marksmen++;
-    if (atags.Contains("Support")) supports++;
-    if (atags.Contains("Marksman") || atags.Contains("Fighter") || atags.Contains("Assassin")) adCarry++;
-   }
-   double compBonus = 0;
-   string compLabel = "", compTone = "teal";
-   if (otherAllies.Count >= 2) {
-    if (tanks == 0 && candTags.Contains("Tank")) { compBonus = 2.0; compLabel = "Frontline"; compTone = "teal"; }
-    else if (marksmen == 0 && mages >= 2 && candTags.Contains("Marksman")) { compBonus = 1.6; compLabel = "AD DPS"; compTone = "gold"; }
-    else if (mages == 0 && adCarry >= 2 && candTags.Contains("Mage")) { compBonus = 1.6; compLabel = "AP Carry"; compTone = "indigo"; }
-    else if (supports == 0 && (marksmen > 0 || adCarry >= 2) && candTags.Contains("Support")) { compBonus = 1.4; compLabel = "Enchanter"; compTone = "sky"; }
-    else if (marksmen >= 3 && candTags.Contains("Marksman")) { compBonus = -1.2; compLabel = "Heavy AD"; compTone = "rose"; }
-    else if (mages >= 4 && candTags.Contains("Mage")) { compBonus = -1.2; compLabel = "Heavy AP"; compTone = "rose"; }
-   }
-
-   info.Bonus = Math.Round(Math.Max(-3.5, Math.Min(5.0, duoBonus + compBonus)), 1);
-   if (String.IsNullOrEmpty(info.Label) && !String.IsNullOrEmpty(compLabel)) {
-    info.Label = compLabel;
-    info.Tone = compTone;
-   }
-   return info;
+  double SelectedModeBaseline() {
+   if (Selected == null) return 50;
+   var entry = TierList.FirstOrDefault(t => t.Slug == Selected.Slug &&
+    (ActiveMode != "SR" || String.Equals(t.Role, ActiveRole, StringComparison.OrdinalIgnoreCase)));
+   return entry != null && entry.WinRate > 0 ? entry.WinRate : ActiveMode == "MAYHEM" && Selected.Win > 0 ? Selected.Win : 50;
   }
 
-  Stat BestOffer() { return Selected == null ? null : Recommendations.Best(offerSession.Choices, Selected.Win, Preference, SynergyBonus); }
+  Stat BestOffer() {
+   return Selected == null ? null : Recommendations.Best(offerSession.Choices,
+    SelectedModeBaseline(), Preference, SynergyBonus, ActiveMode == "ARENA" ? 30 : 100);
+  }
 
   object SerializeStat(Stat s, Stat best = null) {
-   double baseline = Selected == null ? 50 : Selected.Win;
-   double synBonus = Math.Round(SynergyBonus(s), 1);
+   double baseline = SelectedModeBaseline();
    return new {
     id = s.Id, name = s.Name, pick = s.Pick ?? "", win = s.Win ?? "", rate = s.Rate,
     icon = s.Icon ?? "", games = s.Games, rarity = TierLogic.RarityKey(s.Rarity),
@@ -1507,7 +1433,6 @@ namespace MayhemCompanion {
     tracked = chosenAugments.Contains(s.Id),
     recommended = best != null && best.Id == s.Id,
     synergy = SynergyFor(s),
-    synergyBonus = synBonus,
     topCombo = TopComboFor(s)
    };
   }
@@ -1517,6 +1442,7 @@ namespace MayhemCompanion {
    var me = Game.Live.Players.FirstOrDefault(p => p.Me);
    var inv = me == null ? Game.Owned.AsEnumerable() : me.Items.AsEnumerable();
    var bestOffer = BestOffer();
+   double modeBaseline = SelectedModeBaseline();
 
    var topMap = new Dictionary<string, object>();
    var rarities = Preview
@@ -1525,7 +1451,7 @@ namespace MayhemCompanion {
    int minAugGames = ActiveMode == "ARENA" ? 30 : 100;
    foreach (string r in rarities) {
     var list = ModeData.Augments.Where(x => x.Games >= minAugGames && !chosenAugments.Contains(x.Id) && TierLogic.RarityKey(x.Rarity) == r)
-     .OrderByDescending(x => Recommendations.Score(x, Selected == null ? 50 : Selected.Win, Preference(x)) + SynergyBonus(x))
+     .OrderByDescending(x => Recommendations.Score(x, modeBaseline, Preference(x)) + SynergyBonus(x))
      .ThenByDescending(x => x.Games).Take(5).Select(x => SerializeStat(x, bestOffer)).ToList();
     if (list.Count > 0) topMap[r] = list;
    }
@@ -1615,52 +1541,43 @@ namespace MayhemCompanion {
     }
     return "";
    };
-   var teamChamps = Preview && PreviewScene == "bench"
-    ? Champions.Skip(6).Take(4).ToList()
-    : Game.Team.Select(FromId).Where(c => c != null).ToList();
-   double selBaseWin = Selected == null ? 0 : (selMode != null ? selMode.WinRate : Selected.Win);
-   var selSyn = (Game.InSelection || (Preview && PreviewScene == "bench"))
-    ? ComputeChampSynergy(Selected, selBaseWin, teamChamps)
-    : new ChampSynergyInfo();
-   double selEffWin = Selected == null ? 0 : Math.Round(selBaseWin + selSyn.Bonus, 1);
-
+   bool hasModeRates = ActiveMode == "MAYHEM";
+   Func<Champion, double> pickWin = c => {
+    var entry = modeEntryFor(c);
+    return entry != null ? entry.WinRate : hasModeRates && c != null ? c.Win : 0;
+   };
+   double selBaseWin = pickWin(Selected);
    var rawBench = (Preview ? Champions.Take(6) : Game.PriorityCards.Concat(Game.Bench).Select(FromId).Where(c => c != null))
     .GroupBy(c => c.Slug).Select(g => g.First()).ToList();
    var benchRanked = rawBench.Select(c => {
-    var be = modeEntryFor(c);
-    double bw = be != null ? be.WinRate : c.Win;
-    var bs = ComputeChampSynergy(c, bw, teamChamps);
-    double ew = Math.Round(bw + bs.Bonus, 1);
-    int bcid = ChampionIdOf(c);
-    bool isCard = Game.PriorityCards.Contains(bcid) || (Preview && PreviewScene == "bench" && rawBench.IndexOf(c) < 2);
-    double upDelta = selEffWin > 0 ? Math.Round(ew - selEffWin, 1) : 0;
+    var entry = modeEntryFor(c);
+    double win = pickWin(c);
+    bool isCard = Game.PriorityCards.Contains(ChampionIdOf(c)) || (Preview && PreviewScene == "bench" && rawBench.IndexOf(c) < 2);
     return new {
-     champ = c, tier = be != null ? be.Tier : c.Tier, win = bw, pick = be != null ? be.PickRate : c.Pick,
-     effectiveWin = ew, syn = bs, isCard = isCard, upgradeDelta = upDelta
+     champion = c, win, games = entry == null ? 0 : entry.Games,
+     tier = entry != null ? entry.Tier : hasModeRates ? c.Tier : "",
+     pick = entry != null ? entry.PickRate : hasModeRates ? c.Pick : 0, isCard,
+     upgradeDelta = selBaseWin > 0 && win > 0 ? Math.Round(win - selBaseWin, 1) : 0
     };
-   }).OrderByDescending(x => x.effectiveWin).ToList();
+   }).OrderByDescending(x => x.win).ThenByDescending(x => x.games).ThenByDescending(x => x.pick).ToList();
    var benchPayload = benchRanked.Select((x, idx) => new {
-    name = x.champ.Name, slug = x.champ.Slug, tier = x.tier, win = x.win, pick = x.pick,
-    effectiveWin = x.effectiveWin, synergyBonus = x.syn.Bonus, synergyLabel = x.syn.Label, synergyTone = x.syn.Tone,
+    name = x.champion.Name, slug = x.champion.Slug, tier = x.tier, win = x.win, pick = x.pick,
     isCard = x.isCard, upgradeDelta = x.upgradeDelta,
-    bestPick = idx == 0 && (selEffWin <= 0 || x.upgradeDelta >= 0.8),
-    icon = MultiModeParser.ChampIconOf(x.champ), assetKey = x.champ.AssetKey, patchTag = patchTagOf(x.champ.Slug)
+    bestPick = idx == 0 && x.win > 0 && (selBaseWin <= 0 || x.upgradeDelta >= 0.8),
+    icon = MultiModeParser.ChampIconOf(x.champion), assetKey = x.champion.AssetKey, patchTag = patchTagOf(x.champion.Slug)
    }).ToArray();
 
    var rawCards = Game.InSelection && !Game.InGame ? champSelectCards.Where(h => h != null && h.Champion != null).ToList() : new List<ChampionCardHit>();
    var scoredCards = rawCards.Select(h => {
-    var ce = modeEntryFor(h.Champion);
-    double cw = ce != null ? ce.WinRate : h.Champion.Win;
-    var cs = ComputeChampSynergy(h.Champion, cw, teamChamps);
-    double ew = Math.Round(cw + cs.Bonus, 1);
-    return new { hit = h, tier = ce != null ? ce.Tier : h.Champion.Tier, win = cw, effectiveWin = ew, syn = cs };
+    var entry = modeEntryFor(h.Champion);
+    return new { hit = h, win = pickWin(h.Champion), games = entry == null ? 0 : entry.Games,
+     tier = entry != null ? entry.Tier : hasModeRates ? h.Champion.Tier : "" };
    }).ToList();
-   double topCardEff = scoredCards.Count > 0 ? scoredCards.Max(x => x.effectiveWin) : 0;
+   var bestCard = scoredCards.Where(x => x.win > 0).OrderByDescending(x => x.win).ThenByDescending(x => x.games).FirstOrDefault();
    var champCardsPayload = scoredCards.Select(x => new {
     name = x.hit.Champion.Name, slug = x.hit.Champion.Slug, tier = x.tier, win = x.win,
-    effectiveWin = x.effectiveWin, synergyBonus = x.syn.Bonus, synergyLabel = x.syn.Label, synergyTone = x.syn.Tone,
     patchTag = patchTagOf(x.hit.Champion.Slug),
-    bestPick = scoredCards.Count >= 2 && x.effectiveWin >= topCardEff - 0.05,
+    bestPick = scoredCards.Count(c => c.win > 0) >= 2 && x == bestCard,
     x = x.hit.X, y = x.hit.Y
    }).ToArray();
    var pn = MultiModeParser.PatchNotes ?? new PatchNotesBundle();
@@ -1710,7 +1627,7 @@ namespace MayhemCompanion {
     },
     champions = Champions.Select(c => new { name = c.Name, slug = c.Slug, tier = c.Tier, win = c.Win, pick = c.Pick, icon = c.Icon, assetKey = c.AssetKey, patchTag = patchTagOf(c.Slug) }).ToArray(),
     tierList = TierList.Take(320).Select(t => new { id = t.Id, slug = t.Slug, name = t.Name, icon = t.Icon, role = t.Role, tier = t.Tier, rank = t.Rank, rankDelta = t.RankDelta, patchTag = patchTagOf(t.Slug), winRate = t.WinRate, pickRate = t.PickRate, banRate = t.BanRate, kda = t.Kda, games = t.Games, counters = t.Counters.ToArray() }).ToArray(),
-    selected = Selected == null ? null : new { name = Selected.Name, slug = Selected.Slug, tier = selMode != null ? selMode.Tier : Selected.Tier, win = selBaseWin, effectiveWin = selEffWin, synergyBonus = selSyn.Bonus, synergyLabel = selSyn.Label, synergyTone = selSyn.Tone, pick = selMode != null ? selMode.PickRate : Selected.Pick, icon = Selected.Icon, assetKey = Selected.AssetKey, patchTag = patchTagOf(Selected.Slug) },
+    selected = Selected == null ? null : new { name = Selected.Name, slug = Selected.Slug, tier = selMode != null ? selMode.Tier : Selected.Tier, win = selBaseWin, pick = selMode != null ? selMode.PickRate : Selected.Pick, icon = Selected.Icon, assetKey = Selected.AssetKey, patchTag = patchTagOf(Selected.Slug) },
     game = new {
      phase = Game.Phase, mode = Game.Mode, modeKey = Game.ModeKey, modeLabel = Game.ModeLabel, champion = Game.Champion, inGame = Game.InGame, inSelection = Game.InSelection, mayhem = Game.Mayhem, gold = Game.Gold,
      owned = Game.Owned.ToArray(), planned = plannedItems.ToArray(),
@@ -1732,14 +1649,13 @@ namespace MayhemCompanion {
        var tags = new List<string>();
        if (p.Kills >= 4 && p.Kills >= p.Deaths + 3) tags.Add("Fed");
        else if (p.Deaths >= 4 && p.Deaths >= p.Kills + 3) tags.Add("Behind");
-       if (Game.Live.Seconds > 120 && p.Cs / mins >= Math.Max(7.0, topCsMin - 0.3)) tags.Add("CS Lead");
+       if (Game.ModeKey == "SR" && Game.Live.Seconds > 120 && p.Cs / mins >= Math.Max(7.0, topCsMin - 0.3)) tags.Add("CS Lead");
        string pRole = MultiModeParser.NormalizeRole(p.Position);
        bool isLaneOpp = p.Team != myTeam && myPos != "" && pRole == myPos;
        double matchupWr = 0;
        if (isLaneOpp && pc != null) {
         var mu = ModeData.Matchups.FirstOrDefault(m => GameBridge.Norm(m.Name) == GameBridge.Norm(pc.Name));
-        if (mu == null && !IsAugmentMode)
-         mu = ModeData.Teammates.FirstOrDefault(m => GameBridge.Norm(m.Name) == GameBridge.Norm(pc.Name));
+
         if (mu != null) matchupWr = mu.Rate;
        }
        return new {

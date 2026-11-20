@@ -51,8 +51,10 @@ namespace MayhemCompanion {
     // Starter integration check via HybridHubWindow.CurrentBuildPath()
     var diagWin = new HybridHubWindow(true);
     diagWin.Selected = briar;
+    diagWin.ActiveMode = "SR";
     diagWin.ModeData = briarJg;
-    diagWin.Game = new GameSnapshot { InGame = true, Gold = 500 };
+    briarJg.ChampionSlug = briar.Slug;
+    diagWin.Game = new GameSnapshot { InGame = true, Mode = "CLASSIC", Champion = briar.AssetKey, Gold = 500 };
     var starterPath = diagWin.CurrentBuildPath();
     Req(starterPath.Count >= 5 && starterPath[0].Role == "STARTER", "Starter item must be step 0 when inventory is empty");
     diagWin.Game.Owned.Add(starterPath[0].Stat.Id);
@@ -69,6 +71,18 @@ namespace MayhemCompanion {
     Req(threats.NeedsAntiHeal && threats.NeedsAntiTank, "EnemyCompAnalyzer detects Anti-Heal + Anti-Tank");
     var adapted = BuildPlanner.Plan(briarJg.Items.Concat(briarJg.BestItems).Concat(briarJg.Boots), new[] { 3748 }, briarJg.Boots.Select(b => b.Id), 50.0, id => new string[0], "Adaptive", new string[0], briarJg.CorePaths, threats, id => MultiModeParser.ItemNameOf(id));
     Req(adapted.Any(s => s.SynergyTag == "CORE SYNERGY"), "Core branch synergy active");
+
+    var commonItem = new Stat { Id = 3071, Pick = "22%", Rate = 54, Games = 1800 };
+    var rareItem = new Stat { Id = 3075, Pick = "0.3%", Rate = 90, Games = 3 };
+    var lateItem = new Stat { Id = 3026, Pick = "30%", Rate = 73, Games = 3000, CoreSlot = 4 };
+    var itemFixture = new[] { commonItem, rareItem, lateItem };
+    var early = BuildPlanner.Plan(itemFixture, new int[0], new int[0], 50, id => new string[0], "Adaptive", new string[0], null, threats);
+    Req(early.First().Stat.Id == commonItem.Id && early.All(x => x.Stat.Id != lateItem.Id), "A tiny sample or late-game item must not dictate first purchase");
+    var pinned = BuildPlanner.Plan(itemFixture, new int[0], new int[0], 50, id => new string[0], "Adaptive", new string[0],
+     pinnedItems: new[] { lateItem.Id });
+    Req(pinned.First().Stat.Id == lateItem.Id, "An explicitly pinned item stays in the purchase list");
+    diagWin.Game.Mode = "ARAM";
+    Req(diagWin.CurrentBuildPath().Count == 0, "A Rift build must not leak into ARAM");
 
     // 3. Flash Key D/F + SR-only Objective Timers
     var onD = SpellPlan.OrderForFlash(SpellPlan.Pair("Flash + Smite"), "D", 11, 4);

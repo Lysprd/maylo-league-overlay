@@ -4206,7 +4206,7 @@ export function HubView({ state }: { state: AppState }) {
                   checked={state.settings.showPerfStrip}
                   onChange={(v) => postAction('updateSetting', { key: 'showPerfStrip', value: v })}
                   label="Live CS/min & Performance Strip"
-                  description="Summoner’s Rift, ARAM, Arena and Mayhem · CS/min, KDA and kill participation"
+                  description="Summoner’s Rift · CS/min, KDA and kill participation"
                 />
                 <Switch
                   checked={state.settings.showJungleWidget}

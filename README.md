@@ -35,7 +35,7 @@ Everything renders in a borderless click-through WebView2 layer that stays out o
 </p>
 
 - **Champ Select Tier List drawer** — pinned on the right edge of Champion Select with instant search, `All / S+ / S / A` filters, role filters in Ranked SR, and cursor-aware click-through so moving back onto the champion grid never blocks picks or bans.
-- **Floating Champion Cards & Bench ranking** — ranks 2 to 5 spawned ARAM / ARAM Mayhem champion cards and bench rolls directly in Champion Select using live win rate + team synergy.
+- **Floating Champion Cards & Bench ranking** — ranks 2 to 5 spawned ARAM / ARAM Mayhem champion cards and bench rolls directly in Champion Select using the observed win rate for that mode.
 - **EN / FR Augment OCR (ARAM Mayhem & Arena 2v2)** — detects 3 or 4 augment cards in ~75 ms, places Tier, win rate, synergy and reroll targets above each card, and dismisses cleanly on pick without triggering during rerolls.
 - **Summoner’s Rift HUD** — next buy with component tracking, live CS/min & KP strip, official public objective timers, and `Tab`-hoverable `RED / BLUE` jungle clear routes while keeping the scoreboard click-through.
 

@@ -91,7 +91,7 @@ namespace MayhemCompanion {
 
  public static class Recommendations {
   public static double Score(Stat stat, double baseline, int preference = 0) { if (stat == null) return Double.NegativeInfinity; return baseline + (stat.Rate - baseline) * stat.Games / (stat.Games + 250.0) + preference * 8; }
-  public static Stat Best(IEnumerable<Stat> offered, double baseline, Func<Stat, int> preference, Func<Stat, double> bonus = null) { return offered.Where(x => x != null && x.Games >= 100).OrderByDescending(x => Score(x, baseline, preference(x)) + (bonus == null ? 0 : bonus(x))).ThenByDescending(x => x.Games).FirstOrDefault(); }
+  public static Stat Best(IEnumerable<Stat> offered, double baseline, Func<Stat, int> preference, Func<Stat, double> bonus = null, int minGames = 100) { return offered.Where(x => x != null && x.Games >= minGames && x.Rate > 0).OrderByDescending(x => Score(x, baseline, preference(x)) + (bonus == null ? 0 : bonus(x))).ThenByDescending(x => x.Games).FirstOrDefault(); }
  }
 
  public static class BuildPlanner {
@@ -99,6 +99,13 @@ namespace MayhemCompanion {
   static readonly HashSet<int> AntiTankIds = new HashSet<int> { 3036, 3033, 3071, 3153, 3135, 3137, 6653, 3124, 6694, 4633 };
 
   public static int Canonical(int id) { return id >= 220000 && id < 230000 ? id % 10000 : id; }
+
+  // Mayhem item tables provide pick rate without a sample size; use a conservative proxy.
+  static double EvidenceScore(double rate, double pick, int games, double baseline) {
+   double confidence = games > 0 ? games / (games + 250.0) : 0.65 * pick / (pick + 12.0);
+   double delta = rate > 0 && rate <= 100 ? rate - baseline : 0;
+   return Math.Max(-15, Math.Min(15, delta)) * confidence + Math.Log(1 + pick) * 0.65;
+  }
 
   public static List<BuildStep> Plan(
    IEnumerable<Stat> source,
@@ -110,12 +117,13 @@ namespace MayhemCompanion {
    IEnumerable<string> themes,
    IEnumerable<CoreBuildPath> corePaths = null,
    EnemyThreatProfile threats = null,
-   Func<int, string> itemNameLookup = null) {
+   Func<int, string> itemNameLookup = null,
+   IEnumerable<int> pinnedItems = null) {
 
    var owned = new HashSet<int>(inventory.Select(Canonical));
    var bootSet = new HashSet<int>(boots.Select(Canonical));
    bool ownsBoots = owned.Any(bootSet.Contains);
-   var ownedCategories = new HashSet<string>(inventory.SelectMany(categories));
+   var pinned = new HashSet<int>((pinnedItems ?? Enumerable.Empty<int>()).Select(Canonical));
    var themesSet = new HashSet<string>(themes ?? new string[0]);
    var focusCategories = new Dictionary<string, string[]> {
     { "On-hit", new[] { "AttackSpeed", "OnHit" } },
@@ -131,9 +139,9 @@ namespace MayhemCompanion {
     var ownedNonBoots = owned.Where(id => !bootSet.Contains(id)).ToList();
     if (ownedNonBoots.Count > 0) {
      matchedBranch = corePaths
-      .Where(p => p.Ids != null && p.Ids.Count >= 2 && p.Ids.Any(id => ownedNonBoots.Contains(Canonical(id))))
-      .OrderByDescending(p => p.Ids.Count(id => ownedNonBoots.Contains(Canonical(id))))
-      .ThenByDescending(p => p.PickRate * 0.7 + (p.WinRate - 50.0) * 1.5)
+      .Where(p => p.Ids != null && p.Ids.Count >= 2 && ownedNonBoots.Contains(Canonical(p.Ids[0])))
+      .OrderByDescending(p => p.Ids.TakeWhile(id => ownedNonBoots.Contains(Canonical(id))).Count())
+      .ThenByDescending(p => EvidenceScore(p.WinRate, Math.Max(0, p.PickRate), p.Games, baseline))
       .FirstOrDefault();
      if (matchedBranch != null) matchedAnchorId = matchedBranch.Ids.FirstOrDefault(id => ownedNonBoots.Contains(Canonical(id)));
     }
@@ -142,26 +150,23 @@ namespace MayhemCompanion {
 
    var result = new List<BuildStep>();
    int nonBootOwned = owned.Count(id => !bootSet.Contains(id));
-   foreach (var stat in source.Where(x => x.Id > 0).GroupBy(x => Canonical(x.Id)).Select(g => g.OrderBy(x => x.CoreSlot == 0 ? 9 : x.CoreSlot).First())) {
+   foreach (var stat in source.Where(x => x.Id > 0).GroupBy(x => Canonical(x.Id)).Select(g => g.OrderBy(x => x.CoreSlot == 0 ? 4 : x.CoreSlot).ThenByDescending(x => x.Games).ThenByDescending(x => Parser.Number(x.Pick)).First())) {
     int cid = Canonical(stat.Id);
     if (owned.Contains(cid)) continue;
     if (bootSet.Contains(cid) && ownsBoots) continue;
-    double pick = Parser.Number(stat.Pick);
-    double evidence = pick / (pick + 8);
-    double score = baseline + (stat.Rate - baseline) * evidence + Math.Log(1 + Math.Max(0, pick));
-    if (stat.CoreSlot == 1) score += 14.0;
-    else if (stat.CoreSlot == 2) score += 9.5;
-    else if (stat.CoreSlot == 3) score += 5.5;
-    else if (stat.CoreSlot >= 4 && nonBootOwned < 3) score -= 6.0;
+    double pick = Math.Max(0, Parser.Number(stat.Pick));
+    double score = EvidenceScore(stat.Rate, pick, stat.Games, baseline);
+    if (stat.CoreSlot > 0 && stat.CoreSlot <= 3)
+     score += 5 - 2 * Math.Abs(stat.CoreSlot - Math.Min(3, nonBootOwned + 1));
+    double evidenceRank = score;
 
     var cats = categories(stat.Id);
-    double delta = stat.Rate - baseline;
     var reasons = new List<string>();
     string shortTip = "", synTag = "", synTone = "";
 
     // Dynamic Core Path Synergy!
     if (matchedBranch != null && matchedBranch.Ids.Any(id => Canonical(id) == cid)) {
-     score += 12.0;
+     score += 2.5;
      synTag = "CORE SYNERGY";
      synTone = "indigo";
      reasons.Add(anchorName != "" ? ("Core synergy w/ " + anchorName) : "Matches your active core path");
@@ -228,18 +233,21 @@ namespace MayhemCompanion {
      if (synTag == "") { synTag = "AUGMENT FIT"; synTone = "teal"; }
      if (shortTip == "") shortTip = "Fits Tank augment";
     }
-    if (cats.Intersect(ownedCategories).Any() && synTag == "") { score += .8; reasons.Add("synergizes w/ owned"); if (shortTip == "") shortTip = "Synergizes w/ build"; }
+    score = evidenceRank + Math.Min(3.5, score - evidenceRank);
 
+    if (pinned.Contains(cid)) {
+     reasons.Insert(0, "Pinned by you");
+     shortTip = "Pinned purchase";
+    }
     if (reasons.Count == 0) {
      if (stat.CoreSlot == 1) { reasons.Add("Core 1st item rush"); shortTip = "Core 1st rush"; }
      else if (stat.CoreSlot == 2) { reasons.Add("Core 2nd item power spike"); shortTip = "2nd core spike"; }
      else if (stat.CoreSlot == 3) { reasons.Add("Core 3rd item finisher"); shortTip = "3rd core spike"; }
      else if (stat.CoreSlot >= 4) { reasons.Add("Late-game situational spike"); shortTip = "Late situational"; }
-     else if (pick >= 35 && delta >= 1.5) { reasons.Add("Core staple · high win & pick"); shortTip = "Core staple"; }
+     else if (pick >= 35 && stat.Rate >= baseline + 1.5) { reasons.Add("Core staple · high win & pick"); shortTip = "Core staple"; }
      else if (pick >= 25) { reasons.Add("Most popular core item"); shortTip = "Popular core"; }
-     else if (delta >= 3) { reasons.Add("High win rate (+" + delta.ToString("0.0") + "% vs avg)"); shortTip = "High WR spike"; }
-     else { reasons.Add("Solid situational pickup"); shortTip = "Situational fit"; }
-    } else if (delta >= 2) { reasons.Add("+" + delta.ToString("0.0") + "% vs champ avg"); }
+     else { reasons.Add("Reported item results"); shortTip = "Item stats"; }
+    }
 
     bool isBoot = bootSet.Contains(cid);
     result.Add(new BuildStep {
@@ -250,22 +258,22 @@ namespace MayhemCompanion {
     });
    }
 
-   var ranked = result.OrderByDescending(x => x.Score).ToList();
+   var ranked = result.OrderByDescending(x => pinned.Contains(Canonical(x.Stat.Id)))
+    .ThenBy(x => nonBootOwned < 3 && x.Stat.CoreSlot >= 4)
+    .ThenByDescending(x => x.Score).ThenByDescending(x => x.Stat.Games).ThenByDescending(x => x.PickRate).ToList();
    int slotsLeft = Math.Max(0, 6 - owned.Count);
-   var chosen = ranked.Where(x => !x.IsBoots).Take(slotsLeft).ToList();
+   var chosen = ranked.Where(x => !x.IsBoots &&
+    (nonBootOwned >= 3 || x.Stat.CoreSlot < 4 || pinned.Contains(Canonical(x.Stat.Id)))).Take(slotsLeft).ToList();
    if (!ownsBoots && slotsLeft > 0) {
     // Prefer enemy-adapted boots (Steelcaps vs Heavy AD / Mercury's vs Heavy AP) if present!
     var boot = ranked.Where(x => x.IsBoots)
-     .OrderByDescending(x => x.SynergyTag != "" ? 1 : 0)
-     .ThenByDescending(x => x.PickRate)
-     .ThenByDescending(x => x.Stat.Rate)
      .FirstOrDefault();
     if (boot != null) {
      if (boot.SynergyTag == "") {
       boot.Reason = "Popular boots · adapt vs heavy AD/AP or CC";
       boot.ShortTip = "Popular boots · adapt";
      }
-     int at = Math.Min(chosen.Count >= 2 ? 2 : 1, chosen.Count);
+     int at = pinned.Contains(Canonical(boot.Stat.Id)) ? 0 : Math.Min(chosen.Count, Math.Max(0, 2 - nonBootOwned));
      chosen.Insert(at, boot);
     }
    }
