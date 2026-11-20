@@ -5,7 +5,6 @@ import {
   ChevronRight,
   Coins,
   Compass,
-  Copy,
   Crown,
   Download,
   GripHorizontal,
@@ -534,55 +533,26 @@ function InGameCommandSheet({ state }: { state: AppState }) {
 
   const blueTeam = live.players.filter((p) => p.team === 'ORDER');
   const redTeam = live.players.filter((p) => p.team === 'CHAOS');
-  const cdMap = useMemo(() => {
-    const m = new Map<string, { readyClock: string; secondsLeft: number }>();
-    for (const c of live.spellCooldowns || []) m.set(c.key, { readyClock: c.readyClock, secondsLeft: c.secondsLeft });
-    return m;
-  }, [live.spellCooldowns]);
-  const myTeam = me?.team ?? 'ORDER';
   const laneOpp = live.players.find((p) => p.isLaneOpponent) ?? null;
   const inventory = live.inventoryValue;
   const inventoryDifference = inventory ? inventory.blue - inventory.red : 0;
 
   const renderPlayerRow = (p: LivePlayer) => {
     const pCsMin = live.seconds > 20 ? (p.cs / minutes).toFixed(1) : '0.0';
-    const isEnemy = p.team !== myTeam;
-    const renderSpellBtn = (slot: 1 | 2, spName: string, spKey: string) => {
+    const renderSpellIcon = (slot: 1 | 2, spName: string, spKey: string) => {
       if (!spKey) return null;
-      const cdKey = `${p.key}:${slot}`;
-      const cd = cdMap.get(cdKey);
       return (
-        <button
+        <div
           key={slot}
-          type="button"
-          title={
-            isEnemy
-              ? cd
-                ? `${p.championName} ${spName} up at ${cd.readyClock} (click to clear)`
-                : `Track ${p.championName} ${spName} cooldown`
-              : spName
-          }
-          onClick={() =>
-            isEnemy &&
-            postAction('startSpellCd', { key: cdKey, spell: spName || spKey, playerKey: p.key })
-          }
-          className={cn(
-            'relative flex size-6 items-center justify-center rounded border overflow-hidden shrink-0 transition-all',
-            isEnemy ? 'cursor-pointer hover:border-amber-400' : 'cursor-default',
-            cd ? 'border-amber-400/80 ring-1 ring-amber-400/50' : 'border-white/15 bg-black/50'
-          )}
+          title={spName}
+          className="relative flex size-6 items-center justify-center rounded border border-white/15 bg-black/50 overflow-hidden shrink-0"
         >
           <img
             src={spellIconUrl(spKey, state.ddVersion)}
             alt={spName}
-            className={cn('size-full object-cover', cd && 'opacity-30')}
+            className="size-full object-cover"
           />
-          {cd && (
-            <span className="absolute inset-0 flex items-center justify-center text-[8px] font-black text-amber-200 tabular-nums">
-              {cd.secondsLeft}
-            </span>
-          )}
-        </button>
+        </div>
       );
     };
 
@@ -648,8 +618,8 @@ function InGameCommandSheet({ state }: { state: AppState }) {
             {p.cs} <span className="text-zinc-500">({pCsMin})</span>
           </div>
           <div className="flex items-center justify-end gap-1">
-            {renderSpellBtn(1, p.spell1, p.spellKey1)}
-            {renderSpellBtn(2, p.spell2, p.spellKey2)}
+            {renderSpellIcon(1, p.spell1, p.spellKey1)}
+            {renderSpellIcon(2, p.spell2, p.spellKey2)}
             <div className="h-4 w-px bg-white/10 mx-0.5" />
             {p.items.slice(0, 5).map((id, i) => (
               <img
@@ -661,35 +631,6 @@ function InGameCommandSheet({ state }: { state: AppState }) {
             ))}
           </div>
         </div>
-        {isEnemy && (cdMap.has(`${p.key}:1`) || cdMap.has(`${p.key}:2`)) && (
-          <div className="flex items-center justify-between gap-2 border-t border-white/[0.06] pt-1 text-[10px]">
-            <div className="flex items-center gap-2 text-amber-200 tabular-nums">
-              {cdMap.has(`${p.key}:1`) && (
-                <span>
-                  {p.spell1}: <strong>{cdMap.get(`${p.key}:1`)!.readyClock}</strong>
-                </span>
-              )}
-              {cdMap.has(`${p.key}:2`) && (
-                <span>
-                  {p.spell2}: <strong>{cdMap.get(`${p.key}:2`)!.readyClock}</strong>
-                </span>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                const parts: string[] = [];
-                if (cdMap.has(`${p.key}:1`)) parts.push(`${p.championName} ${p.spell1} ${cdMap.get(`${p.key}:1`)!.readyClock}`);
-                if (cdMap.has(`${p.key}:2`)) parts.push(`${p.championName} ${p.spell2} ${cdMap.get(`${p.key}:2`)!.readyClock}`);
-                postAction('copyText', { text: parts.join(' · ') });
-              }}
-              className="inline-flex items-center gap-1 rounded border border-white/15 bg-white/[0.06] px-1.5 py-0.5 text-[9px] font-semibold text-zinc-200 hover:bg-white/[0.15] cursor-pointer"
-            >
-              <Copy className="size-2.5" />
-              Copy Chat
-            </button>
-          </div>
-        )}
       </div>
     );
   };
@@ -1202,7 +1143,7 @@ function InGameCommandSheet({ state }: { state: AppState }) {
 
           {tab === 'live' && (
             <div className="space-y-4">
-              {/* Lane Matchup + Dragon Score + Cooldown Hint */}
+              {/* Lane Matchup + Dragon Score */}
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-2.5 text-xs">
                 <div className="flex flex-wrap items-center gap-3">
                   {laneOpp ? (
@@ -1227,7 +1168,7 @@ function InGameCommandSheet({ state }: { state: AppState }) {
                       ) : null}
                     </span>
                   ) : (
-                    <span className="text-zinc-400">Click any enemy summoner spell icon to start its live cooldown timer</span>
+                    <span className="text-zinc-400">Live match scoreboard · items, CS/min, keystones &amp; public objectives</span>
                   )}
                 </div>
                 {((live.blueDragons || 0) > 0 || (live.redDragons || 0) > 0) && (
@@ -1403,9 +1344,6 @@ export function OverlayView({ state }: { state: AppState }) {
     const rem = Math.max(0, o.secondsLeft - tickDelta);
     return { ...o, secondsLeft: rem, alive: rem <= 0, status: rem <= 0 ? 'UP' : fmtSecs(rem) };
   });
-  const smoothSpellCds = (live.spellCooldowns || [])
-    .map((c) => ({ ...c, secondsLeft: Math.max(0, c.secondsLeft - tickDelta) }))
-    .filter((c) => c.secondsLeft > 0);
   const me = live.players.find((p) => p.me) ?? null;
   const pScene = state.preview ? state.previewScene || '' : '';
 
@@ -2386,86 +2324,6 @@ export function OverlayView({ state }: { state: AppState }) {
         </DraggableSlot>
         );
       })()}
-
-      {/* ENEMY SUMMONER SPELL COOLDOWN TRACKER (visible when editing with Tab or while CDs are active) */}
-      {showInGameHud &&
-        state.settings.showSpellTracker &&
-        (editing || smoothSpellCds.length > 0) && (() => {
-          const myTeam = me?.team ?? 'ORDER';
-          const enemies = live.players.filter((p) => p.team !== myTeam);
-          if (enemies.length === 0) return null;
-          const cdByKey = new Map(smoothSpellCds.map((c) => [c.key, c]));
-          return (
-            <DraggableSlot
-              panelKey="spell_tracker"
-              title="Enemy Spells"
-              defaultX={1}
-              defaultY={0.11}
-              editing={editing}
-              savedPanels={saved}
-              scale={scale}
-            >
-              <GlassCard surface="overlay" className={cn('w-[196px] p-2.5 space-y-1.5', editing && 'rounded-t-none')}>
-                <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-wider text-zinc-400">
-                  <span>Enemy Spells</span>
-                  <span className="text-zinc-500">Click w/ Alt+{state.settings.hotkeyEdit || 'O'}</span>
-                </div>
-                {enemies.slice(0, 5).map((ep) => {
-                  const s1 = cdByKey.get(`${ep.key}:1`);
-                  const s2 = cdByKey.get(`${ep.key}:2`);
-                  if (!editing && !s1 && !s2) return null;
-                  return (
-                    <div key={ep.key} className="flex items-center justify-between gap-1.5">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        {ep.championIcon && (
-                          <div className="size-5 rounded overflow-hidden bg-black/50 shrink-0">
-                            <img src={iconUrl(ep.championIcon)} alt="" className="size-full object-cover scale-[1.14]" />
-                          </div>
-                        )}
-                        <span className="truncate text-[10px] font-semibold text-zinc-200">{ep.championName}</span>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0" data-no-drag>
-                        {[
-                          { slot: 1, name: ep.spell1, key: ep.spellKey1, cd: s1 },
-                          { slot: 2, name: ep.spell2, key: ep.spellKey2, cd: s2 },
-                        ].map((sp) =>
-                          sp.key ? (
-                            <button
-                              key={sp.slot}
-                              type="button"
-                              onClick={() =>
-                                postAction('startSpellCd', {
-                                  key: `${ep.key}:${sp.slot}`,
-                                  spell: sp.name || sp.key,
-                                  playerKey: ep.key,
-                                })
-                              }
-                              className={cn(
-                                'relative flex size-5 items-center justify-center rounded border overflow-hidden cursor-pointer',
-                                sp.cd ? 'border-amber-400/80' : 'border-white/15 bg-black/50'
-                              )}
-                            >
-                              <img
-                                src={spellIconUrl(sp.key, state.ddVersion)}
-                                alt={sp.name}
-                                className={cn('size-full object-cover', sp.cd && 'opacity-30')}
-                              />
-                              {sp.cd && (
-                                <span className="absolute inset-0 flex items-center justify-center text-[7px] font-black text-amber-200 tabular-nums">
-                                  {sp.cd.secondsLeft}
-                                </span>
-                              )}
-                            </button>
-                          ) : null
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </GlassCard>
-            </DraggableSlot>
-          );
-        })()}
     </div>
   );
 }

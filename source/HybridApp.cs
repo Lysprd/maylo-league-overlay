@@ -249,7 +249,6 @@ namespace MayhemCompanion {
   int previewAugmentCount = 3;
   bool manualRoleOverride, leftMouseWasDown, realQuit, wasInGame, hadGameWindow, loadoutBusy, champCardBusy;
   List<ChampionCardHit> champSelectCards = new List<ChampionCardHit>();
-  readonly Dictionary<string, double> spellReadyAt = new Dictionary<string, double>();
   readonly Dictionary<string, List<TierListEntry>> tierListByMode = new Dictionary<string, List<TierListEntry>>(StringComparer.OrdinalIgnoreCase);
   readonly HashSet<string> synergyPrefetchInFlight = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -568,7 +567,6 @@ namespace MayhemCompanion {
    ResetOfferSession();
    InGameSheet = false;
    OverlayDragging = false;
-   spellReadyAt.Clear();
    chosenAugments.Clear();
    trackedByChampion.Clear();
    plannedItems.Clear();
@@ -1027,7 +1025,7 @@ namespace MayhemCompanion {
    pollBusy = true;
    var oldGame = Game;
    try {
-    var fresh = await Bridge.Read(Config.AutoAccept);
+    var fresh = await Bridge.Read();
     if (closing || !Config.Connected) return;
     Game = fresh;
     plannedItems.RemoveWhere(id => Game.Owned.Contains(id));
@@ -1555,14 +1553,6 @@ namespace MayhemCompanion {
    double mins = Math.Max(1.0 / 60.0, Game.Live.Seconds / 60.0);
    double topCsMin = Game.Live.Players.Count > 0 && Game.Live.Seconds > 90 ? Game.Live.Players.Max(x => x.Cs / mins) : 999;
 
-   var activeCds = new List<object>();
-   foreach (var kv in spellReadyAt.ToList()) {
-    double rem = kv.Value - Game.Live.Seconds;
-    if (rem <= 0) { spellReadyAt.Remove(kv.Key); continue; }
-    int rSec = (int)Math.Ceiling(kv.Value);
-    activeCds.Add(new { key = kv.Key, readyAt = kv.Value, readyClock = (rSec / 60) + ":" + (rSec % 60).ToString("00"), secondsLeft = (int)Math.Ceiling(rem) });
-   }
-
    Func<Champion, TierListEntry> modeEntryFor = ch => {
     if (ch == null || ActiveMode == "MAYHEM" || TierList == null || TierList.Count == 0) return null;
     if (ActiveMode == "SR" && !String.IsNullOrEmpty(ActiveRole)) {
@@ -1694,7 +1684,6 @@ namespace MayhemCompanion {
       inventoryValue = Game.InGame && Game.ModeKey != "" ? Game.Live.InventoryValue(ActiveItemsMap()) : null,
       inhibitors = Game.Live.Inhibitors.Select(o => new { key = o.Key, name = o.Name, status = o.Status, alive = o.Alive, secondsLeft = o.SecondsLeft }).ToArray(),
       objectives = Game.Live.Objectives.Select(o => new { key = o.Key, name = o.Name, status = o.Status, alive = o.Alive, secondsLeft = o.SecondsLeft }).ToArray(),
-      spellCooldowns = activeCds.ToArray(),
       players = Game.Live.Players.Select(p => {
        var pc = Champions.FirstOrDefault(c => GameBridge.Norm(c.AssetKey) == GameBridge.Norm(p.Champion) || GameBridge.Norm(c.Name) == GameBridge.Norm(p.Champion));
        var tags = new List<string>();
@@ -1774,9 +1763,9 @@ namespace MayhemCompanion {
     settings = new {
      connected = Config.Connected, overlay = Config.Overlay, showBuildOverlay = Config.ShowBuildOverlay, showRerollBar = Config.ShowRerollBar,
      showSkillAdvisor = Config.ShowSkillAdvisor, showPerfStrip = Config.ShowPerfStrip, showJungleWidget = Config.ShowJungleWidget,
-     showSpellTracker = Config.ShowSpellTracker, showBenchBar = Config.ShowBenchBar, minimalHud = Config.MinimalHud,
+     showBenchBar = Config.ShowBenchBar, minimalHud = Config.MinimalHud,
      ocr = Config.Ocr, ocrAllModes = Config.OcrAllModes, autoLayout = Config.AutoLayout, autoPage = Config.AutoPage,
-     autoSpells = Config.AutoSpells, autoRunes = Config.AutoRunes, autoExportShop = Config.AutoExportShop, autoAccept = Config.AutoAccept,
+     autoSpells = Config.AutoSpells, autoRunes = Config.AutoRunes, autoExportShop = Config.AutoExportShop,
      launchWithWindows = Config.LaunchWithWindows, minimizeToTray = Config.MinimizeToTray,
      hotkeySheet = Config.HotkeySheet, hotkeyOverlay = Config.HotkeyOverlay, hotkeyEdit = Config.HotkeyEdit, hotkeyScan = Config.HotkeyScan,
      flashKey = Config.FlashKey, tierElo = Config.TierElo, tierRole = Config.TierRole,
@@ -1965,28 +1954,6 @@ namespace MayhemCompanion {
        }
       } catch (Exception ex) { StatusText = "Import failed: " + ex.Message; PushState(); }
       break;
-     case "startSpellCd":
-      string cdKey = Json.S(msg, "key"), spName = Json.S(msg, "spell"), cdPlayerKey = Json.S(msg, "playerKey");
-      if (cdKey != "") {
-       if (spellReadyAt.ContainsKey(cdKey)) { spellReadyAt.Remove(cdKey); PushState(); break; }
-       string normSp = GameBridge.Norm(spName);
-       double baseCd = normSp.Contains("flash") ? 300 : normSp.Contains("teleport") ? 360 : normSp.Contains("heal") ? 240 : (normSp.Contains("exhaust") || normSp.Contains("cleanse") || normSp.Contains("ghost")) ? 210 : (normSp.Contains("ignite") || normSp.Contains("barrier")) ? 180 : normSp.Contains("smite") ? 90 : normSp.Contains("mark") || normSp.Contains("snowball") ? 80 : 210;
-       var pl = Game.Live.Players.FirstOrDefault(x => (x.Team + "|" + x.Name + "|" + x.Champion) == cdPlayerKey);
-       double haste = 0;
-       // ARAM & ARAM Mayhem grant +70 innate Summoner Spell Haste!
-       if (ActiveMode == "ARAM" || ActiveMode == "MAYHEM" || Game.Mayhem) haste += 70;
-       if (pl != null) {
-        if (pl.Items.Contains(3158)) haste += 10; // Ionian Boots of Lucidity
-        bool hasInsp = pl.PrimaryTreeId == 8300 || pl.SecondaryTreeId == 8300
-         || String.Equals(pl.RuneTree, "Inspiration", StringComparison.OrdinalIgnoreCase)
-         || String.Equals(pl.SecondaryRuneTree, "Inspiration", StringComparison.OrdinalIgnoreCase);
-        if (hasInsp) haste += 18; // Cosmic Insight
-       }
-       double adjCd = baseCd * (100.0 / (100.0 + haste));
-       spellReadyAt[cdKey] = Game.Live.Seconds + adjCd;
-       PushState();
-      }
-      break;
      case "copyText":
       string clip = Json.S(msg, "text");
       if (clip != "") { try { Clipboard.SetText(clip); StatusText = "Copied: " + clip; PushState(); } catch { } }
@@ -2019,14 +1986,12 @@ namespace MayhemCompanion {
       else if (sk == "showSkillAdvisor") Config.ShowSkillAdvisor = Convert.ToBoolean(sv);
       else if (sk == "showPerfStrip") Config.ShowPerfStrip = Convert.ToBoolean(sv);
       else if (sk == "showJungleWidget") Config.ShowJungleWidget = Convert.ToBoolean(sv);
-      else if (sk == "showSpellTracker") Config.ShowSpellTracker = Convert.ToBoolean(sv);
       else if (sk == "showBenchBar") Config.ShowBenchBar = Convert.ToBoolean(sv);
       else if (sk == "minimalHud") Config.MinimalHud = Convert.ToBoolean(sv);
       else if (sk == "launchWithWindows") { Config.LaunchWithWindows = Convert.ToBoolean(sv); SetStartupRegistry(Config.LaunchWithWindows); }
       else if (sk == "minimizeToTray") Config.MinimizeToTray = Convert.ToBoolean(sv);
       else if (sk == "ocr") Config.Ocr = Convert.ToBoolean(sv);
       else if (sk == "ocrAllModes") Config.OcrAllModes = Convert.ToBoolean(sv);
-      else if (sk == "autoAccept") Config.AutoAccept = Convert.ToBoolean(sv);
       else if (sk == "autoSpells") { Config.AutoSpells = Convert.ToBoolean(sv); if (Config.AutoSpells) { Bridge.ResetSpellSelection(); resyncLoadout = true; } }
       else if (sk == "autoRunes") { Config.AutoRunes = Convert.ToBoolean(sv); if (Config.AutoRunes) { Bridge.ResetSpellSelection(); resyncLoadout = true; } }
       else if (sk == "autoExportShop") { Config.AutoExportShop = Convert.ToBoolean(sv); if (Config.AutoExportShop) { Bridge.ResetSpellSelection(); resyncLoadout = true; } }

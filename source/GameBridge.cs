@@ -53,7 +53,7 @@ namespace MayhemCompanion {
  public partial class GameBridge {
   public string Lockfile = "", SpellStatus = "Waiting for champion select", RuneStatus = "Waiting for champion select", ShopStatus = "";
   string auth = "", localBase = "", spellSelection = "", runeSelection = "", shopSelection = "", lastChampion = "", lastAssignedRole = "", lastChampSelectDebugKey = "";
-  DateTime lastFind = DateTime.MinValue, lastMiss = DateTime.MinValue, nextLiveProbe = DateTime.MinValue, lastAccept = DateTime.MinValue;
+  DateTime lastFind = DateTime.MinValue, lastMiss = DateTime.MinValue, nextLiveProbe = DateTime.MinValue;
   bool staticReady, lastMayhem;
   Task staticTask;
 
@@ -236,12 +236,6 @@ namespace MayhemCompanion {
    string alias; return ChampionNames.TryGetValue(selected, out alias) ? alias : "";
   }
 
-  public async Task TryAutoAccept() {
-   if (DateTime.UtcNow - lastAccept < TimeSpan.FromSeconds(3)) return;
-   lastAccept = DateTime.UtcNow;
-   try { await LcuRequest("POST", "/lol-matchmaking/v1/ready-check/accept", "{}"); } catch { }
-  }
-
   public async Task<string> ExportItemSet(string championName, int championId, string modeLabel, List<int> starters, List<int> coreIds, List<int> bootIds, List<int> situationalIds) {
    var summoner = Json.Serializer().Deserialize<Dictionary<string, object>>(await LcuGet("/lol-summoner/v1/current-summoner"));
    string summonerId = Json.S(summoner, "summonerId");
@@ -360,7 +354,7 @@ namespace MayhemCompanion {
    return ProfileParser.Matches(root, account);
   }
 
-  public async Task<GameSnapshot> Read(bool autoAccept = false) {
+  public async Task<GameSnapshot> Read() {
    var snapshot = new GameSnapshot();
    try {
     if (DateTime.UtcNow < nextLiveProbe) throw new Exception("Client phase cached");
@@ -404,7 +398,6 @@ namespace MayhemCompanion {
    string phase = Json.Serializer().Deserialize<string>(await LcuGet("/lol-gameflow/v1/gameflow-phase"));
    snapshot.Phase = phase ?? "Connected";
    snapshot.Window = Native.Target(false);
-   if (phase == "ReadyCheck" && autoAccept) await TryAutoAccept();
    if (phase == "ChampSelect") {
     var session = Json.Serializer().Deserialize<Dictionary<string, object>>(await LcuGet("/lol-champ-select/v1/session"));
     int cell = session != null && session.ContainsKey("localPlayerCellId") ? Json.I(session, "localPlayerCellId") : -1;
@@ -552,8 +545,6 @@ namespace MayhemCompanion {
   [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr h);
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
   [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
-  [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
-  [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
   [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out Rect r);
   [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h, ref Point p);
   [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
@@ -605,18 +596,12 @@ namespace MayhemCompanion {
   public static bool ForceForeground(IntPtr hwnd, bool makeTopmost = false) {
    if (hwnd == IntPtr.Zero || !IsWindow(hwnd)) return false;
    if (IsIconic(hwnd)) ShowWindow(hwnd, 9);
-   IntPtr fg = GetForegroundWindow();
-   if (fg == hwnd) return true;
-   uint fgPid, fgThread = fg == IntPtr.Zero ? 0 : GetWindowThreadProcessId(fg, out fgPid);
-   uint ourThread = GetCurrentThreadId();
-   bool attached = fgThread != 0 && fgThread != ourThread && AttachThreadInput(fgThread, ourThread, true);
-   try {
-    // NEVER promote League of Legends to HWND_TOPMOST (-1) or it will cover MAYLO's overlay!
-    if (makeTopmost) SetWindowPos(hwnd, new IntPtr(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040);
-    else SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040);
-    BringWindowToTop(hwnd);
-    return SetForegroundWindow(hwnd);
-   } finally { if (attached) AttachThreadInput(fgThread, ourThread, false); }
+   if (GetForegroundWindow() == hwnd) return true;
+   // NEVER promote League of Legends to HWND_TOPMOST (-1) or attach to another process's UI thread!
+   if (makeTopmost) SetWindowPos(hwnd, new IntPtr(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040);
+   else SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040);
+   BringWindowToTop(hwnd);
+   return SetForegroundWindow(hwnd);
   }
 
   public static IntPtr Target(bool game) {

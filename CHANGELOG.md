@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.0-beta.4
+- **Strict Riot Games Third-Party Policy & Vanguard Compliance:**
+  - **Removed Auto-Accept Queue Pop** (`POST /lol-matchmaking/v1/ready-check/accept`) so maylo never triggers match-accept actions on your behalf.
+  - **Removed Enemy Summoner Spell Cooldown Tracker** (in-game `Enemy Spells` overlay widget, click-to-track cooldown timers, haste calculation, and chat-copy buttons) while keeping clean read-only summoner spell icons in the Live scoreboard.
+  - **Removed `AttachThreadInput` Win32 call** so maylo never attaches to `League of Legends.exe`'s UI thread when restoring focus.
+  - Audited all Win32 calls & LCU endpoints: zero DLL injection, zero DirectX hooks, zero memory reads (`OpenProcess` / `ReadProcessMemory`), zero simulated input (`SendInput` / `mouse_event` / `keybd_event`).
+
 ## v0.2.0-beta.3
 - **Hold `Tab` to click `RED` / `BLUE` jungle clear (and overlay controls):** Holding bare `Tab` in-game now makes the Minimap `Clear 3:20 · RED | BLUE` bar and left HUD interactive whenever your cursor hovers them (with `WS_EX_NOACTIVATE` so League never loses focus), while keeping the center Tab scoreboard 100% click-through.
 - **Instant Champion Card & faster Augment dismissal:** Clicking a spawned ARAM / Mayhem Champion Card hides its floating badges immediately (< 40 ms with a 1.1 s anti-repop cooldown). In-game Augment card clicks now cover the full card interior and dismiss in ~100 ms (`90 ms` hold + `45 ms` OCR tick) while preserving full 1.5 s reroll protection.

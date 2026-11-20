@@ -126,8 +126,8 @@ namespace MayhemCompanion {
   public bool OnboardingSeen = false;
   public bool Connected = true, Overlay = true, Ocr = true, OcrAllModes = true, AutoLayout = true, AutoPage = true;
   public bool ShowBuildOverlay = true, ShowRerollBar = true, ShowSkillAdvisor = true, ShowPerfStrip = true, ShowJungleWidget = true;
-  public bool ShowSpellTracker = true, ShowBenchBar = true, MinimalHud = false;
-  public bool AutoSpells = true, AutoRunes = true, AutoExportShop = true, AutoAccept = false, MinimapLeft = false;
+  public bool ShowBenchBar = true, MinimalHud = false;
+  public bool AutoSpells = true, AutoRunes = true, AutoExportShop = true, MinimapLeft = false;
   public bool LaunchWithWindows = false, MinimizeToTray = true;
   public string FlashKey = "F", TierElo = "emerald_plus", TierRole = "ALL";
   public string HotkeySheet = "G", HotkeyOverlay = "M", HotkeyEdit = "O", HotkeyScan = "A";

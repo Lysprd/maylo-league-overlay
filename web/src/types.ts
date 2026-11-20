@@ -143,13 +143,6 @@ export interface PatchNotesData {
   entries: PatchEntry[];
 }
 
-export interface SpellCooldown {
-  key: string;
-  readyAt: number;
-  readyClock: string;
-  secondsLeft: number;
-}
-
 export interface LivePlayer {
   key: string;
   name: string;
@@ -202,7 +195,6 @@ export interface LiveSummary {
   objectives: ObjectiveTimer[];
   inhibitors?: ObjectiveTimer[];
   inventoryValue?: { blue: number; red: number; partial: boolean } | null;
-  spellCooldowns?: SpellCooldown[];
 }
 
 export interface MatchRecord {
@@ -267,7 +259,6 @@ export interface AppSettings {
   showSkillAdvisor: boolean;
   showPerfStrip: boolean;
   showJungleWidget: boolean;
-  showSpellTracker: boolean;
   showBenchBar: boolean;
   minimalHud: boolean;
   ocr: boolean;
@@ -277,7 +268,6 @@ export interface AppSettings {
   autoSpells: boolean;
   autoRunes: boolean;
   autoExportShop: boolean;
-  autoAccept: boolean;
   launchWithWindows: boolean;
   minimizeToTray: boolean;
   hotkeySheet: string;

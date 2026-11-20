@@ -9,7 +9,6 @@ import {
   ChevronRight,
   Coins,
   Compass,
-  Copy,
   Crown,
   Download,
   Eye,
@@ -2344,10 +2343,9 @@ export function HubView({ state }: { state: AppState }) {
               </div>
             )}
 
-            {/* VIEW: LIVE GAME (Harmonized Pro Scouting + Spell CDs!) */}
+            {/* VIEW: LIVE GAME (Pro Scouting) */}
             {view === 'Live' && (() => {
               const laneOpp = game.live.players.find((p) => p.isLaneOpponent) ?? null;
-              const cdMap = new Map((game.live.spellCooldowns || []).map((c) => [c.key, c]));
               return (
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2357,7 +2355,7 @@ export function HubView({ state }: { state: AppState }) {
                     </h2>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">
                       {game.inGame
-                        ? `${game.mode} · ${game.live.clock || '0:00'} · Click enemy summoner spells to track cooldowns`
+                        ? `${game.mode} · ${game.live.clock || '0:00'} · Live KDA, CS/min, items & public objective timers`
                         : 'Waiting for an active League of Legends match'}
                     </p>
                   </div>
@@ -2444,7 +2442,7 @@ export function HubView({ state }: { state: AppState }) {
                         Standing By for Live Match
                       </h3>
                       <p className="mx-auto max-w-md text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-                        Start any League match to automatically populate live KDA, CS/min benchmarks, enemy keystones, spell cooldown trackers, and objective timers.
+                        Start any League match to automatically populate live KDA, CS/min benchmarks, player keystones, items, and public objective timers.
                       </p>
                     </div>
                   ) : (
@@ -2457,9 +2455,6 @@ export function HubView({ state }: { state: AppState }) {
                         <div className="text-right">Items</div>
                       </div>
                       {displayedPlayers.map((p) => {
-                        const isEnemy = p.team !== myTeam;
-                        const cd1 = cdMap.get(`${p.key}:1`);
-                        const cd2 = cdMap.get(`${p.key}:2`);
                         return (
                         <div
                           key={p.key}
@@ -2511,55 +2506,22 @@ export function HubView({ state }: { state: AppState }) {
                           </div>
                           <div className="flex items-center justify-center gap-1">
                             {[
-                              { slot: 1, name: p.spell1, key: p.spellKey1, cd: cd1 },
-                              { slot: 2, name: p.spell2, key: p.spellKey2, cd: cd2 },
+                              { slot: 1, name: p.spell1, key: p.spellKey1 },
+                              { slot: 2, name: p.spell2, key: p.spellKey2 },
                             ].map((sp) =>
                               sp.key ? (
-                                <button
+                                <div
                                   key={sp.slot}
-                                  type="button"
-                                  title={isEnemy ? `Track ${p.championName} ${sp.name}` : sp.name}
-                                  onClick={() =>
-                                    isEnemy &&
-                                    postAction('startSpellCd', {
-                                      key: `${p.key}:${sp.slot}`,
-                                      spell: sp.name || sp.key,
-                                      playerKey: p.key,
-                                    })
-                                  }
-                                  className={cn(
-                                    'relative flex size-6 items-center justify-center rounded border bg-zinc-900 overflow-hidden',
-                                    isEnemy ? 'cursor-pointer hover:border-amber-400' : 'cursor-default',
-                                    sp.cd ? 'border-amber-400' : 'border-zinc-200 dark:border-white/15'
-                                  )}
+                                  title={sp.name}
+                                  className="relative flex size-6 items-center justify-center rounded border border-zinc-200 dark:border-white/15 bg-zinc-900 overflow-hidden"
                                 >
                                   <img
                                     src={spellIconUrl(sp.key, state.ddVersion)}
                                     alt={sp.name}
-                                    className={cn('size-full object-cover', sp.cd && 'opacity-30')}
+                                    className="size-full object-cover"
                                   />
-                                  {sp.cd && (
-                                    <span className="absolute inset-0 flex items-center justify-center text-[8px] font-black text-amber-300 tabular-nums">
-                                      {sp.cd.secondsLeft}
-                                    </span>
-                                  )}
-                                </button>
+                                </div>
                               ) : null
-                            )}
-                            {isEnemy && (cd1 || cd2) && (
-                              <button
-                                type="button"
-                                title="Copy cooldown to chat"
-                                onClick={() => {
-                                  const parts: string[] = [];
-                                  if (cd1) parts.push(`${p.championName} ${p.spell1} ${cd1.readyClock}`);
-                                  if (cd2) parts.push(`${p.championName} ${p.spell2} ${cd2.readyClock}`);
-                                  postAction('copyText', { text: parts.join(' · ') });
-                                }}
-                                className="flex size-5 items-center justify-center rounded border border-zinc-200 dark:border-white/15 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white cursor-pointer"
-                              >
-                                <Copy className="size-3" />
-                              </button>
                             )}
                           </div>
                           <div className="text-center text-xs font-bold tabular-nums">
@@ -4130,12 +4092,6 @@ export function HubView({ state }: { state: AppState }) {
                   description="Automatically creates a custom maylo item set in League shop in Champ Select & In-Game"
                 />
                 <Switch
-                  checked={state.settings.autoAccept}
-                  onChange={(v) => postAction('updateSetting', { key: 'autoAccept', value: v })}
-                  label="Auto-Accept Queue Pop"
-                  description="Instantly accepts ready-check notifications when a match is found"
-                />
-                <Switch
                   checked={state.settings.autoPage}
                   onChange={(v) => postAction('updateSetting', { key: 'autoPage', value: v })}
                   label="Auto-Follow Champion"
@@ -4236,12 +4192,6 @@ export function HubView({ state }: { state: AppState }) {
                   onChange={(v) => postAction('updateSetting', { key: 'showBenchBar', value: v })}
                   label="Smart ARAM / Mayhem Bench Bar"
                   description="ARAM and Mayhem · ranks available bench champions during champion select"
-                />
-                <Switch
-                  checked={state.settings.showSpellTracker}
-                  onChange={(v) => postAction('updateSetting', { key: 'showSpellTracker', value: v })}
-                  label="Enemy Summoner Cooldown Tracker"
-                  description="Click enemy Flash/TP/Ignite (in Ctrl+Tab or Alt+G) for live adjusted cooldowns + chat copy"
                 />
                 <Switch
                   checked={state.settings.minimalHud}
@@ -4552,7 +4502,7 @@ export function HubView({ state }: { state: AppState }) {
             <div className="divide-y divide-zinc-200/70 dark:divide-white/[0.06] text-xs">
               {[
                 { key: `Alt+${state.settings.hotkeySheet || 'G'} / F9`, desc: 'Toggle instant centered In-Game Command Overlay' },
-                { key: 'Ctrl+Tab (hold)', desc: 'Drag overlay widgets & track enemy spells (Tab stays free)' },
+                { key: 'Ctrl+Tab (hold)', desc: 'Drag & reposition overlay widgets (Tab stays free)' },
                 { key: `Alt+${state.settings.hotkeyEdit || 'O'}`, desc: 'Toggle persistent Overlay Edit & Minimap Resize mode' },
                 { key: `Alt+${state.settings.hotkeyOverlay || 'M'}`, desc: 'Show / hide all in-game overlay widgets' },
                 { key: `Alt+${state.settings.hotkeyScan || 'A'}`, desc: 'Force immediate Augment OCR scan' },
