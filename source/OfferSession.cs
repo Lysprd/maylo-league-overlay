@@ -10,6 +10,7 @@ namespace MayhemCompanion {
   public DateTime[] SlotLastSeen = new DateTime[MaxSlots];
   public bool Visible, Refreshing;
   public int Revision;
+  public int ExpectedCardCount { get; private set; }
   DateTime missingSince = DateTime.MinValue;
   public const int HoldMilliseconds = 550;
   const int SlotHoldMilliseconds = 2400;
@@ -21,6 +22,7 @@ namespace MayhemCompanion {
   int missingFrames;
   public Stat ConfirmedPick { get; private set; }
   public bool PendingPick { get { return clickCanPick; } }
+  public int PendingRerollId { get { return clickedSlot != null && !clickCanPick ? clickedSlot.Stat.Id : 0; } }
 
   public bool TrackClick(double x, double y, DateTime now) {
    if (!Visible || y < 0.14 || y > 0.92) return false;
@@ -45,6 +47,7 @@ namespace MayhemCompanion {
    Positions = new AugmentHit[MaxSlots];
    SlotLastSeen = new DateTime[MaxSlots];
    Visible = false;
+   ExpectedCardCount = 0;
    Refreshing = false;
    missingSince = DateTime.MinValue;
    clickUntil = DateTime.MinValue;
@@ -76,6 +79,7 @@ namespace MayhemCompanion {
    }
 
    // A new title at the clicked position confirms a reroll. Keep its existing card center.
+   int rerolledId = PendingRerollId;
    var clicked = clickedSlot;
    var replacement = clicked == null ? null : observed.FirstOrDefault(h =>
     h.Stat.Id != clicked.Stat.Id && Math.Abs(h.X - clicked.X) < AugmentOcr.MinCardSpacing);
@@ -111,6 +115,7 @@ namespace MayhemCompanion {
      var oldStat = Choices[i];
      var oldPos = Positions[i];
      if (oldStat == null || oldPos == null) continue;
+     if (oldStat.Id == rerolledId && now >= clickUntil) continue;
      if (!sameRow && (now - SlotLastSeen[i]).TotalMilliseconds > SlotHoldMilliseconds) continue;
      if (merged.Any(m => m.Item1.Id == oldStat.Id)) continue;
      if (merged.Any(m => Math.Abs(m.Item2.X - oldPos.X) < AugmentOcr.MinCardSpacing)) continue;
@@ -130,6 +135,7 @@ namespace MayhemCompanion {
    }
 
    if (finalList.Count < 1) return false;
+   ExpectedCardCount = Math.Max(ExpectedCardCount, finalList.Count);
    bool idsChanged = !Visible || !Choices.Select(x => x == null ? 0 : x.Id).SequenceEqual(next.Select(x => x == null ? 0 : x.Id));
    bool posMoved = false;
    if (!idsChanged) {

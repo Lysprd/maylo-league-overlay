@@ -14,6 +14,10 @@ try {
     $native = Start-Process -FilePath $app -ArgumentList @('--test-updater', ('"' + $report + '"')) -WindowStyle Hidden -Wait -PassThru
     Get-Content -LiteralPath $report
     if ($native.ExitCode -ne 0) { throw 'Updater regression test failed.' }
+    $report = Join-Path $sandbox 'recommendations.txt'
+    $native = Start-Process -FilePath $app -ArgumentList @('--test-recommendations', ('"' + $report + '"')) -WindowStyle Hidden -Wait -PassThru
+    Get-Content -LiteralPath $report
+    if ($native.ExitCode -ne 0) { throw 'Recommendation regression test failed.' }
 } finally {
     if (Test-Path -LiteralPath $sandbox) {
         $resolved = (Resolve-Path -LiteralPath $sandbox).Path

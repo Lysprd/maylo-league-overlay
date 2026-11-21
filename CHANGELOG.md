@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.0-beta.9
+
+- Prioritize documented opening items and account for owned components in Next Buy. Delay early Lord Dominik's Regards when another core item is available and enemies have yet to build substantial armor.
+- Show the observed augment rate and match count on each card. Leave close or uncertain offers without a Best badge, and keep personal preferences and unverified synergies out of the default ranking.
+- Refresh the rerolled card before showing its stats again. Show reroll targets for every rarity in a mixed offer, excluding the augments already on screen.
+- Resolve augment statistics by mode and ID. Use readable rarity labels to disambiguate OCR matches and withhold stats when a title still matches multiple augments.
+
 ## v0.2.0-beta.8
 
 - Fit the restart action in the title bar without overlapping the mode tabs or window controls. Keep the full action label in the sidebar and update settings.

@@ -373,6 +373,7 @@ export interface AppState {
   skills: SkillOrder | null;
   offered: OfferedSlot[];
   topAugments: Record<string, StatItem[]>;
+  offerAdvice?: string;
   trackedAugments: StatItem[];
   allAugments: StatItem[];
   portraitPositions: PortraitHit[];

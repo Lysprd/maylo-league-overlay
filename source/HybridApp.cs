@@ -728,6 +728,7 @@ namespace MayhemCompanion {
     nextOcrRecovery = DateTime.MinValue;
     offerScanGeneration++;
     if (offerSession.PendingPick && ocrTimer != null) ocrTimer.Interval = TimeSpan.FromMilliseconds(45);
+    if (offerSession.PendingRerollId != 0) PushState();
    }
   }
 
@@ -970,23 +971,26 @@ namespace MayhemCompanion {
   }
 
   void EnsureAugmentCatalog() {
-   var names = new HashSet<string>(ModeData.Augments.Select(x => GameBridge.Norm(x.Name)));
+   if (!IsAugmentMode || ModeData.ModeKey != ActiveMode) return;
    var seenIds = new HashSet<int>(ModeData.Augments.Select(x => x.Id));
-   foreach (int id in Bridge.MayhemAugmentIds) {
-    string name; if (!Bridge.AugmentNames.TryGetValue(id, out name) || !names.Add(GameBridge.Norm(name))) continue;
-    string rarity; Bridge.AugmentRarities.TryGetValue(id, out rarity);
-    seenIds.Add(id);
-    ModeData.Augments.Add(new Stat { Id = id, Name = name, Icon = "/icons/augments/" + id + ".png", Games = 0, Rate = 0, Rarity = TierLogic.RarityKey(rarity), Pick = "—" });
-   }
-   // Also include all CommunityDragon cherry-augments (600+ EN/FR ARAM Mayhem & Arena augments) so no augment is ever missed by OCR!
-   foreach (var kv in MultiModeParser.AugmentAliasesById) {
-    if (seenIds.Contains(kv.Key) || kv.Value == null || kv.Value.Count == 0) continue;
-    string bestName = kv.Value[kv.Value.Count - 1];
-    if (!names.Add(GameBridge.Norm(bestName))) continue;
-    string rar; MultiModeParser.AugmentRarityById.TryGetValue(kv.Key, out rar);
-    string cdIcon; MultiModeParser.AugmentIconById.TryGetValue(kv.Key, out cdIcon);
-    seenIds.Add(kv.Key);
-    ModeData.Augments.Add(new Stat { Id = kv.Key, Name = bestName, Icon = !String.IsNullOrEmpty(cdIcon) ? cdIcon : ("/icons/augments/" + kv.Key + ".png"), Games = 0, Rate = 0, Rarity = TierLogic.RarityKey(rar), Pick = "—" });
+   var catalogIds = ActiveMode == "MAYHEM"
+    ? Bridge.MayhemAugmentIds.Concat(MultiModeParser.MayhemAugmentIds)
+    : MultiModeParser.ArenaAugmentIds.Except(MultiModeParser.MayhemAugmentIds);
+   foreach (int id in catalogIds.Distinct()) {
+    if (!seenIds.Add(id)) continue;
+    string name, rarity, icon;
+    if (!MultiModeParser.AugmentNameById.TryGetValue(id, out name) &&
+        !Bridge.AugmentNames.TryGetValue(id, out name)) {
+     List<string> aliases;
+     if (!MultiModeParser.AugmentAliasesById.TryGetValue(id, out aliases) || aliases.Count == 0) continue;
+     name = aliases[aliases.Count - 1];
+    }
+    if (String.IsNullOrWhiteSpace(name)) continue;
+    if (!MultiModeParser.AugmentRarityById.TryGetValue(id, out rarity))
+     Bridge.AugmentRarities.TryGetValue(id, out rarity);
+    MultiModeParser.AugmentIconById.TryGetValue(id, out icon);
+    ModeData.Augments.Add(new Stat { Id = id, Name = name, Rarity = TierLogic.RarityKey(rarity),
+     Icon = !String.IsNullOrEmpty(icon) ? icon : "/icons/augments/" + id + ".png", Pick = "—" });
    }
   }
 
@@ -1211,7 +1215,7 @@ namespace MayhemCompanion {
   async void TriggerRead() { await ReadAugments(true); }
 
   async Task ReadAugments(bool requested) {
-   if (ocrBusy || !Config.Connected || (Game.InGame && Game.ModeKey == "")) return;
+   if (ocrBusy || !Config.Connected || !IsAugmentMode || (Game.InGame && Game.ModeKey != ActiveMode)) return;
    EnsureAugmentCatalog();
    if (Game.InGame && (Selected == null || !ChampionMatches(Selected, Game.Champion))) {
     var played = Champions.FirstOrDefault(c => ChampionMatches(c, Game.Champion));
@@ -1235,7 +1239,7 @@ namespace MayhemCompanion {
      || lastRawHitCount == 1;
     bool allowWide = requested || flippingWindow || DateTime.UtcNow >= nextOcrRecovery;
     if (allowWide) nextOcrRecovery = DateTime.UtcNow.AddMilliseconds(flippingWindow ? 120 : 900);
-    ulong prevSig = offerSession.Visible && !offerSession.Refreshing && !flippingWindow ? lastOcrSig : 0UL;
+    ulong prevSig = offerSession.Visible && !offerSession.Refreshing && offerSession.PendingRerollId == 0 && !flippingWindow ? lastOcrSig : 0UL;
     int scanGeneration = offerScanGeneration;
     // Run GDI capture + bitmap scaling + 600-augment fuzzy matching OFF the WPF UI thread!
     var scan = await Task.Run(() => AugmentOcr.ScanGameRect(rect, augSnapshot, aliasMap, preferUserLang, null, allowWide, requested, prevSig));
@@ -1249,6 +1253,7 @@ namespace MayhemCompanion {
     if (scan.DebugPng != null) lastDebugPng = scan.DebugPng;
     bool wasVis = offerSession.Visible;
     bool beforeRef = offerSession.Refreshing;
+    int beforeReroll = offerSession.PendingRerollId;
     bool changed = offerSession.Observe(scan.Hits, DateTime.UtcNow, requested);
     if (!wasVis && offerSession.Visible) offerAppearedAt = DateTime.UtcNow;
     if (!offerSession.Visible) { lastOcrSig = 0; offerAppearedAt = DateTime.MinValue; }
@@ -1265,7 +1270,7 @@ namespace MayhemCompanion {
       ? offerSession.Choices.Count(x => x != null) + " augments detected" + (scan.UsedTitleBand ? " · fast band (" + Math.Round(scan.Milliseconds) + "ms)" : " · full")
       : (scan.Lines.Count > 0 ? "Scanning (" + scan.Lines.Count + " lines seen)" : "Waiting for augment cards");
     }
-    if (changed || beforeRef != offerSession.Refreshing || requested) PushState();
+    if (changed || beforeRef != offerSession.Refreshing || beforeReroll != offerSession.PendingRerollId || requested) PushState();
    } catch (Exception ex) { OcrStatus = ex.Message; if (requested) PushState(); }
    finally { ocrBusy = false; }
   }
@@ -1348,7 +1353,8 @@ namespace MayhemCompanion {
    }
    var threats = Game.InGame ? CurrentEnemyThreats() : null;
    var list = BuildPlanner.Plan(candidates, complete, bootIds, SelectedModeBaseline(), ItemCategories,
-    Config.BuildFocus, themes, ModeData.CorePaths, threats, ItemName, plannedItems);
+    Config.BuildFocus, themes, ModeData.CorePaths, threats, ItemName, plannedItems,
+     Game.InGame ? (Func<int, double>)(id => (Price(id) - BuildPlanner.RemainingCost(id, Game.Owned, map)) / (double)Price(id)) : null);
    // Integrate recommended Starter item at game start (step 0) until any starter is bought, 8 min elapses, or first core is completed!
    if (complete.Count == 0 && ModeData.Starters.Count > 0 && (!Game.InGame || Game.Live.Seconds < 480)) {
     bool ownsStarter = Game.Owned.Any(id => MultiModeParser.StarterIds.Contains(id))
@@ -1387,17 +1393,6 @@ namespace MayhemCompanion {
    return null;
   }
 
-  double SynergyBonus(Stat stat) {
-   if (stat == null || Selected == null || stat.Rate <= 0 || !Game.InGame || !IsAugmentMode) return 0;
-   var names = new HashSet<string>(ModeData.Augments.Where(x => chosenAugments.Contains(x.Id) && x.Id != stat.Id).Select(x => x.Name));
-   var rates = new List<double>();
-   foreach (var pair in ModeData.Combos) {
-    var parts = pair.Name.Split(new[] { " + " }, StringSplitOptions.None);
-    if (parts.Length == 2 && parts.Contains(stat.Name) && names.Contains(parts.FirstOrDefault(x => x != stat.Name))) rates.Add(pair.Rate);
-   }
-   return rates.Count == 0 ? 0 : Math.Max(-2, Math.Min(2, rates.Average(r => (r - stat.Rate) * .15)));
-  }
-
   object TopComboFor(Stat stat) {
    if (stat == null || ModeData.Combos.Count == 0 || chosenAugments.Count > 0) return null;
    foreach (var pair in ModeData.Combos.OrderByDescending(x => x.Rate)) {
@@ -1415,11 +1410,6 @@ namespace MayhemCompanion {
    var entry = TierList.FirstOrDefault(t => t.Slug == Selected.Slug &&
     (ActiveMode != "SR" || String.Equals(t.Role, ActiveRole, StringComparison.OrdinalIgnoreCase)));
    return entry != null && entry.WinRate > 0 ? entry.WinRate : ActiveMode == "MAYHEM" && Selected.Win > 0 ? Selected.Win : 50;
-  }
-
-  Stat BestOffer() {
-   return Selected == null ? null : Recommendations.Best(offerSession.Choices,
-    SelectedModeBaseline(), Preference, SynergyBonus, ActiveMode == "ARENA" ? 30 : 100);
   }
 
   object SerializeStat(Stat s, Stat best = null) {
@@ -1441,17 +1431,25 @@ namespace MayhemCompanion {
    var path = CurrentBuildPath();
    var me = Game.Live.Players.FirstOrDefault(p => p.Me);
    var inv = me == null ? Game.Owned.AsEnumerable() : me.Items.AsEnumerable();
-   var bestOffer = BestOffer();
    double modeBaseline = SelectedModeBaseline();
+   int minAugGames = ActiveMode == "ARENA" ? 30 : 100;
+   var offerChoices = offerSession.Choices.Where(x => x != null && x.Id != offerSession.PendingRerollId).ToList();
+   string offerAdvice = "";
+   Stat bestOffer = null;
+   if (Selected != null && !offerSession.Refreshing && offerSession.PendingRerollId == 0) {
+    if (offerSession.Visible && offerChoices.Count < Math.Max(3, offerSession.ExpectedCardCount))
+     offerAdvice = "Limited data";
+    else bestOffer = Recommendations.Best(offerChoices, modeBaseline, minAugGames, out offerAdvice);
+   }
 
    var topMap = new Dictionary<string, object>();
    var rarities = Preview
     ? new List<string> { "Gold", "Prismatic" }
-    : offerSession.Choices.Where(x => x != null).Select(x => TierLogic.RarityKey(x.Rarity)).Where(r => r != "").Distinct().ToList();
-   int minAugGames = ActiveMode == "ARENA" ? 30 : 100;
+    : offerChoices.Select(x => TierLogic.RarityKey(x.Rarity)).Where(r => r != "").Distinct().ToList();
+   var offeredIds = new HashSet<int>(offerSession.Choices.Where(x => x != null).Select(x => x.Id));
    foreach (string r in rarities) {
-    var list = ModeData.Augments.Where(x => x.Games >= minAugGames && !chosenAugments.Contains(x.Id) && TierLogic.RarityKey(x.Rarity) == r)
-     .OrderByDescending(x => Recommendations.Score(x, modeBaseline, Preference(x)) + SynergyBonus(x))
+    var list = ModeData.Augments.Where(x => x.Games >= minAugGames && x.Rate > 0 && x.Rate <= 100 && !chosenAugments.Contains(x.Id) && !offeredIds.Contains(x.Id) && TierLogic.RarityKey(x.Rarity) == r)
+     .OrderByDescending(x => Recommendations.Score(x, modeBaseline))
      .ThenByDescending(x => x.Games).Take(5).Select(x => SerializeStat(x, bestOffer)).ToList();
     if (list.Count > 0) topMap[r] = list;
    }
@@ -1469,6 +1467,7 @@ namespace MayhemCompanion {
    for (int i = 0; i < slotCount; i++) {
     Stat st = previewAugments != null ? previewAugments[i] : offerSession.Choices[i];
     var pos = previewAugments != null ? null : offerSession.Positions[i];
+    if (st != null && st.Id == offerSession.PendingRerollId) st = null;
     offeredList.Add(new { slot = i, stat = st == null ? null : SerializeStat(st, previewAugments != null && i == 0 ? st : bestOffer), x = pos == null ? 0 : pos.X, y = pos == null ? 0 : pos.Y });
    }
 
@@ -1706,6 +1705,7 @@ namespace MayhemCompanion {
     skills = ModeData.Skills == null ? null : new { priority = ModeData.Skills.Priority.ToArray(), levels = ModeData.Skills.Levels.ToArray(), source = ModeData.Skills.Source },
     offered = offeredList.ToArray(),
     topAugments = topMap,
+    offerAdvice = offerAdvice,
     trackedAugments = ModeData.Augments.Where(x => chosenAugments.Contains(x.Id)).Select(x => SerializeStat(x, bestOffer)).ToArray(),
     allAugments = ModeData.Augments.Select(x => SerializeStat(x, bestOffer)).ToArray(),
     portraitPositions = portraitPositions.Select(p => new { champion = new { name = p.Champion.Name, slug = p.Champion.Slug, tier = p.Champion.Tier, win = p.Champion.Win, pick = p.Champion.Pick, icon = p.Champion.Icon, assetKey = p.Champion.AssetKey }, x = p.X, y = p.Y }).ToArray(),

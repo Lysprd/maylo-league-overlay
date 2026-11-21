@@ -206,7 +206,7 @@ namespace MayhemCompanion {
      }
     } catch { }
    }
-   return result.GroupBy(x => x.Name).Select(x => x.First()).ToList();
+   return result.Where(x => x.Id > 0).GroupBy(x => x.Id).Select(x => x.First()).ToList();
   }
 
   public static List<Stat> Section(string html, string title) {

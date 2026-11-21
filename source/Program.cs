@@ -24,6 +24,7 @@ namespace MayhemCompanion {
      case "--test-v12": return V12Tests.Run(args[1]);
      case "--verify-corners": return V12Tests.VerifyCorners(args[1]);
      case "--verify-web": return V12Tests.VerifyWeb(args[1]);
+     case "--test-recommendations": return V12Tests.RunRecommendations(args[1]);
      case "--test-updater": return GitHubUpdater.SelfTest(args[1]);
     }
    }

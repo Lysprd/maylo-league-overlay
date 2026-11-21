@@ -84,45 +84,42 @@ namespace MayhemCompanion {
    return prev[m];
   }
 
-  static IEnumerable<string> FoldedNames(Stat s, Dictionary<int, List<string>> aliases) {
-   var seen = new HashSet<string>();
-   string n = ShapeFold(s.Name); if (n.Length > 0 && seen.Add(n)) yield return n;
-   List<string> list;
-   if (aliases != null && aliases.TryGetValue(s.Id, out list) && list != null) {
-    foreach (string raw in list) {
-     string a = ShapeFold(raw);
-     if (a.Length > 0 && seen.Add(a)) yield return a;
-    }
+  static IEnumerable<string> Names(Stat stat, Dictionary<int, List<string>> aliases) {
+   yield return stat.Name;
+   List<string> names;
+   if (aliases != null && aliases.TryGetValue(stat.Id, out names) && names != null) {
+    foreach (var name in names) yield return name;
    }
   }
 
-  public static Stat Match(List<OcrLine> lines, IEnumerable<Stat> stats, Dictionary<int, List<string>> aliases = null) {
-   var candidates = new HashSet<string>();
+  public static Stat Match(List<OcrLine> lines, IEnumerable<Stat> stats,
+   Dictionary<int, List<string>> aliases = null, string rarity = "") {
+   var titles = new List<string>();
    for (int i = 0; i < lines.Count; i++) {
-    string one = ShapeFold(lines[i].Text); if (one.Length >= 3) candidates.Add(one);
-    if (i + 1 < lines.Count) {
-     string two = ShapeFold(lines[i].Text + lines[i + 1].Text); if (two.Length >= 4) candidates.Add(two);
-     if (i + 2 < lines.Count) { string three = ShapeFold(lines[i].Text + lines[i + 1].Text + lines[i + 2].Text); if (three.Length >= 6) candidates.Add(three); }
-    }
+    titles.Add(lines[i].Text);
+    if (i + 1 < lines.Count) titles.Add(lines[i].Text + lines[i + 1].Text);
+    if (i + 2 < lines.Count) titles.Add(lines[i].Text + lines[i + 1].Text + lines[i + 2].Text);
    }
+   var candidates = new HashSet<string>(titles.Select(ShapeFold).Where(x => x.Length >= 3));
    if (candidates.Count == 0) return null;
-   var all = stats.ToList();
-   // 1. Exact shape-folded match (prefer exact Name match or highest-Games entry if aliases overlap)
-   var exact = all.Where(s => FoldedNames(s, aliases).Any(candidates.Contains)).GroupBy(s => s.Id).Select(g => g.First()).ToList();
-   if (exact.Count == 1) return exact[0];
-   if (exact.Count > 1) {
-    var primary = exact.Where(s => candidates.Contains(ShapeFold(s.Name))).ToList();
-    if (primary.Count == 1) return primary[0];
-    return exact.OrderByDescending(s => s.Games).First();
-   }
+   var all = stats.Where(s => s.Id > 0).ToList();
+   Func<Stat, bool> matchesRarity = s => rarity == "" || TierLogic.RarityKey(s.Rarity) == rarity;
+   var literal = new HashSet<string>(titles.Select(GameBridge.Norm).Where(x => x.Length >= 3));
+   var exact = all.Where(s => Names(s, aliases).Select(GameBridge.Norm).Any(literal.Contains))
+    .GroupBy(s => s.Id).Select(g => g.First()).ToList();
+   if (exact.Count > 0) return UniqueRarityMatch(exact, matchesRarity);
+   var folded = all.Where(s => Names(s, aliases).Select(ShapeFold).Any(candidates.Contains))
+    .GroupBy(s => s.Id).Select(g => g.First()).ToList();
+   if (folded.Count > 0) return UniqueRarityMatch(folded, matchesRarity);
+   all = all.Where(matchesRarity).ToList();
    // 2. Clean containment (border noise chars like "| Dual Wield")
-   var contained = all.Where(s => FoldedNames(s, aliases).Any(name => name.Length >= 4 && candidates.Any(c => c.Length > name.Length && c.Length <= name.Length + 3 && c.Contains(name)))).GroupBy(s => s.Id).Select(g => g.First()).ToList();
-   if (contained.Count == 1) return contained[0];
+   var contained = all.Where(s => Names(s, aliases).Select(ShapeFold).Distinct().Any(name => name.Length >= 4 && candidates.Any(c => c.Length > name.Length && c.Length <= name.Length + 3 && c.Contains(name)))).GroupBy(s => s.Id).Select(g => g.First()).ToList();
+   if (contained.Count > 0) return contained.Count == 1 ? contained[0] : null;
    // 3. Length-scaled Damerau-Levenshtein requiring strictly unique best match
    Stat bestStat = null; int bestDist = 99, secondDist = 99;
    foreach (var s in all) {
     int d = 99;
-    foreach (string name in FoldedNames(s, aliases)) {
+    foreach (string name in Names(s, aliases).Select(ShapeFold).Distinct()) {
      if (name.Length < 4) continue;
      int limit = name.Length <= 6 ? 1 : name.Length <= 13 ? 2 : 3;
      foreach (string cand in candidates) {
@@ -140,11 +137,25 @@ namespace MayhemCompanion {
    return bestStat != null && bestDist < secondDist ? bestStat : null;
   }
 
+  static Stat UniqueRarityMatch(IEnumerable<Stat> matches, Func<Stat, bool> matchesRarity) {
+   var eligible = matches.Where(matchesRarity).Take(2).ToList();
+   return eligible.Count == 1 ? eligible[0] : null;
+  }
+
   static readonly string[] UiMenuStopWords = {
    "exitgame", "leavegame", "quitterlapartie", "quitterlejeu", "resumegame", "reprendrelapartie",
    "hotkeys", "raccourcis", "surrender", "reddition", "victory", "defeat", "victoire",
    "defaite", "maylo", "recommendedbuild", "augmentocr", "playagain", "rejouer"
   };
+
+  static string RarityLabel(string text) {
+   switch (GameBridge.Norm(text)) {
+    case "prismatic": case "prismatique": return "Prismatic";
+    case "gold": case "or": return "Gold";
+    case "silver": case "argent": return "Silver";
+    default: return "";
+   }
+  }
 
   public static List<AugmentHit> FindTitles(List<OcrLine> lines, IEnumerable<Stat> stats, Dictionary<int, List<string>> aliases, int gameW, int gameH, double offsetX, double offsetY) {
    // Reject Pause / Exit Game / Victory / Defeat / MAYLO UI screens immediately so augments NEVER pop on exit!
@@ -154,16 +165,23 @@ namespace MayhemCompanion {
    }
    var hits = new List<AugmentHit>();
    var statsList = stats.ToList();
+   var rarityByLine = lines.Distinct().ToDictionary(line => line, line => RarityLabel(line.Text));
+   var rarityLines = lines.Where(line => rarityByLine[line] != "").ToList();
    for (int i = 0; i < lines.Count; i++) {
     var line = lines[i];
     double left = line.X, right = line.X + line.Width, cx = line.X + line.Width * 0.5;
+    if (rarityByLine[line] != "") continue;
+    var rarities = rarityLines.Where(other => other.Y < line.Y && line.Y - other.Y < gameH * .065 &&
+     Math.Abs(other.X + other.Width * .5 - cx) < gameW * .04)
+     .Select(other => rarityByLine[other]).Distinct().ToList();
+    string rarity = rarities.Count == 1 ? rarities[0] : "";
     var group = new List<OcrLine> { line };
-    Stat stat = Match(group, statsList, aliases);
+    Stat stat = Match(group, statsList, aliases, rarity);
     if (stat == null) {
-     var nearby = lines.Where((other, idx) => idx != i && other.Y > line.Y && other.Y - line.Y < Math.Max(95, gameH * .09) && Math.Abs((other.X + other.Width * 0.5) - cx) < gameW * .085).OrderBy(o => o.Y).Take(2).ToList();
+     var nearby = lines.Where((other, idx) => idx != i && rarityByLine[other] == "" && other.Y > line.Y && other.Y - line.Y < Math.Max(95, gameH * .09) && Math.Abs((other.X + other.Width * 0.5) - cx) < gameW * .085).OrderBy(o => o.Y).Take(2).ToList();
      foreach (var next in nearby) {
       group.Add(next); left = Math.Min(left, next.X); right = Math.Max(right, next.X + next.Width);
-      stat = Match(group, statsList, aliases);
+      stat = Match(group, statsList, aliases, rarity);
       if (stat != null) break;
      }
     }
@@ -458,7 +476,7 @@ namespace MayhemCompanion {
     double left = line.X, right = line.X + line.Width, cx = line.X + line.Width * 0.5;
     Champion matched = MatchChampionName(line.Text, champions, exactMap);
     if (matched == null) {
-     var nearby = lines.Where((other, idx) => idx != i && other.Y > line.Y && other.Y - line.Y < Math.Max(45, clientH * 0.065) && Math.Abs((other.X + other.Width * 0.5) - cx) < clientW * 0.08).OrderBy(o => o.Y).FirstOrDefault();
+     var nearby = lines.Where((other, idx) => idx != i && rarityByLine[other] == "" && other.Y > line.Y && other.Y - line.Y < Math.Max(45, clientH * 0.065) && Math.Abs((other.X + other.Width * 0.5) - cx) < clientW * 0.08).OrderBy(o => o.Y).FirstOrDefault();
      if (nearby != null) {
       matched = MatchChampionName(line.Text + " " + nearby.Text, champions, exactMap);
       if (matched != null) { left = Math.Min(left, nearby.X); right = Math.Max(right, nearby.X + nearby.Width); }

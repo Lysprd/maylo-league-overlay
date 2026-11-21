@@ -268,20 +268,22 @@ function synergyPillClass(tone?: string) {
 function AugmentBadgeCard({
   stat,
   editing,
-  baselineWin,
+  rateLabel,
+  advice,
   width,
   scale,
 }: {
   stat: StatItem;
   editing: boolean;
-  baselineWin: number;
+  rateLabel: string;
+  advice?: string;
   width: string;
   scale: number;
 }) {
   const best = !!stat.recommended;
   const tracked = !!stat.tracked;
   const rarity = (stat.rarity || '').toUpperCase();
-  const delta = stat.games > 0 && baselineWin > 0 ? stat.rate - baselineWin : 0;
+  const hasRate = stat.games > 0 && stat.rate > 0 && stat.rate <= 100;
 
   const rarityStyle =
     rarity === 'PRISMATIC'
@@ -351,29 +353,25 @@ function AugmentBadgeCard({
         <div className="min-w-0 flex-1">
           <div title={stat.name} className="line-clamp-2 break-words text-[13px] font-bold leading-tight text-white">{stat.name}</div>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] tabular-nums">
-            <span className={cn('font-bold', best ? 'text-amber-300' : 'text-indigo-300')}>
-              {fmtPct(stat.rate)}
-            </span>
-            {delta !== 0 && (
-              <span
-                className={cn(
-                  'text-[10px] font-semibold',
-                  delta > 0 ? 'text-teal-300' : 'text-rose-300'
-                )}
-              >
-                {delta > 0 ? '+' : ''}
-                {delta.toFixed(1)}%
-              </span>
-            )}
-            {parsePct(stat.pick) && !stat.synergy && (
-              <span className="text-[10px] text-zinc-400">· PR {parsePct(stat.pick)}</span>
+            {hasRate ? (
+              <>
+                <span className={cn('font-bold', best ? 'text-amber-300' : 'text-indigo-300')}>
+                  {fmtPct(stat.rate)} {rateLabel}
+                </span>
+                <span className="text-[10px] text-zinc-400">· {stat.games.toLocaleString('en-US')} games</span>
+              </>
+            ) : (
+              <span className="text-[10px] text-zinc-400">Stats unavailable</span>
             )}
           </div>
+          {advice && (
+            <div className="mt-0.5 text-[10px] font-medium text-zinc-300">{advice}</div>
+          )}
         </div>
       </div>
 
       {/* Synergy, Top Combo Potential, or Track Row */}
-      {(stat.synergy || stat.topCombo || editing || tracked) && (
+      {(stat.synergy || stat.topCombo || !!stat.preference || editing || tracked) && (
         <div className="mt-2 flex items-center justify-between gap-1.5 border-t border-white/[0.08] pt-1.5">
           {stat.synergy ? (
             <span className="inline-flex items-center gap-1 truncate text-[10px] font-medium text-indigo-200">
@@ -391,7 +389,7 @@ function AugmentBadgeCard({
             </span>
           ) : (
             <span className="text-[10px] text-zinc-400">
-              {stat.games > 0 ? `${stat.games.toLocaleString('en-US')} games` : 'Augment'}
+              {stat.preference ? 'Personal preference' : 'Augment'}
             </span>
           )}
           {(editing || tracked) && (
@@ -1613,6 +1611,7 @@ export function OverlayView({ state }: { state: AppState }) {
   const showChampSelect =
     pScene === 'bench' || (!state.preview && state.game.inSelection && !state.game.inGame);
 
+  const augmentRateLabel = state.activeMode === 'ARENA' ? 'Top 4' : 'WR';
   const showAugments =
     (augmentPreview || (!state.preview && state.game.inGame && state.augmentsVisible)) &&
     offeredWithStat.length > 0;
@@ -1962,7 +1961,8 @@ export function OverlayView({ state }: { state: AppState }) {
                     className="col-start-1 row-start-1 w-max -translate-x-1/2 justify-self-start"
                     style={{ marginLeft: `calc(${slot.x * 100}vw - ${PANEL_INSET}px)` }}
                   >
-                    <AugmentBadgeCard stat={slot.stat} editing={editing} baselineWin={state.selected?.win ?? 50}
+                    <AugmentBadgeCard stat={slot.stat} editing={editing} rateLabel={augmentRateLabel}
+                      advice={slot.stat.recommended || (slot.slot === offeredWithStat[0]?.slot && state.offerAdvice !== 'Sample-adjusted') ? state.offerAdvice : undefined}
                       width={width} scale={scale}
                     />
                   </div>
@@ -1988,23 +1988,21 @@ export function OverlayView({ state }: { state: AppState }) {
               >
                 <div className="flex flex-wrap items-center gap-3 text-[11px]">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                    Top Reroll Targets
+                    Reroll targets by rarity
                   </span>
-                  {Object.entries(state.topAugments)
-                    .slice(0, 1)
-                    .map(([rarity, list]) => (
+                  {Object.entries(state.topAugments).map(([rarity, list]) => (
                       <div key={rarity} className="flex flex-wrap items-center gap-2">
                         <span className="rounded bg-white/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-200">
                           {rarity}
                         </span>
-                        {list.slice(0, 4).map((a) => (
+                        {list.slice(0, Object.keys(state.topAugments).length > 1 ? 2 : 4).map((a) => (
                           <span
                             key={a.id}
                             className="inline-flex items-center gap-1 text-zinc-200"
                           >
                             <span className="font-medium">{a.name}</span>
                             <span className="text-indigo-300 font-bold tabular-nums">
-                              {fmtPct(a.rate)}
+                              {fmtPct(a.rate)} {augmentRateLabel}
                             </span>
                           </span>
                         ))}
@@ -2132,6 +2130,10 @@ export function OverlayView({ state }: { state: AppState }) {
                         </div>
                       </div>
                     </div>
+
+                    {next.reason && (
+                      <div className="mt-1 text-[9px] leading-tight text-zinc-300">{next.reason}</div>
+                    )}
 
                     {/* Micro Components (only if crafting components exist) */}
                     {next.components.length > 0 && (

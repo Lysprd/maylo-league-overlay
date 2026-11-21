@@ -41,6 +41,8 @@ namespace MayhemCompanion {
   public static Dictionary<int, RuneMeta> DDragonRunes = new Dictionary<int, RuneMeta>();
   public static Dictionary<int, string> AugmentDescById = new Dictionary<int, string>();
   public static Dictionary<string, string> AugmentDescByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+  public static HashSet<int> ArenaAugmentIds = new HashSet<int>();
+  public static HashSet<int> MayhemAugmentIds = new HashSet<int>();
   public static Dictionary<int, List<string>> AugmentAliasesById = new Dictionary<int, List<string>>();
   public static Dictionary<int, string> AugmentRarityById = new Dictionary<int, string>();
   public static Dictionary<int, string> AugmentNameById = new Dictionary<int, string>();
@@ -312,6 +314,8 @@ namespace MayhemCompanion {
        string iconPath = Json.S(d, "augmentSmallIconPath");
        if (id <= 0) continue;
        cherryIds.Add(id);
+       if (Json.S(d, "augmentNameId").StartsWith("ARAM_", StringComparison.OrdinalIgnoreCase))
+        MayhemAugmentIds.Add(id);
        AddAugAlias(id, name);
        if (!String.IsNullOrEmpty(name) && (lang.Item1 == "en" || !AugmentNameById.ContainsKey(id))) AugmentNameById[id] = name;
        if (!String.IsNullOrEmpty(iconPath) && !AugmentIconById.ContainsKey(id)) {

@@ -11,8 +11,95 @@ namespace MayhemCompanion {
  public static class V12Tests {
   static void Req(bool ok, string msg) { if (!ok) throw new Exception(msg); }
 
+  static void TestPurchaseAndAugmentRecommendations() {
+   var dominik = new Stat { Id = 3036, Rate = 55, Pick = "16%" };
+   var core = new Stat { Id = 3031, Rate = 53, Pick = "34%" };
+   var enemies = new LiveSummary();
+   enemies.Players.Add(new LivePlayer { Me = true, Team = "ORDER" });
+   enemies.Players.Add(new LivePlayer { Team = "CHAOS", Champion = "Ornn", Items = new List<int> { 1, 2 } });
+   enemies.Players.Add(new LivePlayer { Team = "CHAOS", Champion = "Malphite" });
+   var healthOnly = EnemyCompAnalyzer.Analyze(enemies, id => new[] { "Health" });
+   var armor = EnemyCompAnalyzer.Analyze(enemies, id => new[] { "Armor" });
+   Req(healthOnly.NeedsAntiTank && healthOnly.ArmoredCount == 0 && armor.ArmoredCount == 1,
+    "Tank champions and health items must not count as observed armor");
+   var items = new[] { dominik, core };
+   var early = BuildPlanner.Plan(items, new int[0], new int[0], 50, id => new string[0],
+    "Adaptive", new string[0], threats: healthOnly);
+   Req(early.First().Stat.Id == core.Id, "Dominik must wait when an opening alternative exists and no enemy is stacking armor");
+   dominik.Pick = "24%";
+   var againstArmor = BuildPlanner.Plan(items, new int[0], new int[0], 50, id => new string[0],
+    "Adaptive", new string[0], threats: armor);
+   Req(againstArmor.First().Stat.Id == dominik.Id, "Dominik can move up when enemy armor is confirmed");
+   var components = BuildPlanner.Plan(items, new int[0], new int[0], 50, id => new string[0],
+    "Adaptive", new string[0], threats: armor, componentProgress: id => id == core.Id ? 0.9 : 0);
+   Req(components.First().Stat.Id == core.Id, "Owned components can keep a close opening purchase on track");
+
+   var gold = new Stat { Id = 1092, Name = "Vulnerability", Rarity = "Gold", Rate = 47, Games = 1000 };
+   var prismatic = new Stat { Id = 1048, Name = "Jeweled Gauntlet", Rarity = "Prismatic", Rate = 52, Games = 1000 };
+   string advice;
+   Req(Recommendations.Best(new[] { gold, prismatic }, 50, 100, out advice) == prismatic,
+    "Compare mixed-rarity offers using the same baseline and observed sample");
+   prismatic.Rate = 47.5;
+   Req(Recommendations.Best(new[] { gold, prismatic }, 50, 100, out advice) == null && advice == "Close choices",
+    "Close choices must not be given a Best badge");
+   prismatic.Rate = 52;
+   prismatic.Games = 20;
+   Req(Recommendations.Best(new[] { gold, prismatic }, 50, 100, out advice) == null && advice == "Limited data",
+    "An uncertain 52% choice must not make a 47% choice look like a clear winner");
+   prismatic.Games = 1000;
+   var augs = new[] { gold, prismatic };
+   var aliases = new Dictionary<int, List<string>> {
+    { gold.Id, new List<string> { "Vulnérabilité", "Shared title" } },
+    { prismatic.Id, new List<string> { "Gantelet précieux", "Shared title" } }
+   };
+   foreach (var name in new[] { "Vulnerability", "Vulnérabilité" })
+    Req(AugmentOcr.Match(new List<OcrLine> { new OcrLine { Text = name } }, augs, aliases) == gold,
+     "Vulnerability must resolve to the Gold ID in EN and FR");
+   foreach (var name in new[] { "Jeweled Gauntlet", "Gantelet précieux" })
+    Req(AugmentOcr.Match(new List<OcrLine> { new OcrLine { Text = name } }, augs, aliases) == prismatic,
+     "Jeweled Gauntlet must resolve to the Prismatic ID in EN and FR");
+   var shared = new List<OcrLine> { new OcrLine { Text = "Shared title", X = 450, Y = 220, Width = 100 } };
+   Req(AugmentOcr.Match(shared, augs, aliases) == null, "An ambiguous title must not borrow stats from another ID");
+   shared.Add(new OcrLine { Text = "Gold", X = 475, Y = 185, Width = 50 });
+   Req(AugmentOcr.FindTitles(shared, augs, aliases, 1000, 1000, 0, 0).Single().Stat == gold,
+    "A rarity label above the card can safely disambiguate its title");
+
+   var now = DateTime.UtcNow;
+   var offer = new OfferSession();
+   var otherGold = new Stat { Id = 1100, Name = "Other Gold", Rarity = "Gold" };
+   var opening = new List<AugmentHit> {
+    new AugmentHit { Stat = gold, X = .3, Y = .4 },
+    new AugmentHit { Stat = otherGold, X = .5, Y = .4 }
+   };
+   Req(offer.Observe(opening, now), "Two Gold cards must open the offer");
+   Req(offer.TrackClick(.3, .72, now.AddMilliseconds(50)) && offer.PendingRerollId == gold.Id,
+    "Reroll must mark only the clicked Gold card as pending");
+   var replacement = new List<AugmentHit> {
+    opening[1], new AugmentHit { Stat = prismatic, X = .32, Y = .41 }
+   };
+   Req(offer.Observe(replacement, now.AddMilliseconds(150)) && offer.PendingRerollId == 0 &&
+    offer.Choices[0] == prismatic && offer.Choices[1] == otherGold && offer.Positions[0].X == .3 &&
+    offer.ConfirmedPick == null, "A Gold-to-Prismatic reroll must replace the same slot and preserve the other card");
+   Req(offer.TrackClick(.3, .72, now.AddMilliseconds(200)), "The Prismatic card can be rerolled again");
+   Req(offer.Observe(new List<AugmentHit> { opening[1] }, now.AddMilliseconds(1800)) &&
+    offer.PendingRerollId == 0 && offer.Choices.Count(x => x != null) == 1 && offer.ExpectedCardCount == 2,
+    "An unreadable reroll must remove the stale stats without treating the remaining offer as complete");
+  }
+
+  public static int RunRecommendations(string reportPath) {
+   try {
+    TestPurchaseAndAugmentRecommendations();
+    File.WriteAllText(reportPath, "PASS Maylo purchase and augment recommendations");
+    return 0;
+   } catch (Exception ex) {
+    File.WriteAllText(reportPath, ex.ToString());
+    return 1;
+   }
+  }
+
   public static int Run(string reportPath) {
    try {
+    TestPurchaseAndAugmentRecommendations();
     string cache = WebCache.Root;
     var champs = Parser.Champions(File.ReadAllText(Path.Combine(cache, "champions.html")));
     Req(champs.Count >= 150, "MayhemMeta champion index");
@@ -210,15 +297,18 @@ namespace MayhemCompanion {
       // The reroll button is below the card. A click at Y=.72 used to clear the whole overlay.
       var rerollClick = new OfferSession();
       rerollClick.Observe(scan4.Hits, t0);
-      Req(rerollClick.TrackClick(xs4[1], 0.72, t0.AddMilliseconds(50)), "Reroll click starts the OCR grace period");
+      Req(rerollClick.TrackClick(xs4[1], 0.72, t0.AddMilliseconds(50)) &&
+        rerollClick.PendingRerollId == scan4.Hits[1].Stat.Id, "Reroll click identifies the slot whose displayed stats must be hidden");
       rerollClick.Observe(emptyHits, t0.AddMilliseconds(210));
       rerollClick.Observe(emptyHits, t0.AddMilliseconds(1100));
       Req(rerollClick.Visible && rerollClick.Choices.Count(c => c != null) == 4, "Reroll animation must not clear any badges");
-      var shiftedTitle = rerolled.ToList();
+      altStat.Rarity = "Prismatic";
+       var shiftedTitle = rerolled.ToList();
       shiftedTitle[1] = new AugmentHit { Stat = altStat, X = xs4[1] + 0.035, Y = 0.43 };
       rerollClick.Observe(shiftedTitle, t0.AddMilliseconds(1150));
       rerollClick.Observe(shiftedTitle, t0.AddMilliseconds(1280));
-      Req(rerollClick.Visible && rerollClick.Choices[1].Id == altStat.Id && rerollClick.ConfirmedPick == null &&
+      Req(rerollClick.Visible && rerollClick.Choices[1].Id == altStat.Id &&
+        rerollClick.Choices[1].Rarity == "Prismatic" && rerollClick.PendingRerollId == 0 && rerollClick.ConfirmedPick == null &&
        Math.Abs(rerollClick.Positions[1].X - scan4.Hits[1].X) < 0.001 &&
        rerollClick.Choices.Where((c, i) => i != 1 && c != null).Select(c => c.Id)
         .SequenceEqual(scan4.Hits.Where((c, i) => i != 1).Select(c => c.Stat.Id)),

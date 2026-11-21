@@ -14,7 +14,7 @@ namespace MayhemCompanion {
 
  public class EnemyThreatProfile {
   public bool HeavyAD, HeavyAP, NeedsAntiHeal, NeedsAntiTank;
-  public int AdCount, ApCount, TankCount, HealerCount;
+  public int AdCount, ApCount, TankCount, HealerCount, ArmoredCount;
   public List<string> Tags = new List<string>();
  }
 
@@ -63,16 +63,18 @@ namespace MayhemCompanion {
     bool isAp = ApChamps.Contains(norm);
     bool isAd = AdChamps.Contains(norm);
 
-    int armorItems = 0, apItems = 0, adItems = 0;
+    int defensiveItems = 0, armorItems = 0, apItems = 0, adItems = 0;
     if (categories != null && e.Items != null) {
      foreach (int id in e.Items) {
       var cats = categories(id);
-      if (cats.Contains("Armor") || cats.Contains("Health")) armorItems++;
+      if (cats.Contains("Armor") || cats.Contains("Health")) defensiveItems++;
+      if (cats.Contains("Armor")) armorItems++;
       if (cats.Contains("SpellDamage")) apItems++;
       if (cats.Contains("Damage") || cats.Contains("CriticalStrike")) adItems++;
      }
     }
-    if (isTank || armorItems >= 2) p.TankCount++;
+    if (isTank || defensiveItems >= 2) p.TankCount++;
+    if (armorItems >= 2) p.ArmoredCount++;
     if (isAp || apItems >= 2) p.ApCount++;
     else if (isAd || adItems >= 2) p.AdCount++;
    }
@@ -90,8 +92,31 @@ namespace MayhemCompanion {
  }
 
  public static class Recommendations {
-  public static double Score(Stat stat, double baseline, int preference = 0) { if (stat == null) return Double.NegativeInfinity; return baseline + (stat.Rate - baseline) * stat.Games / (stat.Games + 250.0) + preference * 8; }
-  public static Stat Best(IEnumerable<Stat> offered, double baseline, Func<Stat, int> preference, Func<Stat, double> bonus = null, int minGames = 100) { return offered.Where(x => x != null && x.Games >= minGames && x.Rate > 0).OrderByDescending(x => Score(x, baseline, preference(x)) + (bonus == null ? 0 : bonus(x))).ThenByDescending(x => x.Games).FirstOrDefault(); }
+  public static double Score(Stat stat, double baseline) {
+   return baseline + (stat.Rate - baseline) * stat.Games / (stat.Games + 250.0);
+  }
+
+  public static Stat Best(IEnumerable<Stat> offered, double baseline, int minGames, out string reason) {
+   var cards = offered.Where(x => x != null).ToList();
+   var ranked = cards.Where(x => x.Games >= minGames && x.Rate > 0 && x.Rate <= 100)
+    .OrderByDescending(x => Score(x, baseline)).ThenByDescending(x => x.Games).ToList();
+   reason = "";
+   if (cards.Count < 2) return null;
+   // Unknown cards and high rates from very small samples can make the choice inconclusive.
+   if (ranked.Count < 2 || cards.Any(x => x.Rate <= 0 || x.Rate > 100 ||
+       (x.Games < minGames && x.Rate >= ranked[0].Rate))) {
+    reason = "Limited data";
+    return null;
+   }
+
+   var first = ranked[0];
+   if (Score(first, baseline) - Score(ranked[1], baseline) < 1.0) {
+    reason = "Close choices";
+    return null;
+   }
+   reason = ranked.Any(x => x.Rate > first.Rate) ? "Sample-adjusted" : "";
+   return first;
+  }
  }
 
  public static class BuildPlanner {
@@ -118,7 +143,8 @@ namespace MayhemCompanion {
    IEnumerable<CoreBuildPath> corePaths = null,
    EnemyThreatProfile threats = null,
    Func<int, string> itemNameLookup = null,
-   IEnumerable<int> pinnedItems = null) {
+   IEnumerable<int> pinnedItems = null,
+   Func<int, double> componentProgress = null) {
 
    var owned = new HashSet<int>(inventory.Select(Canonical));
    var bootSet = new HashSet<int>(boots.Select(Canonical));
@@ -150,14 +176,25 @@ namespace MayhemCompanion {
 
    var result = new List<BuildStep>();
    int nonBootOwned = owned.Count(id => !bootSet.Contains(id));
-   foreach (var stat in source.Where(x => x.Id > 0).GroupBy(x => Canonical(x.Id)).Select(g => g.OrderBy(x => x.CoreSlot == 0 ? 4 : x.CoreSlot).ThenByDescending(x => x.Games).ThenByDescending(x => Parser.Number(x.Pick)).First())) {
+   var candidates = source.Where(x => x.Id > 0).GroupBy(x => Canonical(x.Id))
+    .Select(g => g.OrderBy(x => x.CoreSlot == 0 ? 4 : x.CoreSlot)
+     .ThenByDescending(x => x.Games).ThenByDescending(x => Parser.Number(x.Pick)).First())
+    .Where(x => !owned.Contains(Canonical(x.Id))).ToList();
+   bool observedArmor = threats != null && threats.ArmoredCount > 0;
+   bool delayDominik = nonBootOwned < 2 && !observedArmor && candidates.Any(x =>
+    Canonical(x.Id) != 3036 && !bootSet.Contains(Canonical(x.Id)) && x.CoreSlot < 4);
+   bool hasOpeningItem = nonBootOwned == 0 && candidates.Any(x => x.CoreSlot == 1 &&
+    (!delayDominik || Canonical(x.Id) != 3036) && !bootSet.Contains(Canonical(x.Id)));
+   foreach (var stat in candidates) {
     int cid = Canonical(stat.Id);
-    if (owned.Contains(cid)) continue;
     if (bootSet.Contains(cid) && ownsBoots) continue;
+    if (delayDominik && cid == 3036 && !pinned.Contains(cid)) continue;
     double pick = Math.Max(0, Parser.Number(stat.Pick));
     double score = EvidenceScore(stat.Rate, pick, stat.Games, baseline);
     if (stat.CoreSlot > 0 && stat.CoreSlot <= 3)
      score += 5 - 2 * Math.Abs(stat.CoreSlot - Math.Min(3, nonBootOwned + 1));
+    if (nonBootOwned == 0 && stat.CoreSlot == 0 && !bootSet.Contains(cid))
+     score += Math.Log(1 + pick) * 1.5;
     double evidenceRank = score;
 
     var cats = categories(stat.Id);
@@ -180,10 +217,10 @@ namespace MayhemCompanion {
       if (synTag == "") { synTag = "ANTI-HEAL"; synTone = "rose"; }
       reasons.Add("Counters enemy healing");
      }
-     if (threats.NeedsAntiTank && AntiTankIds.Contains(cid)) {
+     if (AntiTankIds.Contains(cid) && (cid == 3036 ? observedArmor : threats.NeedsAntiTank)) {
       score += 5.0;
       if (synTag == "") { synTag = "ANTI-TANK"; synTone = "gold"; }
-      reasons.Add("Shreds enemy tanks (" + threats.TankCount + " tanks)");
+      reasons.Add(cid == 3036 ? "Enemy armor confirmed" : "Shreds enemy tanks (" + threats.TankCount + " tanks)");
      }
      if (threats.HeavyAD && (cid == 3047 || cats.Contains("Armor"))) {
       score += (cid == 3047 ? 6.0 : 3.5);
@@ -234,6 +271,12 @@ namespace MayhemCompanion {
      if (shortTip == "") shortTip = "Fits Tank augment";
     }
     score = evidenceRank + Math.Min(3.5, score - evidenceRank);
+    double progress = componentProgress == null ? 0 : componentProgress(stat.Id);
+    if (progress > 0) {
+     score += 4 * Math.Min(1, progress);
+     reasons.Add("Builds from owned components");
+     if (shortTip == "") shortTip = "Components owned";
+    }
 
     if (pinned.Contains(cid)) {
      reasons.Insert(0, "Pinned by you");
@@ -260,6 +303,7 @@ namespace MayhemCompanion {
 
    var ranked = result.OrderByDescending(x => pinned.Contains(Canonical(x.Stat.Id)))
     .ThenBy(x => nonBootOwned < 3 && x.Stat.CoreSlot >= 4)
+    .ThenBy(x => hasOpeningItem && !x.IsBoots && x.Stat.CoreSlot != 1)
     .ThenByDescending(x => x.Score).ThenByDescending(x => x.Stat.Games).ThenByDescending(x => x.PickRate).ToList();
    int slotsLeft = Math.Max(0, 6 - owned.Count);
    var chosen = ranked.Where(x => !x.IsBoots &&
