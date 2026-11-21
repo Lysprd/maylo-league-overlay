@@ -476,7 +476,7 @@ namespace MayhemCompanion {
     double left = line.X, right = line.X + line.Width, cx = line.X + line.Width * 0.5;
     Champion matched = MatchChampionName(line.Text, champions, exactMap);
     if (matched == null) {
-     var nearby = lines.Where((other, idx) => idx != i && rarityByLine[other] == "" && other.Y > line.Y && other.Y - line.Y < Math.Max(45, clientH * 0.065) && Math.Abs((other.X + other.Width * 0.5) - cx) < clientW * 0.08).OrderBy(o => o.Y).FirstOrDefault();
+     var nearby = lines.Where((other, idx) => idx != i && other.Y > line.Y && other.Y - line.Y < Math.Max(45, clientH * 0.065) && Math.Abs((other.X + other.Width * 0.5) - cx) < clientW * 0.08).OrderBy(o => o.Y).FirstOrDefault();
      if (nearby != null) {
       matched = MatchChampionName(line.Text + " " + nearby.Text, champions, exactMap);
       if (matched != null) { left = Math.Min(left, nearby.X); right = Math.Max(right, nearby.X + nearby.Width); }
