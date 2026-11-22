@@ -5,7 +5,6 @@ import {
   ChevronRight,
   Coins,
   Compass,
-  Crown,
   Download,
   GripHorizontal,
   Minus,
@@ -15,7 +14,6 @@ import {
   Sparkles,
   Swords,
   Timer,
-  TrendingUp,
   Trophy,
   X,
   Zap,
@@ -25,8 +23,10 @@ import { Status } from '@/components/ui/status';
 import { SegmentedTabs } from '@/components/ui/segmented-tabs';
 import { Button, Keycap, TierBadge } from '@/components/ui/primitives';
 import { postAction } from '@/lib/bridge';
+import { AugmentGuide, AugmentTier } from '@/components/AugmentGuide';
+import { useSavedBuilds } from '@/components/HubTools';
 import { cn, fmtGold, fmtPct, iconUrl, itemIconUrl, parsePct, spellIconUrl } from '@/lib/utils';
-import type { AppState, LivePlayer, StatItem } from '@/types';
+import type { AppState, DraftChampion, LivePlayer, AugmentEntry } from '@/types';
 
 const SKILL_KEYS = ['Q', 'W', 'E', 'R'] as const;
 const SKILL_COLORS: Record<string, string> = {
@@ -265,154 +265,16 @@ function synergyPillClass(tone?: string) {
   return 'border-indigo-400/55 bg-indigo-500/22 text-indigo-200';
 }
 
-function AugmentBadgeCard({
-  stat,
-  editing,
-  rateLabel,
-  advice,
-  width,
-  scale,
-}: {
-  stat: StatItem;
-  editing: boolean;
-  rateLabel: string;
-  advice?: string;
-  width: string;
-  scale: number;
-}) {
-  const best = !!stat.recommended;
-  const tracked = !!stat.tracked;
-  const rarity = (stat.rarity || '').toUpperCase();
-  const hasRate = stat.games > 0 && stat.rate > 0 && stat.rate <= 100;
-
-  const rarityStyle =
-    rarity === 'PRISMATIC'
-      ? 'bg-purple-500/20 text-purple-200 border-purple-400/40'
-      : rarity === 'GOLD'
-        ? 'bg-amber-500/20 text-amber-200 border-amber-400/40'
-        : 'bg-zinc-500/20 text-zinc-200 border-zinc-400/35';
-
-  const topBarClass =
-    rarity === 'PRISMATIC'
-      ? 'prismatic-top-rim'
-      : rarity === 'GOLD'
-        ? 'bg-gradient-to-r from-transparent via-amber-400/80 to-transparent'
-        : 'bg-gradient-to-r from-transparent via-zinc-300/45 to-transparent';
-
+function AugmentBadgeCard({ stat, width, scale, french }: { stat: AugmentEntry; width: string; scale: number; french: boolean }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 6, scale: 0.96 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-    >
-    <GlassCard
-      surface="overlay"
-      highlight={best ? 'gold' : rarity === 'PRISMATIC' ? 'purple' : 'none'}
-      style={{ width, zoom: scale }}
-      className="px-2.5 py-2.5 transition-none"
-    >
-      <div className={cn('pointer-events-none absolute inset-x-0 top-0 h-[2px]', topBarClass)} />
-      {/* Top Row: Rarity + Best Pick + Tier */}
-      <div className="flex flex-wrap items-center justify-between gap-1.5">
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-          {rarity && (
-            <span
-              className={cn(
-                'inline-flex items-center rounded-md border px-2 py-1 text-[9px] font-bold tracking-wider leading-none',
-                rarityStyle
-              )}
-            >
-              {rarity}
-            </span>
-          )}
-          {best && (
-            <span className="inline-flex items-center gap-1 rounded-md border border-amber-400/50 bg-amber-400/18 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-amber-200 leading-none">
-              <Crown className="size-2.5 text-amber-300" />
-              Best
-            </span>
-          )}
-          {stat.synergy && (
-            <span className="inline-flex items-center gap-1 rounded-md border border-indigo-400/60 bg-indigo-500/25 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-indigo-200 leading-none">
-              <Sparkles className="size-2.5 text-indigo-300" />
-              Synergy
-            </span>
-          )}
-        </div>
-        <TierBadge tier={stat.tier} size="sm" dark />
+    <GlassCard surface="overlay" style={{ width, zoom: scale }} className="flex items-center gap-2 px-2.5 py-2">
+      {stat.icon && <img src={iconUrl(stat.icon)} alt="" className="size-8 shrink-0 rounded" />}
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-xs font-semibold text-white">{stat.name}</p>
+        <p className="text-[10px] text-zinc-400">{(french && ({ Gold: 'Or', Silver: 'Argent', Prismatic: 'Prismatique' } as Record<string, string>)[stat.rarity]) || stat.rarity}</p>
       </div>
-
-      {/* Name + Icon */}
-      <div className="mt-2 flex items-center gap-2">
-        {stat.icon && (
-          <img
-            src={iconUrl(stat.icon)}
-            alt={stat.name}
-            className="size-8 rounded-lg border border-white/15 bg-black/50 object-cover shrink-0"
-          />
-        )}
-        <div className="min-w-0 flex-1">
-          <div title={stat.name} className="line-clamp-2 break-words text-[13px] font-bold leading-tight text-white">{stat.name}</div>
-          <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] tabular-nums">
-            {hasRate ? (
-              <>
-                <span className={cn('font-bold', best ? 'text-amber-300' : 'text-indigo-300')}>
-                  {fmtPct(stat.rate)} {rateLabel}
-                </span>
-                <span className="text-[10px] text-zinc-400">· {stat.games.toLocaleString('en-US')} games</span>
-              </>
-            ) : (
-              <span className="text-[10px] text-zinc-400">Stats unavailable</span>
-            )}
-          </div>
-          {advice && (
-            <div className="mt-0.5 text-[10px] font-medium text-zinc-300">{advice}</div>
-          )}
-        </div>
-      </div>
-
-      {/* Synergy, Top Combo Potential, or Track Row */}
-      {(stat.synergy || stat.topCombo || !!stat.preference || editing || tracked) && (
-        <div className="mt-2 flex items-center justify-between gap-1.5 border-t border-white/[0.08] pt-1.5">
-          {stat.synergy ? (
-            <span className="inline-flex items-center gap-1 truncate text-[10px] font-medium text-indigo-200">
-              <Sparkles className="size-3 text-indigo-400 shrink-0" />
-              <span className="truncate">
-                +{stat.synergy.partner} ({fmtPct(stat.synergy.rate)})
-              </span>
-            </span>
-          ) : stat.topCombo ? (
-            <span className="inline-flex items-center gap-1 truncate text-[10px] font-medium text-zinc-300">
-              <Sparkles className="size-2.5 text-indigo-300/80 shrink-0" />
-              <span className="truncate">
-                Combo +{stat.topCombo.partner} ({fmtPct(stat.topCombo.rate)})
-              </span>
-            </span>
-          ) : (
-            <span className="text-[10px] text-zinc-400">
-              {stat.preference ? 'Personal preference' : 'Augment'}
-            </span>
-          )}
-          {(editing || tracked) && (
-            <button
-              type="button"
-              data-no-drag
-              onClick={() => postAction('trackAugment', { id: stat.id })}
-              className={cn(
-                'inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold transition-colors cursor-pointer',
-                editing && 'pointer-events-auto',
-                tracked
-                  ? 'border-indigo-400/50 bg-indigo-500/25 text-indigo-200'
-                  : 'border-white/12 bg-white/[0.06] text-zinc-300 hover:bg-white/[0.12]'
-              )}
-            >
-              {tracked ? <Check className="size-2.5" /> : <Plus className="size-2.5" />}
-              {tracked ? 'Tracked' : 'Track'}
-            </button>
-          )}
-        </div>
-      )}
+      <AugmentTier augment={stat} dark french={french} />
     </GlassCard>
-    </motion.div>
   );
 }
 
@@ -524,6 +386,16 @@ function InGameCommandSheet({ state }: { state: AppState }) {
   const isRift = (state.game.modeKey ?? state.activeMode) === 'SR';
   const rawTab = state.inGameSheetTab || 'build';
   const tab = !hasAugments && rawTab === 'augments' ? 'build' : rawTab;
+  const [itemId, setItemId] = useState<number | null>(null);
+  const { saved, guide: variant, selectGuide } = useSavedBuilds(state);
+  const opening = state.buildPath.map((step) => ({
+    id: step.stat.id, name: step.stat.name, icon: step.stat.icon, total: step.totalGold, components: step.components,
+  }));
+  const referenceItems = variant
+    ? variant.items.map((item) => state.referenceItems?.find((entry) => entry.id === item.id) || { ...item, icon: '', total: 0, components: [] })
+    : opening;
+  const guideItem = referenceItems.find((item) => item.id === itemId);
+  const french = state.settings.language === 'fr';
   const live = state.game.live;
   const me = useMemo(() => live.players.find((p) => p.me) ?? null, [live.players]);
   const minutes = Math.max(1 / 60, (live.seconds || 0) / 60);
@@ -541,9 +413,6 @@ function InGameCommandSheet({ state }: { state: AppState }) {
 
   const blueTeam = live.players.filter((p) => p.team === 'ORDER');
   const redTeam = live.players.filter((p) => p.team === 'CHAOS');
-  const laneOpp = live.players.find((p) => p.isLaneOpponent) ?? null;
-  const inventory = live.inventoryValue;
-  const inventoryDifference = inventory ? inventory.blue - inventory.red : 0;
 
   const renderPlayerRow = (p: LivePlayer) => {
     const pCsMin = live.seconds > 20 ? (p.cs / minutes).toFixed(1) : '0.0';
@@ -817,7 +686,7 @@ function InGameCommandSheet({ state }: { state: AppState }) {
                   <Button
                     size="xs"
                     variant="secondary"
-                    disabled={!champ}
+                    disabled={!champ || state.game.inGame}
                     onClick={() => postAction('exportItemSet')}
                     className="border-white/12 bg-white/[0.06] text-zinc-100 hover:bg-white/[0.12]"
                   >
@@ -827,164 +696,52 @@ function InGameCommandSheet({ state }: { state: AppState }) {
                 </div>
               </div>
 
-              {/* Next Buy + 6-Slot Core Sequence */}
-              <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_1.85fr] gap-3">
-                {state.buildPath[0] && (
-                  <div className="rounded-xl border border-indigo-400/45 bg-indigo-500/[0.09] p-3.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-300">
-                          Next Recommended Buy
-                        </span>
-                        {state.buildPath[0].synergyTag && (
-                          <span
-                            className={cn(
-                              'inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide',
-                              synergyPillClass(state.buildPath[0].synergyTone)
-                            )}
-                          >
-                            <Sparkles className="size-2.5" />
-                            {state.buildPath[0].synergyTag}
-                          </span>
-                        )}
-                      </div>
-                      <span
-                        className={cn(
-                          'rounded-md px-2 py-0.5 text-[10px] font-bold tabular-nums',
-                          state.buildPath[0].affordable
-                            ? 'bg-amber-400/20 text-amber-200 border border-amber-400/40'
-                            : 'bg-white/[0.07] text-zinc-200 border border-white/10'
-                        )}
-                      >
-                        {state.buildPath[0].affordable
-                          ? 'BUY NOW'
-                          : `${fmtGold(state.buildPath[0].remainingGold)} left`}
-                      </span>
-                    </div>
-                    <div className="mt-2.5 flex items-center gap-3">
-                      <img
-                        src={iconUrl(state.buildPath[0].stat.icon)}
-                        alt={state.buildPath[0].stat.name}
-                        className="size-12 rounded-xl border border-white/15 bg-black/50 shrink-0"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-bold text-white">
-                          {state.buildPath[0].stat.name}
-                        </div>
-                        <div className="mt-0.5 flex items-center gap-2 text-xs tabular-nums">
-                          <span className="font-bold text-indigo-300">
-                            WR {fmtPct(state.buildPath[0].stat.rate)}
-                          </span>
-                          {parsePct(state.buildPath[0].stat.pick) && (
-                            <span className="text-zinc-400">
-                              PR {parsePct(state.buildPath[0].stat.pick)}
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-1 text-[11px] text-zinc-300 line-clamp-2">
-                          {state.buildPath[0].reason}
-                        </div>
-                      </div>
-                    </div>
-                    {state.buildPath[0].components.length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-1.5 border-t border-white/[0.08] pt-2.5">
-                        {state.buildPath[0].components.map((c, idx) => (
-                          <span
-                            key={`${c.id}-${idx}`}
-                            className={cn(
-                              'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium',
-                              c.owned
-                                ? 'border-teal-400/40 bg-teal-500/15 text-teal-200'
-                                : 'border-white/10 bg-white/[0.04] text-zinc-300'
-                            )}
-                          >
-                            <img src={iconUrl(c.icon)} alt="" className="size-3.5 rounded" />
-                            <span>{c.name}</span>
-                            {c.owned ? (
-                              <Check className="size-2.5 text-teal-300" />
-                            ) : (
-                              <span className="text-zinc-500">{c.price}g</span>
-                            )}
-                          </span>
+              <section className="space-y-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                <div className="flex justify-between gap-2 text-xs text-zinc-400">
+                  <span>{french ? 'Guide de build' : 'Build reference'}</span><span>{state.modeSource}</span>
+                </div>
+                {!!saved.length && (
+                  <select value={variant?.id ?? ''} onChange={(event) => { selectGuide(event.target.value); setItemId(null); }}
+                    aria-label={french ? 'Choisir un build' : 'Choose a build'} className="rounded bg-zinc-900 p-1.5 text-xs text-white">
+                    <option value="">{french ? 'Guide par défaut' : 'Default guide'}</option>
+                    {saved.map((build) => <option key={build.id} value={build.id}>{build.name}</option>)}
+                  </select>
+                )}
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {referenceItems.map((item) => (
+                    <button key={item.id} type="button" aria-pressed={itemId === item.id}
+                      onClick={() => setItemId(item.id)}
+                      className="flex items-center gap-2 rounded-lg border border-white/10 p-2 text-left text-xs hover:border-indigo-400/50">
+                      {item.icon && <img src={iconUrl(item.icon)} alt="" className="size-7 rounded" />}
+                      <span className="flex-1 font-semibold text-white">{item.name}</span>
+                      {item.total > 0 && <span className="text-zinc-400">{fmtGold(item.total)}</span>}
+                    </button>
+                  ))}
+                </div>
+                {guideItem && (
+                  <div className="border-t border-white/10 pt-2 text-xs text-zinc-300">
+                    <strong className="text-white">{guideItem.name}</strong>
+                    {guideItem.components.length > 0 && (
+                      <ul className="mt-2 flex flex-wrap gap-2">
+                        {guideItem.components.map((component, index) => (
+                          <li key={`${component.id}-${index}`} className="flex items-center gap-1.5">
+                            <img src={iconUrl(component.icon)} alt="" className="size-4 rounded" />
+                            {component.name} · {fmtGold(component.price)}
+                          </li>
                         ))}
-                      </div>
+                      </ul>
                     )}
                   </div>
                 )}
+                {!referenceItems.length && <p className="text-xs text-zinc-400">{french ? 'Guide indisponible.' : 'Build guide unavailable.'}</p>}
+              </section>
 
-                <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3.5">
-                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                        Full Item Progression
-                      </span>
-                      {(state.enemyThreats || []).map((t) => (
-                        <span
-                          key={t}
-                          className="rounded border border-amber-400/40 bg-amber-500/12 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-200"
-                        >
-                          {t}
-                        </span>
-                      ))}
-                    </div>
-                    <span className="text-[11px] text-zinc-400">{state.modeSource}</span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {state.buildPath.slice(0, 6).map((step, idx) => (
-                      <div
-                        key={`${step.stat.id}-${idx}`}
-                        className={cn(
-                          'flex items-center gap-2.5 rounded-lg border px-2.5 py-2',
-                          idx === 0
-                            ? 'border-indigo-400/40 bg-indigo-500/12'
-                            : 'border-white/[0.07] bg-white/[0.025]'
-                        )}
-                      >
-                        <span className="text-[10px] font-bold text-zinc-500 w-3.5 text-center">
-                          {idx + 1}
-                        </span>
-                        <img
-                          src={iconUrl(step.stat.icon)}
-                          alt={step.stat.name}
-                          className="size-8 rounded-lg border border-white/12 bg-black/50 shrink-0"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="truncate text-xs font-semibold text-zinc-100">
-                              {step.stat.name}
-                            </span>
-                            {step.synergyTag && (
-                              <span
-                                className={cn(
-                                  'shrink-0 rounded border px-1.5 py-0.5 text-[8px] font-bold uppercase leading-none',
-                                  synergyPillClass(step.synergyTone)
-                                )}
-                              >
-                                {step.synergyTag}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 text-[10px] text-zinc-400 tabular-nums">
-                            <span className="font-semibold text-indigo-300">
-                              {fmtPct(step.stat.rate)}
-                            </span>
-                            {parsePct(step.stat.pick) && <span>PR {parsePct(step.stat.pick)}</span>}
-                            <span>· {fmtGold(step.totalGold)}</span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Skill Level-Up Order */}
               {state.skills && state.skills.levels.length > 0 && (
                 <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3.5">
                   <SkillOrderMatrix
                     priority={state.skills.priority}
                     levels={state.skills.levels}
-                    activeLevel={live.activeLevel || me?.level || 0}
+                    activeLevel={0}
                     compact
                   />
                 </div>
@@ -1061,7 +818,7 @@ function InGameCommandSheet({ state }: { state: AppState }) {
                               <span className="truncate text-zinc-200">{st.name}</span>
                             </div>
                             <span className="text-[11px] font-semibold text-indigo-300 tabular-nums shrink-0">
-                              {fmtPct(st.rate)}
+                              {isArena ? (parsePct(st.pick) || '—') : fmtPct(st.rate)}
                             </span>
                           </div>
                         ))
@@ -1074,167 +831,16 @@ function InGameCommandSheet({ state }: { state: AppState }) {
           )}
 
           {tab === 'augments' && (
-            <div className="space-y-4">
-              {state.allAugments.length === 0 ? (
-                <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-8 text-center text-sm text-zinc-400">
-                  Augments are available in ARAM Mayhem and Arena modes. Switch mode or launch a Mayhem / Arena match to see live augment rankings.
-                </div>
-              ) : (
-                <>
-                  {state.trackedAugments.length > 0 && (
-                    <div className="rounded-xl border border-indigo-400/35 bg-indigo-500/10 p-3.5">
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-300 mb-2">
-                        Tracked This Match ({state.trackedAugments.length})
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {state.trackedAugments.map((aug) => (
-                          <div
-                            key={aug.id}
-                            className="inline-flex items-center gap-2 rounded-lg border border-white/12 bg-black/35 px-2.5 py-1.5 text-xs"
-                          >
-                            {aug.icon && (
-                              <img src={iconUrl(aug.icon)} alt="" className="size-5 rounded" />
-                            )}
-                            <span className="font-semibold text-white">{aug.name}</span>
-                            <span className="text-indigo-300 font-bold tabular-nums">
-                              {fmtPct(aug.rate)}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => postAction('trackAugment', { id: aug.id })}
-                              className="text-zinc-400 hover:text-white cursor-pointer"
-                            >
-                              <X className="size-3" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                    {state.allAugments.slice(0, 15).map((aug) => (
-                      <div
-                        key={aug.id}
-                        className="flex items-center justify-between gap-2.5 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          {aug.icon && (
-                            <img
-                              src={iconUrl(aug.icon)}
-                              alt=""
-                              className="size-8 rounded-lg border border-white/12 shrink-0"
-                            />
-                          )}
-                          <div className="min-w-0">
-                            <div className="truncate text-xs font-semibold text-white">{aug.name}</div>
-                            <div className="text-[10px] text-zinc-400 tabular-nums">
-                              {aug.rarity} · <span className="text-indigo-300 font-semibold">{fmtPct(aug.rate)}</span>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <TierBadge tier={aug.tier} size="xs" dark />
-                          <button
-                            type="button"
-                            onClick={() => postAction('trackAugment', { id: aug.id })}
-                            className={cn(
-                              'rounded-md border px-1.5 py-0.5 text-[10px] font-semibold cursor-pointer',
-                              aug.tracked
-                                ? 'border-indigo-400/50 bg-indigo-500/25 text-indigo-200'
-                                : 'border-white/10 bg-white/[0.05] text-zinc-300 hover:bg-white/[0.12]'
-                            )}
-                          >
-                            {aug.tracked ? 'Tracked' : 'Track'}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
+            <AugmentGuide key={`${state.activeMode}:${champ?.slug}`} augments={state.allAugments} dark french={french} />
           )}
 
           {tab === 'live' && (
             <div className="space-y-4">
-              {/* Lane Matchup + Dragon Score */}
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-2.5 text-xs">
-                <div className="flex flex-wrap items-center gap-3">
-                  {laneOpp ? (
-                    <span className="inline-flex items-center gap-2 text-zinc-200">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300">
-                        Lane Matchup
-                      </span>
-                      <strong>
-                        {champ?.name} vs {laneOpp.championName}
-                      </strong>
-                      {laneOpp.matchupWr ? (
-                        <span
-                          className={cn(
-                            'rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums',
-                            laneOpp.matchupWr >= 50
-                              ? 'bg-teal-500/20 text-teal-200'
-                              : 'bg-rose-500/20 text-rose-200'
-                          )}
-                        >
-                          {fmtPct(laneOpp.matchupWr)} WR
-                        </span>
-                      ) : null}
-                    </span>
-                  ) : (
-                    <span className="text-zinc-400">Live match scoreboard · items, keystones &amp; public objectives</span>
-                  )}
-                </div>
-                {((live.blueDragons || 0) > 0 || (live.redDragons || 0) > 0) && (
-                  <div className="flex items-center gap-2 text-[11px] tabular-nums">
-                    <span className="text-sky-300 font-bold">Blue {live.blueDragons || 0}</span>
-                    <span className="text-zinc-500">·</span>
-                    <span className="text-rose-300 font-bold">Red {live.redDragons || 0}</span>
-                    {live.lastDragonType && (
-                      <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-200">
-                        {live.lastDragonType}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {inventory && (
-                <div data-inventory-comparison className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-2.5 text-xs">
-                  <div className="text-zinc-300">
-                    Inventory value{inventory.partial && <span className="ml-2 text-amber-200">Partial data</span>}
-                  </div>
-                  <div className="flex flex-wrap gap-x-3 gap-y-1 tabular-nums">
-                    <span className="text-sky-300">Blue <strong>{inventory.blue.toLocaleString()}g</strong></span>
-                    <span className="text-rose-300">Red <strong>{inventory.red.toLocaleString()}g</strong></span>
-                    {!inventory.partial && inventoryDifference !== 0 && (
-                      <span className="text-zinc-300">
-                        {inventoryDifference > 0 ? 'Blue' : 'Red'} +{Math.abs(inventoryDifference).toLocaleString()}g
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {(live.objectives.length > 0 || !!live.inhibitors?.length) && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  {[...live.objectives, ...(live.inhibitors ?? [])].map((obj) => (
-                    <div
-                      key={obj.key}
-                      className="rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 flex items-center justify-between"
-                    >
-                      <span className="text-xs font-semibold text-zinc-200">{obj.name}</span>
-                      <span
-                        className={cn(
-                          'rounded-md px-2 py-0.5 text-[10px] font-bold tabular-nums',
-                          obj.alive
-                            ? 'bg-amber-400/20 text-amber-200 border border-amber-400/40'
-                            : 'bg-white/[0.07] text-zinc-300'
-                        )}
-                      >
-                        {obj.status}
-                      </span>
+              {live.objectives.length > 0 && (
+                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                  {live.objectives.map((objective) => (
+                    <div key={objective.key} className="flex justify-between gap-2 rounded-xl border border-white/10 px-3 py-2 text-xs">
+                      <span>{objective.name}</span><span>{objective.status}</span>
                     </div>
                   ))}
                 </div>
@@ -1283,29 +889,41 @@ const CS_ROLES = [
   { key: 'SUPPORT', label: 'Sup' },
 ] as const;
 
+function DraftChampionBadge({ champion, portrait = false, french = false }: {
+  champion: Omit<DraftChampion, 'icon'> & { icon?: string };
+  portrait?: boolean;
+  french?: boolean;
+}) {
+  const tierLabel = champion.tier ? `Tier ${champion.tier}` : (french ? 'Tier indisponible' : 'Tier unavailable');
+  return (
+    <div className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-white/12 bg-[#10131c]/95 px-1.5 py-1 text-white">
+      {portrait && champion.icon && <img src={iconUrl(champion.icon)} alt="" className="size-6 shrink-0 rounded-md object-cover" />}
+      <span className="min-w-0 truncate text-[11px] font-semibold leading-tight">{champion.name}</span>
+      <span className="shrink-0" title={tierLabel} aria-label={tierLabel}><TierBadge tier={champion.tier} size="xs" dark /></span>
+    </div>
+  );
+}
+
 function ChampSelectTierDrawer({ state }: { state: AppState }) {
   const [search, setSearch] = useState('');
   const [tierFilter, setTierFilter] = useState<'ALL' | 'S+' | 'S' | 'A'>('ALL');
   const open = Boolean(state.champTierOpen);
-  const isSR = state.activeMode === 'SR';
-  const isArena = state.activeMode === 'ARENA';
-  const modeLabel =
-    state.activeMode === 'ARENA'
-      ? 'Arena Tier List'
-      : state.activeMode === 'MAYHEM'
-        ? 'Mayhem Meta'
-        : state.activeMode === 'ARAM'
-          ? 'ARAM Tier List'
-          : 'SR Tier List';
-
+  const french = state.settings.language === 'fr';
+  const mode = state.champSelectMode ?? state.activeMode;
+  const isSR = mode === 'SR';
+  const isArena = mode === 'ARENA';
+  const listing = state.champSelectTierList ?? state.tierList;
+  const modeLabel = isSR ? 'Faille' : isArena ? 'Arena' : mode === 'MAYHEM' ? 'ARAM Mayhem' : 'ARAM';
+  const title = `Tier list · ${isSR && !french ? 'Rift' : modeLabel}`;
+  const role = (state.settings.tierRole || 'ALL').toUpperCase();
   const rows = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return (state.tierList || []).filter((t) => {
-      if (tierFilter !== 'ALL' && t.tier.toUpperCase() !== tierFilter) return false;
-      if (q && !t.name.toLowerCase().includes(q) && !t.slug.includes(q)) return false;
-      return true;
-    });
-  }, [state.tierList, search, tierFilter]);
+    const normalize = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const q = normalize(search.trim());
+    return (listing || []).filter((row) =>
+      (!isSR || role === 'ALL' || row.role?.toUpperCase() === role) &&
+      (tierFilter === 'ALL' || row.tier?.toUpperCase() === tierFilter) &&
+      (!q || normalize(row.name).includes(q) || normalize(row.slug).includes(q)));
+  }, [listing, search, tierFilter, isSR, role]);
 
   return (
     <AnimatePresence mode="wait">
@@ -1316,15 +934,16 @@ function ChampSelectTierDrawer({ state }: { state: AppState }) {
           animate={{ opacity: 1, x: 0, scale: 1 }}
           exit={{ opacity: 0, x: 12, scale: 0.95 }}
           transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-          className="fixed right-3 top-[13%] z-40 pointer-events-auto"
+          className="pointer-events-auto fixed right-[1vw] top-[12vh] z-40 h-[5vh] w-[min(18vw,20vh)]"
         >
           <button
             type="button"
             onClick={() => postAction('setChampTierOpen', { value: true })}
-            className="group inline-flex items-center gap-2 rounded-xl border border-indigo-400/50 bg-[#0D101B]/94 px-3 py-1.5 text-[11px] font-bold text-white shadow-[0_12px_30px_rgba(0,0,0,0.68),0_0_18px_rgba(99,102,241,0.24)] backdrop-blur-md transition-all duration-150 hover:border-indigo-300/85 hover:bg-[#141A2E]/96 active:scale-95 cursor-pointer"
+            aria-label={title}
+            className="group inline-flex h-full w-full items-center gap-1.5 rounded-xl border border-indigo-400/50 bg-[#0D101B]/94 px-3 py-1.5 text-[11px] font-bold text-white shadow-[0_12px_30px_rgba(0,0,0,0.68),0_0_18px_rgba(99,102,241,0.24)] backdrop-blur-md transition-all duration-150 hover:border-indigo-300/85 hover:bg-[#141A2E]/96 active:scale-95 cursor-pointer"
           >
             <Trophy className="size-3.5 text-amber-300 shrink-0 transition-transform duration-150 group-hover:scale-110" />
-            <span>{modeLabel}</span>
+            <span className="min-w-0 flex-1 truncate text-left">{title}</span>
             <ChevronRight className="size-3 text-indigo-300 transition-transform duration-150 group-hover:translate-x-0.5" />
           </button>
         </motion.div>
@@ -1335,7 +954,7 @@ function ChampSelectTierDrawer({ state }: { state: AppState }) {
           animate={{ opacity: 1, x: 0, scale: 1 }}
           exit={{ opacity: 0, x: 22, scale: 0.97 }}
           transition={{ type: 'spring', stiffness: 420, damping: 32, mass: 0.7 }}
-          className="fixed right-3 top-[12%] bottom-[8%] z-40 w-[292px] max-h-[78vh] flex flex-col pointer-events-auto"
+          className="pointer-events-auto fixed right-[1vw] top-[12vh] bottom-[10vh] z-40 flex w-[min(28vw,32vh)] flex-col"
         >
           <GlassCard
             surface="overlay"
@@ -1346,9 +965,9 @@ function ChampSelectTierDrawer({ state }: { state: AppState }) {
           <div className="flex items-center gap-2 min-w-0">
             <Trophy className="size-3.5 text-amber-300 shrink-0" />
             <div className="min-w-0">
-              <div className="truncate text-xs font-bold text-white leading-tight">{modeLabel}</div>
+              <div className="truncate text-xs font-bold text-white leading-tight">{title}</div>
               <div className="text-[9px] text-zinc-400 leading-tight">
-                {isArena ? 'Top-4 WR · Pick · Ban' : 'Click any champ to inspect build'}
+                {isArena ? 'Top 4 · Pick · Ban' : french ? 'Cliquer pour consulter le build' : 'Click a champion to see the build'}
               </div>
             </div>
           </div>
@@ -1356,7 +975,7 @@ function ChampSelectTierDrawer({ state }: { state: AppState }) {
             type="button"
             onClick={() => postAction('setChampTierOpen', { value: false })}
             className="flex size-6 items-center justify-center rounded-lg border border-white/10 bg-white/[0.05] text-zinc-300 hover:bg-white/[0.14] hover:text-white cursor-pointer shrink-0"
-            title="Close Tier List (Esc)"
+            aria-label={french ? 'Réduire la tier list' : 'Collapse tier list'}
           >
             <X className="size-3.5" />
           </button>
@@ -1369,7 +988,8 @@ function ChampSelectTierDrawer({ state }: { state: AppState }) {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search champion…"
+              aria-label={french ? 'Rechercher un champion' : 'Search champion'}
+              placeholder={french ? 'Chercher…' : 'Search…'}
               className="w-full rounded-lg border border-white/12 bg-black/45 py-1.5 pl-7 pr-2.5 text-[11px] text-white placeholder:text-zinc-500 focus:border-indigo-400 focus:outline-none"
             />
           </div>
@@ -1388,12 +1008,12 @@ function ChampSelectTierDrawer({ state }: { state: AppState }) {
                       : 'bg-white/[0.05] text-zinc-400 hover:text-white'
                   )}
                 >
-                  {tf === 'ALL' ? 'All' : tf}
+                  {tf === 'ALL' ? (french ? 'Tous' : 'All') : tf}
                 </button>
               ))}
             </div>
             <span className="font-mono-tech text-[9px] text-zinc-400 tabular-nums">
-              {rows.length} picks
+              {rows.length}
             </span>
           </div>
 
@@ -1424,10 +1044,10 @@ function ChampSelectTierDrawer({ state }: { state: AppState }) {
         <div className="flex-1 overflow-y-auto divide-y divide-white/[0.05] px-1.5 py-1">
           {rows.length === 0 ? (
             <div className="py-10 text-center text-[11px] text-zinc-400">
-              {state.tierList.length === 0 ? 'Loading live tier list…' : 'No matching champions'}
+              {listing.length === 0 ? (french ? 'Tier list indisponible' : 'Tier list unavailable') : (french ? 'Aucun champion trouvé' : 'No matching champions')}
             </div>
           ) : (
-            rows.slice(0, 70).map((row, idx) => {
+            rows.map((row, idx) => {
               const isSelected = state.selected?.slug === row.slug;
               return (
                 <button
@@ -1588,6 +1208,7 @@ export function OverlayView({ state }: { state: AppState }) {
   const editing = state.editing;
   const scale = state.settings.scale || 1;
   const saved = state.settings.panels || {};
+  const widgetScale = (id: string) => state.settings.widgetScale?.[id] ?? scale;
   const live = state.game.live;
   const liveSeconds = (live.seconds || 0) + (state.game.inGame ? tickDelta : 0);
   const liveClock = liveSeconds > 0 ? fmtSecs(liveSeconds) : live.clock;
@@ -1611,9 +1232,8 @@ export function OverlayView({ state }: { state: AppState }) {
   const showChampSelect =
     pScene === 'bench' || (!state.preview && state.game.inSelection && !state.game.inGame);
 
-  const augmentRateLabel = state.activeMode === 'ARENA' ? 'Top 4' : 'WR';
   const showAugments =
-    (augmentPreview || (!state.preview && state.game.inGame && state.augmentsVisible)) &&
+    (augmentPreview || (state.game.inGame && state.augmentsVisible && state.settings.ocr)) &&
     offeredWithStat.length > 0;
 
   const titleYs = offeredWithStat.map((o) => o.y).filter((y) => y > 0).sort((a, b) => a - b);
@@ -1732,209 +1352,49 @@ export function OverlayView({ state }: { state: AppState }) {
         </div>
       )}
 
-      {/* FLOATING CHAMPION CARD BADGES (Directly on 2, 3, 4, or 5 spawned ARAM / Mayhem Champion Cards!) */}
-      {showChampSelect && state.game.champCards && state.game.champCards.length >= 2 && (
-        <div className="pointer-events-none fixed inset-0 z-30">
-          {state.game.champCards.map((card) => {
-            const best = Boolean(card.bestPick);
-            const displayWin = card.win;
-            const topPct = Math.max(12, Math.min(92, (card.y + 0.044) * 100));
+      {showChampSelect && (
+        <>
+          {state.game.champCards?.map((card) => {
+            const neighbours = state.game.champCards!.filter((other) => other.slug !== card.slug);
+            const gap = Math.min(card.x * 2, (1 - card.x) * 2, ...neighbours.map((other) => Math.abs(other.x - card.x)));
             return (
-              <motion.div
-                key={`${card.slug}-${card.x.toFixed(2)}`}
-                initial={{ opacity: 0, y: 6, scale: 0.94 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-                className="pointer-events-none fixed -translate-x-1/2"
-                style={{ left: `${card.x * 100}vw`, top: `${topPct}vh`, zoom: scale }}
-              >
-                <div
-                  className={cn(
-                    'relative overflow-hidden flex flex-col items-center gap-1 rounded-xl border px-2.5 py-1.5 shadow-[0_10px_28px_rgba(0,0,0,0.72)] backdrop-blur-md whitespace-nowrap',
-                    best
-                      ? 'border-amber-400/80 bg-[#12131C]/96 shadow-[0_0_24px_rgba(251,191,36,0.3)]'
-                      : 'border-white/15 bg-[#0E1017]/93'
-                  )}
-                >
-                  {best && (
-                    <div className="pointer-events-none absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-amber-300/90 to-transparent" />
-                  )}
-                  <div className="flex items-center gap-1.5">
-                    {best && (
-                      <span className="inline-flex items-center gap-0.5 rounded bg-amber-400/20 border border-amber-400/50 px-1.5 py-0.5 text-[8.5px] font-extrabold uppercase tracking-wider text-amber-200 leading-none">
-                        <Crown className="size-2.5 text-amber-300" />
-                        Best
-                      </span>
-                    )}
-                    <TierBadge tier={card.tier} size="sm" dark />
-                    <span
-                      className={cn(
-                        'font-mono-tech text-[13px] font-extrabold tabular-nums leading-none',
-                        best
-                          ? 'text-amber-200'
-                          : displayWin >= 52
-                            ? 'text-emerald-300'
-                            : displayWin < 48
-                              ? 'text-rose-300'
-                              : 'text-indigo-200'
-                      )}
-                    >
-                      {fmtPct(displayWin)}
-                    </span>
-                    {card.patchTag && (
-                      <span
-                        className={cn(
-                          'rounded px-1 py-0.5 text-[8px] font-extrabold uppercase leading-none',
-                          card.patchTag === 'buff'
-                            ? 'bg-emerald-500/25 text-emerald-300'
-                            : card.patchTag === 'nerf'
-                              ? 'bg-rose-500/25 text-rose-300'
-                              : 'bg-amber-500/25 text-amber-200'
-                        )}
-                      >
-                        {card.patchTag === 'buff' ? '▲' : card.patchTag === 'nerf' ? '▼' : '~'}
-                      </span>
-                    )}
-                  </div>
+              <motion.div key={card.slug} data-champion-card-tier={card.slug}
+                initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.14 }}
+                className="pointer-events-none fixed z-30 -translate-x-1/2"
+                style={{ left: `${card.x * 100}vw`, top: `${Math.min(92, (card.y + 0.041) * 100)}vh` }}>
+                <div style={{ maxWidth: `min(138px, calc(${gap * 100}vw - 8px))` }}>
+                  <DraftChampionBadge champion={card} french={state.settings.language === 'fr'} />
                 </div>
               </motion.div>
             );
           })}
-        </div>
+          {(() => {
+            const picked = state.game.pickedChampion;
+            const cardSlugs = new Set(state.game.champCards?.map((card) => card.slug));
+            const bench = state.settings.showBenchBar
+              ? state.game.bench.filter((champion) => !cardSlugs.has(champion.slug) && champion.slug !== picked?.slug) : [];
+            const french = state.settings.language === 'fr';
+            if (!picked && !bench.length) return null;
+            return (
+              <DraggableSlot panelKey="champ_select_ribbon" title={french ? 'Sélection de champion' : 'Champion select'}
+                defaultX={0.5} defaultY={0.008} anchor="top-center" editing={editing} savedPanels={saved}
+                scale={widgetScale('champ_select_ribbon')} passThrough>
+                <GlassCard surface="overlay" className="flex max-w-[78vw] flex-wrap items-center gap-2 p-1.5">
+                  {picked && <div data-draft-current className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-zinc-300">{french ? 'Sélection' : 'Selected'}</span>
+                    <DraftChampionBadge champion={picked} portrait french={french} />
+                  </div>}
+                  {!!bench.length && <div data-draft-bench className="flex flex-wrap items-center gap-1">
+                    <span className="px-1 text-[10px] text-zinc-300">{french ? 'Banc' : 'Bench'}</span>
+                    {bench.map((champion) => <DraftChampionBadge key={champion.slug} champion={champion} portrait french={french} />)}
+                  </div>}
+                </GlassCard>
+              </DraggableSlot>
+            );
+          })()}
+          {(!editing || pScene === 'bench') && <ChampSelectTierDrawer state={state} />}
+        </>
       )}
-
-      {/* NON-BLOCKING CHAMP SELECT TOP-CENTER RIBBON (Win rate on Pick, Priority Cards & Bench!) */}
-      {showChampSelect && (() => {
-        const hasRealPick = Boolean(state.game.champion) || pScene === 'bench';
-        const showPicked = hasRealPick && state.selected !== null;
-        const showBench = state.settings.showBenchBar && state.game.bench.length > 0;
-        if (!showPicked && !showBench) return null;
-        const hasCards = state.game.bench.some((b) => b.isCard);
-        return (
-          <DraggableSlot
-            panelKey="champ_select_ribbon"
-            title="Champ Select Ribbon"
-            defaultX={0.5}
-            defaultY={0.008}
-            anchor="top-center"
-            editing={editing}
-            savedPanels={saved}
-            scale={scale}
-            passThrough
-          >
-            <GlassCard
-              surface="overlay"
-              className={cn('max-w-full px-2.5 py-1.5', editing && 'rounded-t-none')}
-            >
-              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
-                {showPicked && state.selected && (
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {state.selected.icon && (
-                      <div className="size-6 rounded-md border border-white/15 overflow-hidden bg-black/50 shrink-0">
-                        <img
-                          src={iconUrl(state.selected.icon)}
-                          alt={state.selected.name}
-                          className="size-full object-cover scale-[1.14]"
-                        />
-                      </div>
-                    )}
-                    <span className="text-xs font-bold text-white whitespace-nowrap">{state.selected.name}</span>
-                    <TierBadge tier={state.selected.tier} size="xs" dark />
-                    <span className="text-[11px] font-bold text-indigo-300 tabular-nums whitespace-nowrap">
-                      {fmtPct(state.selected.win)}
-                    </span>
-                    {state.runeStatus && !state.runeStatus.toLowerCase().includes('waiting') && (
-                      <span className="inline-flex items-center gap-1 rounded-md bg-teal-500/18 px-1.5 py-1 text-[9px] font-semibold leading-none text-teal-200 whitespace-nowrap">
-                        <Check className="size-2.5" />
-                        Runes
-                      </span>
-                    )}
-                    {state.spellStatus && !state.spellStatus.toLowerCase().includes('waiting') && (
-                      <span className="inline-flex items-center gap-1 rounded-md bg-indigo-500/18 px-1.5 py-1 text-[9px] font-semibold leading-none text-indigo-200 whitespace-nowrap">
-                        <Zap className="size-2.5" />
-                        Spells
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {showBench && (
-                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                    <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-amber-300 shrink-0 whitespace-nowrap">
-                      <Crown className="size-3" />
-                      {hasCards ? 'Cards & Bench' : 'Bench'}
-                    </span>
-                    {state.game.bench.slice(0, 5).map((bc, idx) => {
-                      const isTop = Boolean(bc.bestPick) || idx === 0;
-                      const up = typeof bc.upgradeDelta === 'number' ? bc.upgradeDelta : 0;
-                      return (
-                        <div
-                          key={bc.slug}
-                          className={cn(
-                            'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 whitespace-nowrap',
-                            isTop
-                              ? 'border-amber-400/70 bg-amber-500/18 shadow-[0_0_12px_rgba(251,191,36,0.14)]'
-                              : bc.isCard
-                                ? 'border-indigo-400/50 bg-indigo-500/14'
-                                : 'border-white/10 bg-white/[0.04]'
-                          )}
-                        >
-                          {bc.isCard && (
-                            <span className="rounded bg-indigo-500/30 px-1 py-0.25 text-[7px] font-extrabold uppercase tracking-wider text-indigo-200 leading-none">
-                              Card
-                            </span>
-                          )}
-                          {bc.icon && (
-                            <div className="size-4 rounded overflow-hidden bg-black/50 shrink-0">
-                              <img
-                                src={iconUrl(bc.icon)}
-                                alt={bc.name}
-                                className="size-full object-cover scale-[1.14]"
-                              />
-                            </div>
-                          )}
-                          <span className="text-[10px] font-semibold text-white">{bc.name}</span>
-                          <TierBadge tier={bc.tier} size="xs" dark />
-                          {bc.patchTag && (
-                            <span
-                              className={cn(
-                                'rounded px-1 py-0.25 text-[8px] font-extrabold uppercase leading-none',
-                                bc.patchTag === 'buff'
-                                  ? 'bg-emerald-500/25 text-emerald-300'
-                                  : bc.patchTag === 'nerf'
-                                    ? 'bg-rose-500/25 text-rose-300'
-                                    : 'bg-amber-500/25 text-amber-200'
-                              )}
-                            >
-                              {bc.patchTag === 'buff' ? '▲' : bc.patchTag === 'nerf' ? '▼' : '~'}
-                            </span>
-                          )}
-                          <span
-                            className={cn(
-                              'text-[9px] font-bold tabular-nums',
-                              isTop ? 'text-amber-200' : 'text-indigo-300'
-                            )}
-                          >
-                            {fmtPct(bc.win)}
-                          </span>
-                          {up >= 1.0 && (
-                            <span className="rounded bg-emerald-500/25 px-1 py-0.25 font-mono-tech text-[8px] font-extrabold text-emerald-300 leading-none">
-                              +{up.toFixed(1)}%
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </GlassCard>
-          </DraggableSlot>
-        );
-      })()}
-
-      {/* CHAMP SELECT LIVE TIER LIST DRAWER (Top-right toggle pill -> searchable, cursor-aware drawer!) */}
-      {showChampSelect && (!editing || pScene === 'bench') && <ChampSelectTierDrawer state={state} />}
 
       {showAugments && (
         <>
@@ -1953,7 +1413,8 @@ export function OverlayView({ state }: { state: AppState }) {
               {offeredWithStat.map((slot) => {
                 const nearestGap = Math.min(
                   slot.x * 2, (1 - slot.x) * 2,
-                  ...offeredWithStat.filter((other) => other.slot !== slot.slot).map((other) => Math.abs(other.x - slot.x)),
+                  ...(augmentPreview ? offeredWithStat : state.offered).filter((other) => other.x > 0 && other.slot !== slot.slot)
+                    .map((other) => Math.abs(other.x - slot.x)),
                 );
                 const width = `min(228px, calc((${nearestGap * 100}vw - 8px) / ${scale}))`;
                 return (
@@ -1961,320 +1422,45 @@ export function OverlayView({ state }: { state: AppState }) {
                     className="col-start-1 row-start-1 w-max -translate-x-1/2 justify-self-start"
                     style={{ marginLeft: `calc(${slot.x * 100}vw - ${PANEL_INSET}px)` }}
                   >
-                    <AugmentBadgeCard stat={slot.stat} editing={editing} rateLabel={augmentRateLabel}
-                      advice={slot.stat.recommended || (slot.slot === offeredWithStat[0]?.slot && state.offerAdvice !== 'Sample-adjusted') ? state.offerAdvice : undefined}
-                      width={width} scale={scale}
-                    />
+                    <AugmentBadgeCard stat={slot.stat} width={width} scale={scale} french={state.settings.language === 'fr'} />
                   </div>
                 );
               })}
             </div>
           </DraggableSlot>
 
-          {state.settings.showRerollBar && Object.keys(state.topAugments).length > 0 && (
-            <DraggableSlot
-              panelKey="reroll_bar"
-              title="Reroll Reference"
-              defaultX={0.5}
-              defaultY={0.93}
-              anchor="center-bottom"
-              editing={editing}
-              savedPanels={saved}
-              scale={scale}
-            >
-              <GlassCard
-                surface="overlay"
-                className={cn('w-max max-w-[min(740px,100%)] px-3 py-2', editing && 'rounded-t-none')}
-              >
-                <div className="flex flex-wrap items-center gap-3 text-[11px]">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                    Reroll targets by rarity
-                  </span>
-                  {Object.entries(state.topAugments).map(([rarity, list]) => (
-                      <div key={rarity} className="flex flex-wrap items-center gap-2">
-                        <span className="rounded bg-white/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-200">
-                          {rarity}
-                        </span>
-                        {list.slice(0, Object.keys(state.topAugments).length > 1 ? 2 : 4).map((a) => (
-                          <span
-                            key={a.id}
-                            className="inline-flex items-center gap-1 text-zinc-200"
-                          >
-                            <span className="font-medium">{a.name}</span>
-                            <span className="text-indigo-300 font-bold tabular-nums">
-                              {fmtPct(a.rate)} {augmentRateLabel}
-                            </span>
-                          </span>
-                        ))}
-                      </div>
-                    ))}
-                </div>
-              </GlassCard>
-            </DraggableSlot>
-          )}
         </>
       )}
 
-      {/* IN-GAME BUILD GUIDE HUD (Full or Ultra-Minimalist Mode!) */}
       {showBuildHud && (
-        <DraggableSlot
-          panelKey="build_hud"
-          title="Build Guide"
-          defaultX={0.012}
-          defaultY={0.018}
-          editing={editing}
-          savedPanels={saved}
-          scale={scale}
-          passThrough
-        >
-          {state.settings.minimalHud ? (
-            <GlassCard
-              surface="overlay"
-              highlight={state.buildPath[0].affordable ? 'gold' : 'none'}
-              style={{ maxWidth: `calc(29vw / ${scale})` }}
-              className={cn('px-3 py-2', editing && 'rounded-t-none')}
-            >
-              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-                <img
-                  src={iconUrl(state.buildPath[0].stat.icon)}
-                  alt={state.buildPath[0].stat.name}
-                  className="size-8 rounded-lg border border-white/15 bg-black/50 shrink-0"
-                />
-                <div className="min-w-0 flex-1 leading-tight">
-                  <div className="flex items-center gap-1.5">
-                    {state.buildPath[0].role === 'STARTER' && (
-                      <span className="rounded bg-amber-400/20 px-1.5 py-0.5 text-[8px] font-bold uppercase text-amber-200">
-                        Starter
-                      </span>
-                    )}
-                    <span className="min-w-0 break-words text-xs font-bold text-white">{state.buildPath[0].stat.name}</span>
-                  </div>
-                  <div className="text-[10px] font-semibold tabular-nums text-amber-300">
-                    {state.buildPath[0].affordable
-                      ? 'BUY NOW'
-                      : `${fmtGold(state.buildPath[0].remainingGold)} left`}
-                  </div>
-                </div>
-                <span className="rounded bg-white/[0.08] px-1.5 py-0.5 text-[9px] font-semibold text-zinc-300">
-                  Alt+{state.settings.hotkeySheet || 'G'}
-                </span>
-              </div>
-            </GlassCard>
-          ) : (
-            <GlassCard
-              surface="overlay"
-              highlight={state.buildPath[0].affordable ? 'gold' : 'none'}
-              style={{ maxWidth: `calc(29vw / ${scale})` }}
-              className={cn('w-[228px] p-2.5', editing && 'rounded-t-none')}
-            >
-              {(() => {
-                const next = state.buildPath[0];
-                const isStarter = next.role === 'STARTER';
-                return (
-                  <>
-                    {/* Compact Single-Line Header: Role + Gold / BUY NOW */}
-                    <div className="flex flex-wrap items-center justify-between gap-1.5">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span
-                          className={cn(
-                            'inline-flex items-center rounded-md px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider leading-none shrink-0',
-                            isStarter
-                              ? 'border border-amber-400/50 bg-amber-400/18 text-amber-200'
-                              : 'border border-indigo-400/40 bg-indigo-500/18 text-indigo-200'
-                          )}
-                        >
-                          {next.role}
-                        </span>
-                        {next.synergyTag && !isStarter && (
-                          <span
-                            className={cn(
-                              'inline-flex items-center truncate rounded-md border px-1.5 py-0.5 text-[8px] font-bold uppercase leading-none',
-                              synergyPillClass(next.synergyTone)
-                            )}
-                          >
-                            {next.synergyTag}
-                          </span>
-                        )}
-                      </div>
-                      <span
-                        className={cn(
-                          'inline-flex items-center rounded-md px-2 py-0.5 text-[9px] font-bold leading-none tabular-nums shrink-0',
-                          next.affordable
-                            ? 'bg-amber-400/22 text-amber-200 border border-amber-400/45'
-                            : 'bg-white/[0.08] text-zinc-300'
-                        )}
-                      >
-                        {next.affordable ? 'BUY NOW' : `${fmtGold(next.remainingGold)}`}
-                      </span>
-                    </div>
-
-                    {/* Next Buy Compact Row */}
-                    <div className="mt-2 flex items-center gap-2">
-                      <img
-                        src={iconUrl(next.stat.icon)}
-                        alt={next.stat.name}
-                        className="size-9 rounded-lg border border-white/15 bg-black/50 shrink-0"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-xs font-bold text-white leading-tight">
-                          {next.stat.name}
-                        </div>
-                        <div className="mt-0.5 flex items-center gap-2 text-[10px] tabular-nums">
-                          <span className="font-bold text-indigo-300">{fmtPct(next.stat.rate)} WR</span>
-                          {isSR && state.game.gold >= 0 && (
-                            <span className="inline-flex items-center gap-0.5 text-amber-300 font-semibold">
-                              <Coins className="size-2.5" />
-                              {fmtGold(state.game.gold)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {next.reason && (
-                      <div className="mt-1 text-[9px] leading-tight text-zinc-300">{next.reason}</div>
-                    )}
-
-                    {/* Micro Components (only if crafting components exist) */}
-                    {next.components.length > 0 && (
-                      <div className="mt-1.5 flex flex-wrap gap-1">
-                        {next.components.map((c, idx) => (
-                          <span
-                            key={`${c.id}-${idx}`}
-                            className={cn(
-                              'inline-flex items-center gap-1 rounded border px-1 py-0.5 text-[8px] font-medium leading-none',
-                              c.owned
-                                ? 'border-teal-400/40 bg-teal-500/15 text-teal-200'
-                                : 'border-white/10 bg-black/30 text-zinc-300'
-                            )}
-                          >
-                            <img src={itemIconUrl(c.id, state.ddVersion)} alt="" className="size-3 rounded" />
-                            {c.owned ? <Check className="size-2 text-teal-300" /> : `${c.price}g`}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-
-              {/* Compact Remaining Sequence */}
-              {state.buildPath.length > 1 && (
-                <div className="mt-2 flex flex-wrap items-center justify-between gap-1 border-t border-white/[0.08] pt-2">
-                  <div className="flex flex-wrap items-center gap-1">
-                    {state.buildPath.slice(1, 6).map((step, i) => (
-                      <div key={`${step.stat.id}-${i}`} className="relative">
-                        <img
-                          src={iconUrl(step.stat.icon)}
-                          alt={step.stat.name}
-                          title={`${step.stat.name} (${fmtPct(step.stat.rate)})`}
-                          className="size-7 rounded-md border border-white/12 bg-black/50"
-                        />
-                        {step.stat.rate > 0 && (
-                          <span className="absolute -bottom-0.5 -right-0.5 rounded bg-[#0F1015]/95 border border-white/15 px-0.5 text-[7px] font-bold text-zinc-300 leading-tight tabular-nums">
-                            {Math.round(step.stat.rate)}%
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  <span className="text-[8px] font-semibold text-zinc-500 shrink-0">
-                    Alt+{state.settings.hotkeySheet || 'G'}
-                  </span>
-                </div>
-              )}
-            </GlassCard>
-          )}
+        <DraggableSlot panelKey="build_hud" title="Build Guide" defaultX={0.012} defaultY={0.018}
+          editing={editing} savedPanels={saved} scale={widgetScale("build_hud")} passThrough>
+          <GlassCard surface="overlay" className="px-2.5 py-2">
+            <p className="text-[10px] font-semibold text-zinc-300">Build · Alt+{state.settings.hotkeySheet || 'G'}</p>
+            <div className="mt-1.5 flex gap-1">
+              {state.buildPath.slice(0, 4).map((step) => (
+                <img key={step.stat.id} src={iconUrl(step.stat.icon)} alt={step.stat.name} className="size-6 rounded" />
+              ))}
+            </div>
+          </GlassCard>
         </DraggableSlot>
       )}
 
-      {/* LIVE PERFORMANCE STRIP (Resolution-independent top-center: exact 50% on 768p, 1080p, 1440p, 4K & 21:9!) */}
       {showPerfStrip && (
-        <DraggableSlot
-          panelKey="perf_strip_center"
-          title="Performance"
-          defaultX={0.5}
-          defaultY={0.042}
-          anchor="top-center"
-          editing={editing}
-          savedPanels={saved}
-          scale={scale}
-          passThrough
-        >
-          <GlassCard
-            surface="overlay"
-            style={{ maxWidth: `calc(34vw / ${scale})` }}
-            className={cn('px-3 py-1.5', editing && 'rounded-t-none')}
-          >
-            <div className="flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 whitespace-nowrap text-[11px] tabular-nums">
-              <div className="flex items-center gap-1.5">
-                <TrendingUp className="size-3.5 text-indigo-400" />
-                <span className="text-zinc-400">CS/m</span>
-                <span
-                  className={cn(
-                    'font-bold',
-                    csPerMin >= 7.5
-                      ? 'text-teal-300'
-                      : csPerMin >= 5.5
-                        ? 'text-zinc-100'
-                        : 'text-amber-300'
-                  )}
-                >
-                  {csPerMin > 0 ? csPerMin.toFixed(1) : '0.0'}
-                </span>
-                {isSR && <span className="text-[9px] text-zinc-500">/7.5</span>}
-              </div>
-              <div className="h-3 w-px bg-white/12" />
-              <div className="flex items-center gap-1">
-                <span className="text-zinc-400">KDA</span>
-                <span className="font-bold text-white">
-                  {me ? `${me.kills}/${me.deaths}/${me.assists}` : '0/0/0'}
-                </span>
-              </div>
-              <div className="h-3 w-px bg-white/12" />
-              <div className="flex items-center gap-1">
-                <span className="text-zinc-400">KP</span>
-                <span className="font-bold text-indigo-300">{kp}%</span>
-              </div>
-              {liveClock && (
-                <>
-                  <div className="h-3 w-px bg-white/12" />
-                  <span className="font-semibold text-zinc-300">{liveClock}</span>
-                </>
-              )}
-              {!isSR && liveSeconds > 0 && (() => {
-                // Howling Abyss Health Relics: first spawn at 1:45 (105s), then 90s cycle
-                const firstSpawn = 105;
-                const cycle = 90;
-                const rem = liveSeconds < firstSpawn ? firstSpawn - liveSeconds : (cycle - ((liveSeconds - firstSpawn) % cycle)) % cycle;
-                const ready = liveSeconds >= firstSpawn && (rem === 0 || rem >= cycle - 6);
-                const label = ready ? 'UP' : `${Math.floor(rem / 60)}:${String(Math.ceil(rem) % 60).padStart(2, '0')}`;
-                return (
-                  <>
-                    <div className="h-3 w-px bg-white/12" />
-                    <span className={cn('inline-flex items-center gap-1 font-bold', ready ? 'text-emerald-300' : 'text-teal-200')}>
-                      <span className={cn('size-1.5 rounded-full', ready ? 'bg-emerald-400 animate-pulse' : 'bg-teal-400/70')} />
-                      Relic {label}
-                    </span>
-                  </>
-                );
-              })()}
-            </div>
+        <DraggableSlot panelKey="perf_strip_center" title="Performance" defaultX={0.5} defaultY={0.042}
+          anchor="top-center" editing={editing} savedPanels={saved} scale={widgetScale('perf_strip_center')} passThrough>
+          <GlassCard surface="overlay" className="flex max-w-[65vw] flex-wrap items-center gap-2 px-2 py-1.5">
+            {me && <div data-performance-champion>
+              <DraftChampionBadge champion={{ name: me.championName, slug: me.champion, tier: me.championTier ?? '', icon: me.championIcon }}
+                portrait french={state.settings.language === 'fr'} />
+            </div>}
+            <dl className="flex items-center gap-2.5 whitespace-nowrap text-[11px] tabular-nums">
+              <div className="flex items-center gap-1"><dt className="text-zinc-400">CS/min</dt><dd className="font-semibold">{me && liveSeconds > 20 ? csPerMin.toFixed(1) : '—'}</dd></div>
+              <div className="flex items-center gap-1"><dt className="text-zinc-400">KDA</dt><dd className="font-semibold">{me ? `${me.kills}/${me.deaths}/${me.assists}` : '—'}</dd></div>
+              <div className="flex items-center gap-1"><dt className="text-zinc-400">KP</dt><dd className="font-semibold">{me && myTeamKills > 0 ? `${kp}%` : '—'}</dd></div>
+              {liveClock && <div className="border-l border-white/10 pl-2"><dt className="sr-only">Game time</dt><dd className="text-zinc-300">{liveClock}</dd></div>}
+            </dl>
           </GlassCard>
-          {isSR && live.inhibitors && live.inhibitors.length > 0 && (
-            <div className="mt-1.5 flex flex-wrap items-center justify-center gap-1.5">
-              {live.inhibitors.slice(0, 3).map((inh) => (
-                <div
-                  key={inh.key}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/45 bg-[#12131B]/95 px-2 py-0.5 text-[10px] font-bold text-amber-200 tabular-nums shadow-lg"
-                >
-                  <Timer className="size-2.5 text-amber-300" />
-                  <span>{inh.name.replace(' inhibitor', '')}</span>
-                  <span className="text-white">{inh.status}</span>
-                </div>
-              ))}
-            </div>
-          )}
         </DraggableSlot>
       )}
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.2.0-beta.10
+
+- Open the detected champion’s build from Home during champion select. Browse the tier list while waiting for a pick.
+- Keep the tier list available in champion select. Give revealed champion cards and bench portraits compact, mode-specific tier badges. Identify the current champion in the performance panel.
+- Replace live purchase prompts with item recipes in Alt+G. Show the same champion and rarity tiers on detected augment cards and in the guide, including after a Golden Reroll. Keep unknown tiers marked and remove numeric augment and Arena item outcomes from public views.
+- Save and compare build variants by champion, mode and role. Choose a saved variant from the Hub or Alt+G and keep that guide selected for that champion, mode and role. Edit individual runes within their existing slots and update only the Maylo-managed rune page.
+- Open the latest match from Home or review a match from History on a dedicated Hub page. Filter locally observed events by items or objectives, then return to the previous screen with its filters intact. Save a private note or link a local video for external playback.
+- Compare recent and previous matches by champion and mode. Show recorded Solo/Duo LP snapshots and an on-demand local skin collection.
+- Search app settings and save overlay layout, scale and visibility per mode. Add a minimal preset and a revised French or English first-launch guide.
+
 ## v0.2.0-beta.9
 
 - Prioritize documented opening items and account for owned components in Next Buy. Delay early Lord Dominik's Regards when another core item is available and enemies have yet to build substantial armor.

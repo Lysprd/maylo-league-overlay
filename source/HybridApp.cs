@@ -158,7 +158,7 @@ namespace MayhemCompanion {
    if (app.HubActive && !app.Preview) { if (IsVisible) Hide(); return; }
    target = app.Preview && !app.Game.InGame && !app.Game.InSelection ? IntPtr.Zero : app.Game.Window;
    if (target == IntPtr.Zero && !app.Preview && (app.IsOverlayEditing || app.InGameSheet)) target = Native.Target(app.Game.InGame);
-   bool modeAllowed = app.Game.Mayhem || app.Config.ShowBuildOverlay || app.Config.OcrAllModes || app.Config.ShowPerfStrip || app.Config.ShowJungleWidget || app.Config.ShowBenchBar;
+   bool modeAllowed = app.Game.InSelection || app.Game.Mayhem || app.Config.ShowBuildOverlay || app.Config.OcrAllModes || app.Config.ShowPerfStrip || app.Config.ShowJungleWidget || app.Config.ShowBenchBar;
    bool active = app.OverlayVisible && (app.Preview || (app.Config.Overlay && (app.IsOverlayEditing || app.InGameSheet || ((app.Game.InGame || app.Game.InSelection) && app.Game.ModeKey != "" && modeAllowed))));
    bool desktopPreview = app.Preview && (target == IntPtr.Zero || !Native.IsWindow(target) || !Native.IsWindowVisible(target) || Native.IsIconic(target));
    if (!desktopPreview && (target == IntPtr.Zero || !Native.IsWindow(target) || Native.IsIconic(target))) active = false;
@@ -274,6 +274,13 @@ namespace MayhemCompanion {
   void SanitizeConfig() {
    if (Config == null) Config = new V2Settings();
    if (Config.Panels == null) Config.Panels = new Dictionary<string, OverlayPanelPosition>();
+   if (Config.MatchNotes == null) Config.MatchNotes = new Dictionary<string, string>();
+   if (Config.MatchClips == null) Config.MatchClips = new Dictionary<string, string>();
+   if (Config.MatchTimelines == null) Config.MatchTimelines = new Dictionary<string, List<MatchMoment>>();
+   if (Config.ModePanels == null) Config.ModePanels = new Dictionary<string, Dictionary<string, OverlayPanelPosition>>();
+   if (Config.ModePanelVisibility == null) Config.ModePanelVisibility = new Dictionary<string, Dictionary<string, bool>>();
+   if (Config.ModePanelScale == null) Config.ModePanelScale = new Dictionary<string, double>();
+   if (Config.ModeWidgetScale == null) Config.ModeWidgetScale = new Dictionary<string, Dictionary<string, double>>();
    if (Config.TrackedAugments == null) Config.TrackedAugments = new List<int>();
    if (Config.Layout == null) Config.Layout = new Placement();
    if (Config.AugmentPreferences == null) Config.AugmentPreferences = new Dictionary<string, int>();
@@ -469,7 +476,6 @@ namespace MayhemCompanion {
    var map = new[] {
     Tuple.Create(1, KeyToVk(Config.HotkeyOverlay, 0x4D), "Alt+" + Config.HotkeyOverlay),
     Tuple.Create(2, KeyToVk(Config.HotkeyEdit, 0x4F), "Alt+" + Config.HotkeyEdit),
-    Tuple.Create(3, KeyToVk(Config.HotkeyScan, 0x41), "Alt+" + Config.HotkeyScan),
     Tuple.Create(4, KeyToVk(Config.HotkeySheet, 0x47), "Alt+" + Config.HotkeySheet),
     Tuple.Create(5, 0x48, "Alt+H"),
     Tuple.Create(6, 0x4C, "Alt+L")
@@ -552,6 +558,7 @@ namespace MayhemCompanion {
   }
 
   void OnGameEnded() {
+   matchTierScope = ""; augmentTierSource = null;
    wasInGame = false;
    hadGameWindow = false;
    Game.InGame = false;
@@ -610,10 +617,10 @@ namespace MayhemCompanion {
      lastChampCardSig = 0; champCardMisses = 0;
      PushState();
     }
-    ocrTimer.Interval = TimeSpan.FromMilliseconds((offerSession.Visible || lastRawHitCount >= 1) ? 55 : 100);
-    bool allowOcr = Game.InGame && Config.Ocr && Config.Connected && !HubActive && !InGameSheet && !IsOverlayEditing && !ocrBusy && (Game.Mayhem || Game.ModeKey == "ARENA" || Config.OcrAllModes);
-    if (!allowOcr || Game.ModeKey == "") return;
-    await ReadAugments(false);
+    ocrTimer.Interval = TimeSpan.FromMilliseconds(offerSession.Visible || lastRawHitCount >= 1 ? 55 : 150);
+    if (Game.InGame && Config.Ocr && Config.Overlay && Config.Connected && !HubActive && !InGameSheet &&
+        !IsOverlayEditing && IsAugmentMode && Game.ModeKey == ActiveMode)
+     await ReadAugments(false);
    };
    ocrTimer.Start();
 
@@ -633,8 +640,7 @@ namespace MayhemCompanion {
     switch (w.ToInt32()) {
      case 1: FireHotkey("Overlay", true); break;
      case 2: FireHotkey("Edit", true); break;
-     case 3: FireHotkey("Scan", true); break;
-     case 4: FireHotkey("Build", true); break;
+      case 4: FireHotkey("Build", true); break;
      case 5: FireHotkey("History", true); break;
      case 6: FireHotkey("Live", true); break;
     }
@@ -653,7 +659,7 @@ namespace MayhemCompanion {
    bool alt = (Native.GetAsyncKeyState(0x12) & 0x8000) != 0;
    var fg = Native.GetForegroundWindow();
    bool inLeagueOrApp = Native.OurWindow(fg) || Native.SameApplication(fg, Game.Window) || Native.SameApplication(fg, Native.Target(true)) || Native.SameApplication(fg, Native.Target(false));
-   bool edgeSheet = KeyEdge(KeyToVk(Config.HotkeySheet, 0x47)), edgeL = KeyEdge(0x4C), edgeH = KeyEdge(0x48), edgeScan = KeyEdge(KeyToVk(Config.HotkeyScan, 0x41)), edgeOverlay = KeyEdge(KeyToVk(Config.HotkeyOverlay, 0x4D)), edgeEdit = KeyEdge(KeyToVk(Config.HotkeyEdit, 0x4F)), edgeF9 = KeyEdge(0x78), edgeEsc = KeyEdge(0x1B);
+   bool edgeSheet = KeyEdge(KeyToVk(Config.HotkeySheet, 0x47)), edgeL = KeyEdge(0x4C), edgeH = KeyEdge(0x48), edgeOverlay = KeyEdge(KeyToVk(Config.HotkeyOverlay, 0x4D)), edgeEdit = KeyEdge(KeyToVk(Config.HotkeyEdit, 0x4F)), edgeF9 = KeyEdge(0x78), edgeEsc = KeyEdge(0x1B);
    if (edgeEsc && inLeagueOrApp) {
     if (InGameSheet) { CloseInGameSheet(true); return; }
     if (ChampTierOpen) { ChampTierOpen = false; if (overlay != null) overlay.Sync(); PushState(); return; }
@@ -664,7 +670,7 @@ namespace MayhemCompanion {
    if (edgeSheet) FireHotkey("Build", false);
    else if (edgeL) FireHotkey("Live", false);
    else if (edgeH) FireHotkey("History", false);
-   else if (edgeScan) FireHotkey("Scan", false);
+
    else if (edgeOverlay) FireHotkey("Overlay", false);
    else if (edgeEdit) FireHotkey("Edit", false);
   }
@@ -676,7 +682,6 @@ namespace MayhemCompanion {
    switch (action) {
     case "Overlay": OverlayVisible = !OverlayVisible; if (overlay != null) overlay.Sync(); PushState(); break;
     case "Edit": Editing = !Editing; OverlayVisible = true; if (!Editing) { Preview = false; PreviewScene = ""; OverlayDragging = false; Save(); } if (overlay != null) overlay.Sync(); PushState(); break;
-    case "Scan": TriggerRead(); break;
     case "Build": HotkeyDestination("Build", fromGlobal); break;
     case "History": HotkeyDestination("History", fromGlobal); break;
     case "Live": HotkeyDestination("Live", fromGlobal); break;
@@ -779,11 +784,7 @@ namespace MayhemCompanion {
      if (r.Width >= 400 && r.Height >= 250) {
       double rx = (pt.X - r.Left) / (double)r.Width;
       double ry = (pt.Y - r.Top) / (double)r.Height;
-      if (ChampTierOpen) {
-       nextChampClick = rx >= 0.72 && rx <= 1.0 && ry >= 0.10 && ry <= 0.94;
-      } else {
-       nextChampClick = rx >= 0.82 && rx <= 1.0 && ry >= 0.11 && ry <= 0.21;
-      }
+      nextChampClick = ChampSelectOverlayLayout.ContainsTierListPointer(rx, ry, r.Width, r.Height, ChampTierOpen);
      }
     }
    }
@@ -912,7 +913,7 @@ namespace MayhemCompanion {
    int ticket = ++tierGeneration;
    string modeSnap = ActiveMode;
    try {
-    var list = await MultiModeParser.LoadTierList(modeSnap, Config.TierRole, Config.TierElo, Champions, force);
+    var list = await MultiModeParser.LoadTierList(modeSnap, "ALL", Config.TierElo, Champions, force);
     if (list != null && list.Count > 0) tierListByMode[modeSnap] = list;
     if (closing || ticket != tierGeneration) return;
     TierList = list;
@@ -970,8 +971,70 @@ namespace MayhemCompanion {
    }
   }
 
+  List<CollectionSkin> collection = new List<CollectionSkin>();
+  bool collectionBusy, collectionFailed;
+  string collectionAccount = "";
+  MatchReviewCapture reviewCapture;
+  string viewedMatchKey = "";
+  DateTime reviewSavedAt;
+
+  void UpdateMatchReview() {
+   if (!Game.InGame) {
+    if (reviewCapture != null) { Save(); reviewCapture = null; }
+    return;
+   }
+   string key = MatchReviewKey(Game.MatchId);
+   if (key == "" || Game.Live.Seconds <= 0) return;
+   if (reviewCapture == null || reviewCapture.Key != key) {
+    List<MatchMoment> existing;
+    Config.MatchTimelines.TryGetValue(key, out existing);
+    reviewCapture = new MatchReviewCapture(key, existing ?? new List<MatchMoment>());
+    reviewSavedAt = DateTime.MinValue;
+   }
+   if (!reviewCapture.Observe(Game.Live)) return;
+   Config.MatchTimelines[key] = reviewCapture.Moments;
+   foreach (var old in Config.MatchTimelines.Keys.Where(k => k != key).Take(Math.Max(0, Config.MatchTimelines.Count - 80)).ToList())
+    Config.MatchTimelines.Remove(old);
+   if ((DateTime.UtcNow - reviewSavedAt).TotalSeconds >= 30) { Save(); reviewSavedAt = DateTime.UtcNow; }
+  }
+
+  Dictionary<string, OverlayPanelPosition> PanelsForMode() {
+   Dictionary<string, OverlayPanelPosition> panels;
+   if (!Config.ModePanels.TryGetValue(ActiveMode, out panels) || panels == null) {
+    panels = new Dictionary<string, OverlayPanelPosition>(Config.Panels);
+    Config.ModePanels[ActiveMode] = panels;
+   }
+   return panels;
+  }
+
+  bool ModePanelVisible(string panel, bool fallback) {
+   Dictionary<string, bool> values;
+   bool visible;
+   return Config.ModePanelVisibility.TryGetValue(ActiveMode, out values) && values != null && values.TryGetValue(panel, out visible)
+    ? visible : fallback;
+  }
+
+  void SetModePanelVisible(string panel, bool value) {
+   Dictionary<string, bool> values;
+   if (!Config.ModePanelVisibility.TryGetValue(ActiveMode, out values) || values == null) {
+    values = new Dictionary<string, bool>();
+    Config.ModePanelVisibility[ActiveMode] = values;
+   }
+   values[panel] = value;
+  }
+
+  string MatchReviewKey(string matchId) {
+   return Profile.Account == null || String.IsNullOrEmpty(matchId) ? "" : Profile.Account.Key + ":" + matchId;
+  }
+
   void EnsureAugmentCatalog() {
    if (!IsAugmentMode || ModeData.ModeKey != ActiveMode) return;
+   foreach (var stat in ModeData.Augments.Where(augment => TierLogic.RarityKey(augment.Rarity) == "")) {
+    string rarity;
+    if (Bridge.AugmentRarities.TryGetValue(stat.Id, out rarity) ||
+        MultiModeParser.AugmentRarityById.TryGetValue(stat.Id, out rarity))
+     stat.Rarity = TierLogic.RarityKey(rarity);
+   }
    var seenIds = new HashSet<int>(ModeData.Augments.Select(x => x.Id));
    var catalogIds = ActiveMode == "MAYHEM"
     ? Bridge.MayhemAugmentIds.Concat(MultiModeParser.MayhemAugmentIds)
@@ -1033,6 +1096,7 @@ namespace MayhemCompanion {
     var fresh = await Bridge.Read();
     if (closing || !Config.Connected) return;
     Game = fresh;
+    UpdateMatchReview();
     plannedItems.RemoveWhere(id => Game.Owned.Contains(id));
     lastGoodGame = DateTime.UtcNow;
     bool matchPhase = Game.InSelection || Game.InGame;
@@ -1060,9 +1124,8 @@ namespace MayhemCompanion {
       EnforceModeView();
       displayedClientChampion = "";
       List<TierListEntry> cachedTier;
-      if (tierListByMode.TryGetValue(detected, out cachedTier) && cachedTier != null && cachedTier.Count > 0) {
-       TierList = cachedTier;
-      }
+      TierList = tierListByMode.TryGetValue(detected, out cachedTier) && cachedTier != null
+       ? cachedTier : new List<TierListEntry>();
       var _t = RefreshTierList(false);
       if (Selected != null && (Game.Champion == "" || ChampionMatches(Selected, Game.Champion))) {
        var _ = SelectChampion(Selected, false);
@@ -1139,7 +1202,7 @@ namespace MayhemCompanion {
      // Auto-Export Shop Item Set during Champ Select (League loads custom item sets at game start, not mid-game!)
      if (Config.AutoExportShop) {
       try {
-       var coreIds = CurrentBuildPath().Where(x => !x.IsBoots && x.Role != "STARTER").Select(x => x.Stat.Id).ToList();
+       var coreIds = CurrentBuildPath(true).Where(x => !x.IsBoots && x.Role != "STARTER").Select(x => x.Stat.Id).ToList();
        var starterOrPrism = ActiveMode == "ARENA" && ModeData.PrismaticItems.Count > 0
         ? ModeData.PrismaticItems.Select(x => x.Id).ToList()
         : ModeData.Starters.Select(x => x.Id).ToList();
@@ -1212,8 +1275,6 @@ namespace MayhemCompanion {
    } catch { } finally { champCardBusy = false; }
   }
 
-  async void TriggerRead() { await ReadAugments(true); }
-
   async Task ReadAugments(bool requested) {
    if (ocrBusy || !Config.Connected || !IsAugmentMode || (Game.InGame && Game.ModeKey != ActiveMode)) return;
    EnsureAugmentCatalog();
@@ -1221,7 +1282,9 @@ namespace MayhemCompanion {
     var played = Champions.FirstOrDefault(c => ChampionMatches(c, Game.Champion));
     if (played != null) { await SelectChampion(played); return; }
    }
-   if (ModeData.Augments.Count == 0) return;
+   if (Selected == null || !ChampionMatches(Selected, Game.Champion) ||
+       ModeData.ChampionSlug != Selected.Slug || ModeData.ModeKey != ActiveMode || ModeData.Augments.Count == 0)
+    return;
    ocrBusy = true;
    try {
     IntPtr target = Game.InGame ? Game.Window : Native.Target(true);
@@ -1241,9 +1304,10 @@ namespace MayhemCompanion {
     if (allowWide) nextOcrRecovery = DateTime.UtcNow.AddMilliseconds(flippingWindow ? 120 : 900);
     ulong prevSig = offerSession.Visible && !offerSession.Refreshing && offerSession.PendingRerollId == 0 && !flippingWindow ? lastOcrSig : 0UL;
     int scanGeneration = offerScanGeneration;
+    var scanSource = ModeData;
     // Run GDI capture + bitmap scaling + 600-augment fuzzy matching OFF the WPF UI thread!
     var scan = await Task.Run(() => AugmentOcr.ScanGameRect(rect, augSnapshot, aliasMap, preferUserLang, null, allowWide, requested, prevSig));
-    if (scanGeneration != offerScanGeneration || !Game.InGame || closing || Game.Window != target ||
+    if (scanGeneration != offerScanGeneration || scanSource != ModeData || !Config.Ocr || !Game.InGame || closing || Game.Window != target ||
         !Native.IsWindow(target) || !Native.IsWindowVisible(target) || !Native.SameApplication(Native.GetForegroundWindow(), target)) return;
     if (scan.SkippedUnchanged) return;
     lastRawHitCount = scan.Hits.Count;
@@ -1310,7 +1374,7 @@ namespace MayhemCompanion {
    return EnemyCompAnalyzer.Analyze(Game.Live, ItemCategories);
   }
 
-  public List<BuildStep> CurrentBuildPath() {
+  public List<BuildStep> CurrentBuildPath(bool referenceOnly = false) {
    if (Selected == null || ModeData.ChampionSlug != Selected.Slug || ModeData.ModeKey != ActiveMode ||
        (Game.InGame && !Preview && (Game.ModeKey != ActiveMode || !ChampionMatches(Selected, Game.Champion))))
     return new List<BuildStep>();
@@ -1325,7 +1389,7 @@ namespace MayhemCompanion {
     (x.Games > 0 || Parser.Number(x.Pick) > 0)).ToList();
    var candidateIds = new HashSet<int>(candidates.Select(x => BuildPlanner.Canonical(x.Id)));
    var complete = new List<int>();
-   foreach (int id in Game.Owned) {
+   foreach (int id in referenceOnly ? Enumerable.Empty<int>() : Game.Owned) {
     int canonical = BuildPlanner.Canonical(id);
     bool boots = canonical != 1001 && (bootIds.Contains(canonical) || ItemCategories(id).Contains("Boots", StringComparer.OrdinalIgnoreCase));
     if (boots) { bootIds.Add(canonical); complete.Add(id); continue; }
@@ -1336,7 +1400,7 @@ namespace MayhemCompanion {
      complete.Add(id);
    }
    var themes = new List<string>();
-   foreach (int aid in Game.InGame && IsAugmentMode ? (IEnumerable<int>)chosenAugments : Enumerable.Empty<int>()) {
+   foreach (int aid in !referenceOnly && Game.InGame && IsAugmentMode ? (IEnumerable<int>)chosenAugments : Enumerable.Empty<int>()) {
     List<string> tags;
     if (Bridge.AugmentTags.TryGetValue(aid, out tags) && tags != null) themes.AddRange(tags);
     var augStat = ModeData.Augments.FirstOrDefault(x => x.Id == aid);
@@ -1351,14 +1415,15 @@ namespace MayhemCompanion {
     if (blob.Contains("armor") || blob.Contains("armure") || blob.Contains("magic resist") || blob.Contains("résistance magique") || blob.Contains("max health") || blob.Contains("pv max") || blob.Contains("tank")) themes.Add("kResilience");
     if (blob.Contains("move speed") || blob.Contains("vitesse de déplacement")) themes.Add("kSpeed");
    }
-   var threats = Game.InGame ? CurrentEnemyThreats() : null;
+   var threats = !referenceOnly && Game.InGame ? CurrentEnemyThreats() : null;
    var list = BuildPlanner.Plan(candidates, complete, bootIds, SelectedModeBaseline(), ItemCategories,
-    Config.BuildFocus, themes, ModeData.CorePaths, threats, ItemName, plannedItems,
-     Game.InGame ? (Func<int, double>)(id => (Price(id) - BuildPlanner.RemainingCost(id, Game.Owned, map)) / (double)Price(id)) : null);
+    Config.BuildFocus, themes, ModeData.CorePaths, threats, ItemName, Game.InGame && referenceOnly ? null : plannedItems,
+     !referenceOnly && Game.InGame ? (Func<int, double>)(id => (Price(id) - BuildPlanner.RemainingCost(id, Game.Owned, map)) / (double)Price(id)) : null,
+     !referenceOnly || ActiveMode != "ARENA");
    // Integrate recommended Starter item at game start (step 0) until any starter is bought, 8 min elapses, or first core is completed!
-   if (complete.Count == 0 && ModeData.Starters.Count > 0 && (!Game.InGame || Game.Live.Seconds < 480)) {
-    bool ownsStarter = Game.Owned.Any(id => MultiModeParser.StarterIds.Contains(id))
-     || ModeData.Starters.Any(s => s.Id > 0 && (Game.Owned.Contains(s.Id)));
+   if (complete.Count == 0 && ModeData.Starters.Count > 0 && (referenceOnly || !Game.InGame || Game.Live.Seconds < 480)) {
+    bool ownsStarter = !referenceOnly && (Game.Owned.Any(id => MultiModeParser.StarterIds.Contains(id))
+     || ModeData.Starters.Any(s => s.Id > 0 && Game.Owned.Contains(s.Id)));
     var topStarter = ModeData.Starters.Where(s => s.Id > 0 && Price(s.Id) > 0)
      .OrderByDescending(s => Parser.Number(s.Pick)).ThenByDescending(s => s.Rate).FirstOrDefault();
     if (!ownsStarter && topStarter != null) {
@@ -1381,28 +1446,17 @@ namespace MayhemCompanion {
 
   int Preference(Stat s) { if (Selected == null || s == null) return 0; int v; return Config.AugmentPreferences.TryGetValue(Selected.Slug + ":" + s.Id, out v) ? v : 0; }
 
-  object SynergyFor(Stat stat) {
-   if (stat == null || ModeData.Combos.Count == 0) return null;
-   var names = new HashSet<string>(ModeData.Augments.Where(x => chosenAugments.Contains(x.Id) && x.Id != stat.Id).Select(x => x.Name));
-   foreach (var pair in ModeData.Combos.OrderByDescending(x => x.Rate)) {
-    var parts = pair.Name.Split(new[] { " + " }, StringSplitOptions.None);
-    if (parts.Length != 2 || !parts.Contains(stat.Name)) continue;
-    string partner = parts.FirstOrDefault(x => x != stat.Name);
-    if (names.Contains(partner)) return new { partner = partner, rate = pair.Rate };
-   }
-   return null;
+  List<TierListEntry> TierRowsFor(string mode) {
+   List<TierListEntry> cached;
+   if (mode == ActiveMode && TierList.Count > 0) return TierList;
+   if (tierListByMode.TryGetValue(mode, out cached) && cached != null && cached.Count > 0) return cached;
+   return mode == "MAYHEM" ? MultiModeParser.MayhemTierList(Champions) : new List<TierListEntry>();
   }
 
-  object TopComboFor(Stat stat) {
-   if (stat == null || ModeData.Combos.Count == 0 || chosenAugments.Count > 0) return null;
-   foreach (var pair in ModeData.Combos.OrderByDescending(x => x.Rate)) {
-    if (pair.Rate < 54.0) break;
-    var parts = pair.Name.Split(new[] { " + " }, StringSplitOptions.None);
-    if (parts.Length != 2 || !parts.Contains(stat.Name)) continue;
-    string partner = parts.FirstOrDefault(x => x != stat.Name);
-    if (!String.IsNullOrEmpty(partner)) return new { partner = partner, rate = pair.Rate };
-   }
-   return null;
+  static TierListEntry ChampionTierFor(IEnumerable<TierListEntry> rows, Champion champion, string mode, string role) {
+   if (champion == null) return null;
+   return rows.FirstOrDefault(row => row.Slug == champion.Slug &&
+    (mode != "SR" || String.IsNullOrEmpty(role) || MultiModeParser.NormalizeRole(row.Role) == role));
   }
 
   double SelectedModeBaseline() {
@@ -1412,64 +1466,65 @@ namespace MayhemCompanion {
    return entry != null && entry.WinRate > 0 ? entry.WinRate : ActiveMode == "MAYHEM" && Selected.Win > 0 ? Selected.Win : 50;
   }
 
-  object SerializeStat(Stat s, Stat best = null) {
-   double baseline = SelectedModeBaseline();
+  object SerializeStat(Stat s, bool hideOutcome = false) {
    return new {
-    id = s.Id, name = s.Name, pick = s.Pick ?? "", win = s.Win ?? "", rate = s.Rate,
-    icon = s.Icon ?? "", games = s.Games, rarity = TierLogic.RarityKey(s.Rarity),
-    tier = s.Games > 0 ? TierLogic.AugTier(s, baseline) : "",
-    price = Price(s.Id),
-    preference = Preference(s),
-    tracked = chosenAugments.Contains(s.Id),
-    recommended = best != null && best.Id == s.Id,
-    synergy = SynergyFor(s),
-    topCombo = TopComboFor(s)
+    id = s.Id, name = s.Name, pick = s.Pick ?? "", win = hideOutcome ? "" : s.Win ?? "",
+    rate = hideOutcome ? 0 : s.Rate, icon = s.Icon ?? "", games = s.Games,
+    rarity = TierLogic.RarityKey(s.Rarity), price = Price(s.Id)
+   };
+  }
+
+  ModeBuildData augmentTierSource;
+  string matchTierScope = "";
+  Dictionary<int, string> augmentTiers = new Dictionary<int, string>();
+
+  void UpdateAugmentTiers(Stat[] catalog, bool matchActive) {
+   string scope = matchActive && Selected != null ? ActiveMode + ":" + Selected.Slug : "";
+   if (scope != "" && scope == matchTierScope && augmentTiers.Count > 0) return;
+   if (augmentTierSource == ModeData && scope == matchTierScope) return;
+   augmentTierSource = ModeData;
+   matchTierScope = scope;
+   augmentTiers = Recommendations.AugmentTiers(catalog, ActiveMode == "ARENA" ? 30 : 100);
+  }
+
+  object SerializeAugment(Stat s, bool includeDescription = true) {
+   string tier;
+   augmentTiers.TryGetValue(s.Id, out tier);
+   return new {
+    id = s.Id, name = s.Name, icon = s.Icon ?? "", rarity = TierLogic.RarityKey(s.Rarity),
+    tier = tier,
+    pick = s.Pick ?? "", games = s.Games,
+    description = includeDescription ? MultiModeParser.GetAugmentDescription(s.Id, s.Name, Bridge.AugmentDescriptions) : ""
    };
   }
 
   public string BuildStateJson() {
-   var path = CurrentBuildPath();
-   var me = Game.Live.Players.FirstOrDefault(p => p.Me);
-   var inv = me == null ? Game.Owned.AsEnumerable() : me.Items.AsEnumerable();
-   double modeBaseline = SelectedModeBaseline();
-   int minAugGames = ActiveMode == "ARENA" ? 30 : 100;
-   var offerChoices = offerSession.Choices.Where(x => x != null && x.Id != offerSession.PendingRerollId).ToList();
-   string offerAdvice = "";
-   Stat bestOffer = null;
-   if (Selected != null && !offerSession.Refreshing && offerSession.PendingRerollId == 0) {
-    if (offerSession.Visible && offerChoices.Count < Math.Max(3, offerSession.ExpectedCardCount))
-     offerAdvice = "Limited data";
-    else bestOffer = Recommendations.Best(offerChoices, modeBaseline, minAugGames, out offerAdvice);
-   }
+   var path = CurrentBuildPath(true);
+   bool isArena = ActiveMode == "ARENA";
+   double modeScale;
+   if (!Config.ModePanelScale.TryGetValue(ActiveMode, out modeScale)) modeScale = Config.Layout.Scale;
+   Dictionary<string, double> widgetScale;
+   Config.ModeWidgetScale.TryGetValue(ActiveMode, out widgetScale);
+   const string emptyBuild = "No build data available";
+   string summary = path.Count == 0 ? emptyBuild : Config.BuildFocus + " build guide";
+   bool hasReference = Selected != null && ModeData.ModeKey == ActiveMode && ModeData.ChampionSlug == Selected.Slug;
+   var catalog = IsAugmentMode && hasReference ? ModeData.Augments.OrderBy(x => x.Name).ToArray() : new Stat[0];
 
-   var topMap = new Dictionary<string, object>();
-   var rarities = Preview
-    ? new List<string> { "Gold", "Prismatic" }
-    : offerChoices.Select(x => TierLogic.RarityKey(x.Rarity)).Where(r => r != "").Distinct().ToList();
-   var offeredIds = new HashSet<int>(offerSession.Choices.Where(x => x != null).Select(x => x.Id));
-   foreach (string r in rarities) {
-    var list = ModeData.Augments.Where(x => x.Games >= minAugGames && x.Rate > 0 && x.Rate <= 100 && !chosenAugments.Contains(x.Id) && !offeredIds.Contains(x.Id) && TierLogic.RarityKey(x.Rarity) == r)
-     .OrderByDescending(x => Recommendations.Score(x, modeBaseline))
-     .ThenByDescending(x => x.Games).Take(5).Select(x => SerializeStat(x, bestOffer)).ToList();
-    if (list.Count > 0) topMap[r] = list;
-   }
-
-   int completed = Math.Max(0, 6 - path.Count(x => x.Role != "STARTER"));
-   string summary = path.Count == 0
-    ? (Selected == null ? "Select a champion to inspect build path." : (ModeData.Items.Count == 0 && ModeData.BestItems.Count == 0 ? "No build data available." : Config.BuildFocus + " build complete (6/6 items)."))
-    : Config.BuildFocus + " path · " + completed + "/6 slots" + (chosenAugments.Count > 0 ? " · tuned to " + chosenAugments.Count + " augments" : "") + " · Next: " + path[0].Stat.Name;
-
-   var offeredList = new List<object>();
-   var previewAugments = Preview && PreviewScene == "augments"
-    ? ModeData.Augments.OrderByDescending(x => x.Games >= minAugGames).Take(previewAugmentCount).ToArray()
-    : null;
-   int slotCount = previewAugments != null ? previewAugments.Length : offerSession.Choices.Length;
-   for (int i = 0; i < slotCount; i++) {
-    Stat st = previewAugments != null ? previewAugments[i] : offerSession.Choices[i];
-    var pos = previewAugments != null ? null : offerSession.Positions[i];
-    if (st != null && st.Id == offerSession.PendingRerollId) st = null;
-    offeredList.Add(new { slot = i, stat = st == null ? null : SerializeStat(st, previewAugments != null && i == 0 ? st : bestOffer), x = pos == null ? 0 : pos.X, y = pos == null ? 0 : pos.Y });
-   }
+   bool inAugmentMatch = hasReference && IsAugmentMode && Game.InGame && Game.ModeKey == ActiveMode && ChampionMatches(Selected, Game.Champion);
+   UpdateAugmentTiers(catalog, inAugmentMatch);
+   bool showPreviewAugments = Preview && PreviewScene == "augments";
+   bool showLiveAugments = inAugmentMatch && Config.Ocr && offerSession.Visible;
+   var offeredList = showPreviewAugments
+    ? catalog.OrderByDescending(stat => augmentTiers.ContainsKey(stat.Id)).Take(previewAugmentCount)
+      .Select((stat, i) => new { slot = i, stat = SerializeAugment(stat, false), x = 0.0, y = 0.0 }).ToArray()
+    : showLiveAugments
+      ? offerSession.Positions.Select((pos, i) => {
+        var stat = pos != null && pos.Stat.Id != offerSession.PendingRerollId
+         ? catalog.FirstOrDefault(augment => augment.Id == pos.Stat.Id) : null;
+        return new { slot = i, stat = stat != null ? SerializeAugment(stat, false) : null,
+         x = pos != null ? pos.X : 0, y = pos != null ? pos.Y : 0 };
+       }).ToArray()
+      : null;
 
    object inspectedItemObj = null;
    if (inspectedItemId > 0) {
@@ -1481,31 +1536,15 @@ namespace MayhemCompanion {
      id = inspectedItemId, name = d != null ? Json.S(d, "name") : (st != null ? st.Name : "Item " + inspectedItemId),
      priceTotal = Price(inspectedItemId), owned = Game.Owned.Contains(inspectedItemId), planned = plannedItems.Contains(inspectedItemId),
      stats = copy.Stats, paragraphs = copy.Paragraphs, components = comps,
-     winRate = st != null ? st.Rate : 0, pickRate = st != null ? st.Pick : ""
+     winRate = st != null && !isArena ? st.Rate : 0, pickRate = st != null ? st.Pick : ""
     };
    }
 
    object inspectedAugObj = null;
    if (inspectedAugmentId > 0) {
-    var aug = ModeData.Augments.FirstOrDefault(x => x.Id == inspectedAugmentId);
+    var aug = catalog.FirstOrDefault(x => x.Id == inspectedAugmentId);
     if (aug != null) {
-     string desc = MultiModeParser.GetAugmentDescription(aug.Id, aug.Name, Bridge.AugmentDescriptions);
-     double baseline = Selected == null ? 50 : Selected.Win;
-     var pairings = ModeData.Combos
-      .Where(c => c.Name.Split(new[] { " + " }, StringSplitOptions.None).Contains(aug.Name))
-      .OrderByDescending(c => c.Rate).Take(6)
-      .Select(c => {
-       string partnerName = c.Name.Split(new[] { " + " }, StringSplitOptions.None).FirstOrDefault(n => n != aug.Name) ?? c.Name;
-       var partnerStat = ModeData.Augments.FirstOrDefault(x => x.Name == partnerName);
-       return new { id = partnerStat != null ? partnerStat.Id : 0, name = partnerName, icon = partnerStat != null ? partnerStat.Icon : "", rate = c.Rate };
-      }).ToArray();
-     inspectedAugObj = new {
-      id = aug.Id, name = aug.Name, icon = aug.Icon ?? "", rarity = TierLogic.RarityKey(aug.Rarity),
-      tier = TierLogic.AugTier(aug, baseline), rate = aug.Rate, pick = aug.Pick ?? "", games = aug.Games,
-      delta = aug.Games > 0 ? Math.Round(aug.Rate - baseline, 1) : 0,
-      description = desc,
-      preference = Preference(aug), tracked = chosenAugments.Contains(aug.Id), pairings = pairings
-     };
+     inspectedAugObj = SerializeAugment(aug);
     }
    }
 
@@ -1514,70 +1553,42 @@ namespace MayhemCompanion {
     if (MultiModeParser.DDragonRunes.TryGetValue(id, out rm)) return new { id = rm.Id, name = rm.Name, icon = rm.Icon };
     return new { id = id, name = "Rune " + id, icon = "" };
    };
-   var meLive = Game.Live.Players.FirstOrDefault(p => p.Me);
-   string myTeam = meLive != null ? meLive.Team : "ORDER";
-   string myPos = meLive != null ? MultiModeParser.NormalizeRole(meLive.Position) : ActiveRole;
-   double mins = Math.Max(1.0 / 60.0, Game.Live.Seconds / 60.0);
-   double topCsMin = Game.Live.Players.Count > 0 && Game.Live.Seconds > 90 ? Game.Live.Players.Max(x => x.Cs / mins) : 999;
-
-   Func<Champion, TierListEntry> modeEntryFor = ch => {
-    if (ch == null || ActiveMode == "MAYHEM" || TierList == null || TierList.Count == 0) return null;
-    if (ActiveMode == "SR" && !String.IsNullOrEmpty(ActiveRole)) {
-     var exact = TierList.FirstOrDefault(t => t.Slug == ch.Slug && String.Equals(t.Role, ActiveRole, StringComparison.OrdinalIgnoreCase));
-     if (exact != null) return exact;
-    }
-    return TierList.FirstOrDefault(t => t.Slug == ch.Slug);
-   };
-   var selMode = modeEntryFor(Selected);
+   string draftMode = Game.InSelection && !Game.InGame && !Preview && Game.ModeKey != "" ? Game.ModeKey : ActiveMode;
+   var draftTiers = TierRowsFor(draftMode);
+   string displayedTierRole = ActiveMode == "SR" ? MultiModeParser.NormalizeRole(Config.TierRole) : "";
+   var playedTiers = Game.InGame && Game.ModeKey != draftMode ? TierRowsFor(Game.ModeKey) : draftTiers;
+   var selMode = ChampionTierFor(TierRowsFor(ActiveMode), Selected, ActiveMode, MultiModeParser.NormalizeRole(ActiveRole));
    Func<string, string> patchTagOf = sl => {
     if (String.IsNullOrEmpty(sl) || MultiModeParser.PatchNotes == null) return "";
     Dictionary<string, string> modeTags;
     string pt;
     if (MultiModeParser.PatchNotes.ChampionTagByMode != null
         && MultiModeParser.PatchNotes.ChampionTagByMode.TryGetValue(ActiveMode ?? "SR", out modeTags)
-        && modeTags.TryGetValue(sl, out pt)) {
-     return pt;
-    }
+        && modeTags.TryGetValue(sl, out pt)) return pt;
     return "";
    };
-   bool hasModeRates = ActiveMode == "MAYHEM";
-   Func<Champion, double> pickWin = c => {
-    var entry = modeEntryFor(c);
-    return entry != null ? entry.WinRate : hasModeRates && c != null ? c.Win : 0;
+   Func<TierListEntry, object> tierRow = t => new {
+    id = t.Id, slug = t.Slug, name = t.Name, icon = t.Icon, role = t.Role, tier = t.Tier, rank = t.Rank, rankDelta = t.RankDelta,
+    patchTag = draftMode == ActiveMode ? patchTagOf(t.Slug) : "",
+    winRate = t.WinRate, pickRate = t.PickRate, banRate = t.BanRate, kda = t.Kda, games = t.Games, counters = t.Counters.ToArray()
    };
-   double selBaseWin = pickWin(Selected);
-   var rawBench = (Preview ? Champions.Take(6) : Game.PriorityCards.Concat(Game.Bench).Select(FromId).Where(c => c != null))
-    .GroupBy(c => c.Slug).Select(g => g.First()).ToList();
-   var benchRanked = rawBench.Select(c => {
-    var entry = modeEntryFor(c);
-    double win = pickWin(c);
-    bool isCard = Game.PriorityCards.Contains(ChampionIdOf(c)) || (Preview && PreviewScene == "bench" && rawBench.IndexOf(c) < 2);
+   bool previewDraft = Preview && PreviewScene == "bench" && (draftMode == "MAYHEM" || draftMode == "ARAM");
+   var rawCards = previewDraft
+    ? Champions.Take(3).Select((champion, index) => new ChampionCardHit { Champion = champion, X = .28 + .22 * index, Y = .54 }).ToList()
+    : Game.InSelection && !Game.InGame ? champSelectCards : new List<ChampionCardHit>();
+   var rawBench = (previewDraft ? Champions.Skip(3).Take(5) : Game.Bench.Select(FromId).Where(c => c != null))
+    .GroupBy(c => c.Slug).Select(group => group.First()).ToList();
+   var actualPick = previewDraft ? Selected : Champions.FirstOrDefault(champion => ChampionMatches(champion, Game.Champion));
+   Func<Champion, object> draftChampion = champion => {
+    var tier = ChampionTierFor(draftTiers, champion, draftMode, MultiModeParser.NormalizeRole(Game.AssignedRole));
     return new {
-     champion = c, win, games = entry == null ? 0 : entry.Games,
-     tier = entry != null ? entry.Tier : hasModeRates ? c.Tier : "",
-     pick = entry != null ? entry.PickRate : hasModeRates ? c.Pick : 0, isCard,
-     upgradeDelta = selBaseWin > 0 && win > 0 ? Math.Round(win - selBaseWin, 1) : 0
+     name = champion.Name, slug = champion.Slug, tier = tier != null ? tier.Tier : "",
+     icon = MultiModeParser.ChampIconOf(champion)
     };
-   }).OrderByDescending(x => x.win).ThenByDescending(x => x.games).ThenByDescending(x => x.pick).ToList();
-   var benchPayload = benchRanked.Select((x, idx) => new {
-    name = x.champion.Name, slug = x.champion.Slug, tier = x.tier, win = x.win, pick = x.pick,
-    isCard = x.isCard, upgradeDelta = x.upgradeDelta,
-    bestPick = idx == 0 && x.win > 0 && (selBaseWin <= 0 || x.upgradeDelta >= 0.8),
-    icon = MultiModeParser.ChampIconOf(x.champion), assetKey = x.champion.AssetKey, patchTag = patchTagOf(x.champion.Slug)
-   }).ToArray();
-
-   var rawCards = Game.InSelection && !Game.InGame ? champSelectCards.Where(h => h != null && h.Champion != null).ToList() : new List<ChampionCardHit>();
-   var scoredCards = rawCards.Select(h => {
-    var entry = modeEntryFor(h.Champion);
-    return new { hit = h, win = pickWin(h.Champion), games = entry == null ? 0 : entry.Games,
-     tier = entry != null ? entry.Tier : hasModeRates ? h.Champion.Tier : "" };
-   }).ToList();
-   var bestCard = scoredCards.Where(x => x.win > 0).OrderByDescending(x => x.win).ThenByDescending(x => x.games).FirstOrDefault();
-   var champCardsPayload = scoredCards.Select(x => new {
-    name = x.hit.Champion.Name, slug = x.hit.Champion.Slug, tier = x.tier, win = x.win,
-    patchTag = patchTagOf(x.hit.Champion.Slug),
-    bestPick = scoredCards.Count(c => c.win > 0) >= 2 && x == bestCard,
-    x = x.hit.X, y = x.hit.Y
+   };
+   var champCardsPayload = rawCards.Where(hit => hit != null && hit.Champion != null).Select(hit => {
+    var tier = ChampionTierFor(draftTiers, hit.Champion, draftMode, "");
+    return new { name = hit.Champion.Name, slug = hit.Champion.Slug, tier = tier != null ? tier.Tier : "", x = hit.X, y = hit.Y };
    }).ToArray();
    var pn = MultiModeParser.PatchNotes ?? new PatchNotesBundle();
 
@@ -1605,7 +1616,7 @@ namespace MayhemCompanion {
     editing = IsOverlayEditing,
     overlayVisible = OverlayVisible,
     champTierOpen = ChampTierOpen,
-    augmentsVisible = offerSession.Visible,
+    augmentsVisible = showPreviewAugments || showLiveAugments,
     refreshingOffers = offerSession.Refreshing,
     connectionText = ConnectionText,
     statusText = StatusText,
@@ -1625,12 +1636,21 @@ namespace MayhemCompanion {
      profileIconUrl = Profile.Account.ProfileIconId > 0 ? ("https://ddragon.leagueoflegends.com/cdn/" + MultiModeParser.DDragonVersion + "/img/profileicon/" + Profile.Account.ProfileIconId + ".png") : ""
     },
     champions = Champions.Select(c => new { name = c.Name, slug = c.Slug, tier = c.Tier, win = c.Win, pick = c.Pick, icon = c.Icon, assetKey = c.AssetKey, patchTag = patchTagOf(c.Slug) }).ToArray(),
-    tierList = TierList.Take(320).Select(t => new { id = t.Id, slug = t.Slug, name = t.Name, icon = t.Icon, role = t.Role, tier = t.Tier, rank = t.Rank, rankDelta = t.RankDelta, patchTag = patchTagOf(t.Slug), winRate = t.WinRate, pickRate = t.PickRate, banRate = t.BanRate, kda = t.Kda, games = t.Games, counters = t.Counters.ToArray() }).ToArray(),
-    selected = Selected == null ? null : new { name = Selected.Name, slug = Selected.Slug, tier = selMode != null ? selMode.Tier : Selected.Tier, win = selBaseWin, pick = selMode != null ? selMode.PickRate : Selected.Pick, icon = Selected.Icon, assetKey = Selected.AssetKey, patchTag = patchTagOf(Selected.Slug) },
+    tierList = TierList.Where(t => displayedTierRole == "" || MultiModeParser.NormalizeRole(t.Role) == displayedTierRole)
+     .Take(320).Select(tierRow).ToArray(),
+    champSelectMode = draftMode,
+    champSelectTierList = (Game.InSelection && !Game.InGame || Preview && PreviewScene == "bench") && (draftTiers != TierList || draftMode == "SR")
+     ? draftTiers.Select(tierRow).ToArray() : null,
+    selected = Selected == null ? null : new { name = Selected.Name, slug = Selected.Slug,
+     tier = selMode != null ? selMode.Tier : ActiveMode == "MAYHEM" ? Selected.Tier : "",
+     win = selMode != null ? selMode.WinRate : ActiveMode == "MAYHEM" ? Selected.Win : 0,
+     pick = selMode != null ? selMode.PickRate : ActiveMode == "MAYHEM" ? Selected.Pick : 0,
+     icon = Selected.Icon, assetKey = Selected.AssetKey, patchTag = patchTagOf(Selected.Slug) },
     game = new {
      phase = Game.Phase, mode = Game.Mode, modeKey = Game.ModeKey, modeLabel = Game.ModeLabel, champion = Game.Champion, inGame = Game.InGame, inSelection = Game.InSelection, mayhem = Game.Mayhem, gold = Game.Gold,
      owned = Game.Owned.ToArray(), planned = plannedItems.ToArray(),
-     bench = benchPayload,
+     bench = rawBench.Select(draftChampion).ToArray(),
+     pickedChampion = actualPick != null ? draftChampion(actualPick) : null,
      champCards = champCardsPayload,
      team = Game.Team.Select(FromId).Where(c => c != null).Select(c => new { name = c.Name, slug = c.Slug, tier = c.Tier, win = c.Win, pick = c.Pick, icon = MultiModeParser.ChampIconOf(c), assetKey = c.AssetKey }).ToArray(),
      live = new {
@@ -1640,51 +1660,53 @@ namespace MayhemCompanion {
       activeLevel = Game.Live.ActiveLevel, q = Game.Live.AbilityQ, w = Game.Live.AbilityW, e = Game.Live.AbilityE, r = Game.Live.AbilityR,
       blueDragons = Game.Live.BlueDragons, redDragons = Game.Live.RedDragons, lastDragonType = Game.Live.LastDragonType,
       events = Game.Live.Events.ToArray(),
-      inventoryValue = Game.InGame && Game.ModeKey != "" ? Game.Live.InventoryValue(ActiveItemsMap()) : null,
-      inhibitors = Game.Live.Inhibitors.Select(o => new { key = o.Key, name = o.Name, status = o.Status, alive = o.Alive, secondsLeft = o.SecondsLeft }).ToArray(),
+      inventoryValue = (object)null,
+      inhibitors = new object[0],
       objectives = Game.Live.Objectives.Select(o => new { key = o.Key, name = o.Name, status = o.Status, alive = o.Alive, secondsLeft = o.SecondsLeft }).ToArray(),
       players = Game.Live.Players.Select(p => {
        var pc = Champions.FirstOrDefault(c => GameBridge.Norm(c.AssetKey) == GameBridge.Norm(p.Champion) || GameBridge.Norm(c.Name) == GameBridge.Norm(p.Champion));
-       var tags = new List<string>();
-       if (p.Kills >= 4 && p.Kills >= p.Deaths + 3) tags.Add("Fed");
-       else if (p.Deaths >= 4 && p.Deaths >= p.Kills + 3) tags.Add("Behind");
-       if (Game.ModeKey == "SR" && Game.Live.Seconds > 120 && p.Cs / mins >= Math.Max(7.0, topCsMin - 0.3)) tags.Add("CS Lead");
        string pRole = MultiModeParser.NormalizeRole(p.Position);
-       bool isLaneOpp = p.Team != myTeam && myPos != "" && pRole == myPos;
-       double matchupWr = 0;
-       if (isLaneOpp && pc != null) {
-        var mu = ModeData.Matchups.FirstOrDefault(m => GameBridge.Norm(m.Name) == GameBridge.Norm(pc.Name));
-
-        if (mu != null) matchupWr = mu.Rate;
-       }
+       var tier = p.Me ? ChampionTierFor(playedTiers, pc, Game.ModeKey,
+        pRole == "" ? MultiModeParser.NormalizeRole(Game.AssignedRole) : pRole) : null;
        return new {
         key = p.Team + "|" + p.Name + "|" + p.Champion, name = p.Name, champion = p.Champion,
         championName = pc != null ? pc.Name : p.Champion, championIcon = pc != null ? MultiModeParser.ChampIconOf(pc) : "",
+        championTier = tier != null ? tier.Tier : "",
         team = p.Team, position = pRole, level = p.Level, kills = p.Kills, deaths = p.Deaths, assists = p.Assists, cs = p.Cs,
         dead = p.Dead, respawn = p.Respawn, me = p.Me, items = p.Items.ToArray(),
         spell1 = p.Spell1, spell2 = p.Spell2, spellKey1 = p.SpellKey1, spellKey2 = p.SpellKey2,
-        keystone = p.Keystone, runeTree = p.RuneTree, tags = tags.ToArray(), isLaneOpponent = isLaneOpp, matchupWr = matchupWr
+        keystone = p.Keystone, runeTree = p.RuneTree, tags = new string[0], isLaneOpponent = false, matchupWr = 0
        };
       }).ToArray()
      }
     },
     buildSummary = summary,
-    enemyThreats = CurrentEnemyThreats().Tags.ToArray(),
+    enemyThreats = new string[0],
+    referenceItems = (hasReference ? ModeData.Items.Concat(ModeData.Boots).Concat(ModeData.Starters).Concat(ModeData.BestItems) : Enumerable.Empty<Stat>())
+     .Where(item => item.Id > 0).GroupBy(item => item.Id).Select(group => group.First()).Select(item => {
+      int total = Price(item.Id);
+      return new { id = item.Id, name = item.Name, icon = item.Icon ?? "", total,
+       components = BuildPlanner.Components(item.Id, new int[0], ActiveItemsMap())
+        .Select(component => new { id = component.Id, name = ItemName(component.Id), price = Price(component.Id),
+         icon = MultiModeParser.ItemIconOf(component.Id) }).ToArray()
+      };
+     }).ToArray(),
     buildPath = path.Select((step, idx) => {
      int total = Price(step.Stat.Id);
-     int rem = idx == 0 ? BuildPlanner.RemainingCost(step.Stat.Id, inv, ActiveItemsMap()) : total;
-     if (rem <= 0) rem = total;
-     var comps = idx == 0 ? BuildPlanner.Components(step.Stat.Id, inv, ActiveItemsMap()).Select(cs => new { id = cs.Id, name = ItemName(cs.Id), owned = cs.Owned, price = Price(cs.Id), icon = MultiModeParser.ItemIconOf(cs.Id) }).ToArray() : new object[0];
-     return new { stat = SerializeStat(step.Stat), role = step.Role, reason = step.Reason, shortTip = step.ShortTip, synergyTag = step.SynergyTag, synergyTone = step.SynergyTone, pickRate = step.PickRate, isBoots = step.IsBoots, totalGold = total, remainingGold = rem, affordable = idx == 0 && Game.InGame && Game.Gold >= 0 && rem > 0 && Game.Gold >= rem, components = comps };
+     var comps = BuildPlanner.Components(step.Stat.Id, new int[0], ActiveItemsMap())
+      .Select(cs => new { id = cs.Id, name = ItemName(cs.Id), owned = false, price = Price(cs.Id), icon = MultiModeParser.ItemIconOf(cs.Id) }).ToArray();
+     string role = step.Role == "STARTER" ? "STARTER" : step.IsBoots ? "BOOTS" : "BUILD ITEM";
+     return new { stat = SerializeStat(step.Stat, isArena), role = role, reason = step.Reason, shortTip = step.ShortTip,
+      synergyTag = "", synergyTone = "", pickRate = step.PickRate, isBoots = step.IsBoots,
+      totalGold = total, remainingGold = total, affordable = false, components = comps };
     }).ToArray(),
-    starters = ModeData.Starters.Select(s => SerializeStat(s)).ToArray(),
-    prismaticItems = ModeData.PrismaticItems.Select(s => SerializeStat(s)).ToArray(),
-    boots = ModeData.Boots.Select(s => SerializeStat(s)).ToArray(),
+    starters = ModeData.Starters.Select(s => SerializeStat(s, isArena)).ToArray(),
+    prismaticItems = ModeData.PrismaticItems.Select(s => SerializeStat(s, true)).ToArray(),
+    boots = ModeData.Boots.Select(s => SerializeStat(s, isArena)).ToArray(),
     spells = ModeData.Spells.Select(s => SerializeStat(s)).ToArray(),
-    bestItems = ModeData.BestItems.Where(s => !ModeData.Items.Take(6).Any(i => i.Name == s.Name)).Take(4).Select(s => SerializeStat(s)).ToArray(),
+    bestItems = ModeData.BestItems.Where(s => !ModeData.Items.Take(6).Any(i => i.Name == s.Name)).Take(4).Select(s => SerializeStat(s, isArena)).ToArray(),
     teammates = ModeData.Teammates.Select(s => SerializeStat(s)).ToArray(),
     matchups = ModeData.Matchups.Select(s => SerializeStat(s)).ToArray(),
-    combos = ModeData.Combos.Select(s => SerializeStat(s)).ToArray(),
     gameLengths = ModeData.GameLengths.Select(g => new { minutes = g.Minutes, winRate = g.WinRate }).ToArray(),
     patchNotes = new {
      version = pn.PatchVersion,
@@ -1702,13 +1724,22 @@ namespace MayhemCompanion {
      perkDetails = ModeData.Runes.Perks.Select(id => runeMetaObj(id)).ToArray(),
      name = ModeData.Runes.Name, source = ModeData.Runes.Source
     },
+    runeAlternatives = ModeData.Runes == null ? new object[0] : ModeData.Runes.Perks.Select(id => {
+     RuneMeta selectedRune;
+     if (!MultiModeParser.DDragonRunes.TryGetValue(id, out selectedRune) || selectedRune.Style == 0) return new object[0];
+     return MultiModeParser.DDragonRunes.Values.Where(rune => rune.Style == selectedRune.Style &&
+      rune.Slot == selectedRune.Slot).OrderBy(rune => rune.Name).Select(rune => runeMetaObj(rune.Id)).ToArray();
+    }).Cast<object>().ToArray(),
     skills = ModeData.Skills == null ? null : new { priority = ModeData.Skills.Priority.ToArray(), levels = ModeData.Skills.Levels.ToArray(), source = ModeData.Skills.Source },
-    offered = offeredList.ToArray(),
-    topAugments = topMap,
-    offerAdvice = offerAdvice,
-    trackedAugments = ModeData.Augments.Where(x => chosenAugments.Contains(x.Id)).Select(x => SerializeStat(x, bestOffer)).ToArray(),
-    allAugments = ModeData.Augments.Select(x => SerializeStat(x, bestOffer)).ToArray(),
+    offered = offeredList != null ? offeredList.Cast<object>().ToArray() : new object[0],
+    allAugments = catalog.Select(stat => SerializeAugment(stat)).ToArray(),
     portraitPositions = portraitPositions.Select(p => new { champion = new { name = p.Champion.Name, slug = p.Champion.Slug, tier = p.Champion.Tier, win = p.Champion.Win, pick = p.Champion.Pick, icon = p.Champion.Icon, assetKey = p.Champion.AssetKey }, x = p.X, y = p.Y }).ToArray(),
+    collection = View == "Collection" && Profile.Account != null && collectionAccount == Profile.Account.Key
+     ? collection.Select(skin => new { id = skin.Id, name = skin.Name, champion = skin.Champion, tile = skin.Tile, owned = skin.Owned }).Cast<object>().ToArray()
+     : new object[0],
+    collectionBusy = collectionBusy,
+    collectionFailed = collectionFailed,
+    rankHistory = Profile.RankHistory.Take(30).Select(rank => new { created = rank.Created, tier = rank.Tier, division = rank.Division, lp = rank.Lp }).ToArray(),
     history = Profile.History.Take(60).Select(m => {
      var mc = FromId(m.ChampionId);
      var augDet = (m.Augments ?? new List<int>()).Where(id => id > 0).Select(id => {
@@ -1716,23 +1747,38 @@ namespace MayhemCompanion {
       var st = ModeData.Augments.FirstOrDefault(x => x.Id == id);
       return new { id = id, name = !String.IsNullOrEmpty(an) ? an : (st != null ? st.Name : ("Augment " + id)), icon = st != null && !String.IsNullOrEmpty(st.Icon) ? st.Icon : ("/icons/augments/" + id + ".png") };
      }).ToArray();
-     return new { id = m.Id, championId = m.ChampionId, championName = mc != null ? mc.Name : ("Champion " + m.ChampionId), championIcon = mc != null ? MultiModeParser.ChampIconOf(mc) : "", queue = m.Queue, queueName = m.QueueName, mode = m.Mode, mayhem = m.Mayhem, kills = m.Kills, deaths = m.Deaths, assists = m.Assists, won = m.Won, remake = m.Remake, duration = m.Duration, time = m.Time, dateText = m.Date.ToString("dd MMM HH:mm"), damage = m.Damage, gold = m.Gold, cs = m.Cs, items = m.Items.ToArray(), augments = m.Augments.ToArray(), augmentDetails = augDet };
+     string matchKey = MatchReviewKey(m.Id);
+     string matchNote, clipPath;
+     Config.MatchNotes.TryGetValue(matchKey, out matchNote);
+     Config.MatchClips.TryGetValue(matchKey, out clipPath);
+     List<MatchMoment> moments;
+     moments = null;
+     if (viewedMatchKey == matchKey) Config.MatchTimelines.TryGetValue(matchKey, out moments);
+     return new { id = m.Id, championId = m.ChampionId, championName = mc != null ? mc.Name : ("Champion " + m.ChampionId), championIcon = mc != null ? MultiModeParser.ChampIconOf(mc) : "", queue = m.Queue, queueName = m.QueueName, mode = m.Mode, mayhem = m.Mayhem, kills = m.Kills, deaths = m.Deaths, assists = m.Assists, won = m.Won, remake = m.Remake, duration = m.Duration, time = m.Time, dateText = m.Date.ToString("dd MMM HH:mm"), damage = m.Damage, gold = m.Gold, cs = m.Cs, items = (m.Items ?? new List<int>()).ToArray(), augments = (m.Augments ?? new List<int>()).ToArray(), augmentDetails = augDet,
+      runes = (m.Runes ?? new List<int>()).Select(id => runeMetaObj(id)).ToArray(), created = m.Created,
+      note = matchNote ?? "", clipName = String.IsNullOrEmpty(clipPath) ? "" : Path.GetFileName(clipPath),
+      timeline = (moments ?? new List<MatchMoment>()).Select(moment => new {
+       seconds = moment.Seconds, kind = moment.Kind, detail = moment.Detail ?? "",
+       itemName = moment.Item > 0 ? ItemName(moment.Item) : ""
+      }).ToArray() };
     }).ToArray(),
     note = Selected != null && Config.Notes.ContainsKey(Selected.Slug) ? Config.Notes[Selected.Slug] : "",
     hotkeys = hotkeyRegistered,
     settings = new {
-     connected = Config.Connected, overlay = Config.Overlay, showBuildOverlay = Config.ShowBuildOverlay, showRerollBar = Config.ShowRerollBar,
-     showSkillAdvisor = Config.ShowSkillAdvisor, showPerfStrip = Config.ShowPerfStrip, showJungleWidget = Config.ShowJungleWidget,
-     showBenchBar = Config.ShowBenchBar, minimalHud = Config.MinimalHud,
+     language = Config.Language == "fr" || Config.Language == "en" ? Config.Language :
+      (System.Globalization.CultureInfo.InstalledUICulture.TwoLetterISOLanguageName == "fr" ? "fr" : "en"),
+     connected = Config.Connected, overlay = Config.Overlay, showBuildOverlay = ModePanelVisible("build", Config.ShowBuildOverlay), showRerollBar = Config.ShowRerollBar,
+     showSkillAdvisor = Config.ShowSkillAdvisor, showPerfStrip = ModePanelVisible("performance", Config.ShowPerfStrip), showJungleWidget = ModePanelVisible("minimap", Config.ShowJungleWidget),
+     showBenchBar = ModePanelVisible("bench", Config.ShowBenchBar), minimalHud = Config.MinimalHud,
      ocr = Config.Ocr, ocrAllModes = Config.OcrAllModes, autoLayout = Config.AutoLayout, autoPage = Config.AutoPage,
      autoSpells = Config.AutoSpells, autoRunes = Config.AutoRunes, autoExportShop = Config.AutoExportShop,
      launchWithWindows = Config.LaunchWithWindows, minimizeToTray = Config.MinimizeToTray,
      hotkeySheet = Config.HotkeySheet, hotkeyOverlay = Config.HotkeyOverlay, hotkeyEdit = Config.HotkeyEdit, hotkeyScan = Config.HotkeyScan,
      flashKey = Config.FlashKey, tierElo = Config.TierElo, tierRole = Config.TierRole,
-     buildFocus = Config.BuildFocus, theme = Config.Theme, scale = Config.Layout.Scale, badgeOffsetY = Config.BadgeOffsetY,
+     buildFocus = Config.BuildFocus, theme = Config.Theme, scale = modeScale, widgetScale = widgetScale ?? new Dictionary<string, double>(), badgeOffsetY = Config.BadgeOffsetY,
      minimapScale = Config.MinimapScale, minimapLeft = Config.MinimapLeft, hudScale = Config.HudScale,
      onboardingSeen = Config.OnboardingSeen,
-     panels = Config.Panels.ToDictionary(kv => kv.Key, kv => new { x = kv.Value.X, y = kv.Value.Y })
+     panels = PanelsForMode().ToDictionary(kv => kv.Key, kv => new { x = kv.Value.X, y = kv.Value.Y })
     },
     inspectedItem = inspectedItemObj,
     inspectedAugment = inspectedAugObj,
@@ -1818,6 +1864,17 @@ namespace MayhemCompanion {
       string fk = Json.S(msg, "key").ToUpperInvariant();
       if (fk == "D" || fk == "F") { Config.FlashKey = fk; Save(); Bridge.ResetSpellSelection(); PushState(); await SyncLoadout(); }
       break;
+     case "openDraftBuild":
+      if (!Game.InSelection || Game.InGame || Game.ModeKey != ActiveMode) break;
+      var draftPick = Champions.FirstOrDefault(c => c.Slug == Json.S(msg, "slug") && ChampionMatches(c, Game.Champion));
+      if (draftPick == null) break;
+      View = "Build";
+      var draftRole = ActiveMode == "SR" && !manualRoleOverride ? MultiModeParser.NormalizeRole(Game.AssignedRole) : null;
+      if (Selected != null && Selected.Slug == draftPick.Slug && (String.IsNullOrEmpty(draftRole) || ActiveRole == draftRole))
+       PushState();
+      else
+       await SelectChampion(draftPick, false, !String.IsNullOrEmpty(draftRole) ? draftRole : null);
+      break;
      case "selectChampion":
       string slug = Json.S(msg, "slug"); string nextView = Json.S(msg, "view"); string pickRole = Json.S(msg, "role");
       var ch = Champions.FirstOrDefault(x => x.Slug == slug || GameBridge.Norm(x.Name) == GameBridge.Norm(slug));
@@ -1834,18 +1891,6 @@ namespace MayhemCompanion {
      case "togglePlanItem":
       int pid = Json.I(msg, "id"); if (!plannedItems.Add(pid)) plannedItems.Remove(pid); PushState(); break;
      case "clearPlan": plannedItems.Clear(); PushState(); break;
-     case "trackAugment":
-      int aid = Json.I(msg, "id");
-      if (!chosenAugments.Add(aid)) chosenAugments.Remove(aid);
-      Config.TrackedAugments = chosenAugments.ToList(); Save(); PushState(); break;
-     case "preferAugment":
-      int prefId = Json.I(msg, "id"), prefVal = Json.I(msg, "value");
-      if (Selected != null) { Config.AugmentPreferences[Selected.Slug + ":" + prefId] = prefVal; Save(); PushState(); }
-      break;
-     case "scanAugments": await ReadAugments(true); break;
-     case "showAugmentBadges": offerSession.Visible = true; PushState(); break;
-     case "clearAugments": ResetOfferSession(); PushState(); break;
-     case "saveLastScan": SaveLastScanDebug(); break;
      case "refreshProfile": await RefreshProfile(true); break;
      case "refreshDatabases":
       StatusText = "Syncing Riot Data Dragon, CommunityDragon & OP.GG…"; PushState();
@@ -1867,8 +1912,27 @@ namespace MayhemCompanion {
       if (pKey == "" || Double.IsNaN(px) || Double.IsNaN(py)) break;
       px = Math.Max(0, Math.Min(1, px));
       py = Math.Max(0, Math.Min(1, py));
-      Config.Panels[pKey] = new OverlayPanelPosition { X = px, Y = py }; Save(); PushState(); break;
-     case "resetPositions": Config.Panels.Clear(); Config.Layout = new Placement(); Config.BadgeOffsetY = 0; Config.MinimapScale = 1.0; Config.HudScale = 1.0; SyncLeagueMinimapConfig(); Save(); StatusText = "Overlay positions reset."; PushState(); break;
+      PanelsForMode()[pKey] = new OverlayPanelPosition { X = px, Y = py }; Save(); PushState(); break;
+     case "resetPositions": PanelsForMode().Clear(); Config.ModePanelScale[ActiveMode] = 1.0; Config.ModeWidgetScale.Remove(ActiveMode); Save(); StatusText = "Mode overlay layout reset."; PushState(); break;
+     case "setWidgetScale":
+      {
+       string widget = Json.S(msg, "panel");
+       double size;
+       if (!new[] { "build_hud", "perf_strip_center", "champ_select_ribbon" }.Contains(widget) ||
+           !Double.TryParse(Json.S(msg, "scale"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out size) ||
+           Double.IsNaN(size) || Double.IsInfinity(size)) break;
+       Dictionary<string, double> map;
+       if (!Config.ModeWidgetScale.TryGetValue(ActiveMode, out map) || map == null)
+        Config.ModeWidgetScale[ActiveMode] = map = new Dictionary<string, double>();
+       map[widget] = Math.Max(0.75, Math.Min(1.35, size));
+       Save(); PushState(); break;
+      }
+     case "useMinimalOverlay":
+      SetModePanelVisible("build", true);
+      SetModePanelVisible("performance", false);
+      SetModePanelVisible("minimap", false);
+      SetModePanelVisible("bench", false);
+      Save(); PushState(); break;
      case "syncLeagueMinimap": SyncLeagueMinimapConfig(); PushState(); break;
      case "togglePreview":
       bool pv = msg.ContainsKey("value") && Convert.ToBoolean(msg["value"]);
@@ -1900,7 +1964,13 @@ namespace MayhemCompanion {
      case "exportConfig":
       try {
        var sfd = new Microsoft.Win32.SaveFileDialog { Title = "Export maylo settings", Filter = "maylo config (*.json)|*.json", FileName = "maylo-settings.json" };
-       if (sfd.ShowDialog(this) == true) { File.WriteAllText(sfd.FileName, Json.Serializer().Serialize(Config), Encoding.UTF8); StatusText = "Config exported to " + Path.GetFileName(sfd.FileName); PushState(); }
+       if (sfd.ShowDialog(this) == true) {
+        var serializer = Json.Serializer();
+        var exported = serializer.Deserialize<Dictionary<string, object>>(serializer.Serialize(Config));
+        exported.Remove("MatchNotes"); exported.Remove("MatchClips"); exported.Remove("MatchTimelines");
+        File.WriteAllText(sfd.FileName, serializer.Serialize(exported), Encoding.UTF8);
+        StatusText = "Config exported to " + Path.GetFileName(sfd.FileName); PushState();
+       }
       } catch (Exception ex) { StatusText = "Export failed: " + ex.Message; PushState(); }
       break;
      case "importConfig":
@@ -1909,6 +1979,9 @@ namespace MayhemCompanion {
        if (ofd.ShowDialog(this) == true) {
         var loaded = Json.Serializer().Deserialize<V2Settings>(File.ReadAllText(ofd.FileName, Encoding.UTF8));
         if (loaded != null) {
+         loaded.MatchNotes = Config.MatchNotes;
+         loaded.MatchClips = Config.MatchClips;
+         loaded.MatchTimelines = Config.MatchTimelines;
          Config = loaded;
          SanitizeConfig();
          Save(); RegisterAppHotkeys(); SetStartupRegistry(Config.LaunchWithWindows);
@@ -1947,16 +2020,17 @@ namespace MayhemCompanion {
       bool resyncLoadout = false;
       if (sk == "connected") Config.Connected = Convert.ToBoolean(sv);
       else if (sk == "overlay") Config.Overlay = Convert.ToBoolean(sv);
-      else if (sk == "showBuildOverlay") Config.ShowBuildOverlay = Convert.ToBoolean(sv);
+      else if (sk == "showBuildOverlay") SetModePanelVisible("build", Convert.ToBoolean(sv));
+      else if (sk == "language") Config.Language = Convert.ToString(sv) == "fr" ? "fr" : "en";
       else if (sk == "showRerollBar") Config.ShowRerollBar = Convert.ToBoolean(sv);
       else if (sk == "showSkillAdvisor") Config.ShowSkillAdvisor = Convert.ToBoolean(sv);
-      else if (sk == "showPerfStrip") Config.ShowPerfStrip = Convert.ToBoolean(sv);
-      else if (sk == "showJungleWidget") Config.ShowJungleWidget = Convert.ToBoolean(sv);
-      else if (sk == "showBenchBar") Config.ShowBenchBar = Convert.ToBoolean(sv);
+      else if (sk == "showPerfStrip") SetModePanelVisible("performance", Convert.ToBoolean(sv));
+      else if (sk == "showJungleWidget") SetModePanelVisible("minimap", Convert.ToBoolean(sv));
+      else if (sk == "showBenchBar") SetModePanelVisible("bench", Convert.ToBoolean(sv));
       else if (sk == "minimalHud") Config.MinimalHud = Convert.ToBoolean(sv);
       else if (sk == "launchWithWindows") { Config.LaunchWithWindows = Convert.ToBoolean(sv); SetStartupRegistry(Config.LaunchWithWindows); }
       else if (sk == "minimizeToTray") Config.MinimizeToTray = Convert.ToBoolean(sv);
-      else if (sk == "ocr") Config.Ocr = Convert.ToBoolean(sv);
+      else if (sk == "ocr") { Config.Ocr = Convert.ToBoolean(sv); if (!Config.Ocr) ResetOfferSession(); }
       else if (sk == "ocrAllModes") Config.OcrAllModes = Convert.ToBoolean(sv);
       else if (sk == "autoSpells") { Config.AutoSpells = Convert.ToBoolean(sv); if (Config.AutoSpells) { Bridge.ResetSpellSelection(); resyncLoadout = true; } }
       else if (sk == "autoRunes") { Config.AutoRunes = Convert.ToBoolean(sv); if (Config.AutoRunes) { Bridge.ResetSpellSelection(); resyncLoadout = true; } }
@@ -1964,11 +2038,11 @@ namespace MayhemCompanion {
       else if (sk == "autoPage") Config.AutoPage = Convert.ToBoolean(sv);
       else if (sk == "flashKey") { Config.FlashKey = Convert.ToString(sv).ToUpperInvariant() == "D" ? "D" : "F"; Bridge.ResetSpellSelection(); resyncLoadout = true; }
       else if (sk == "theme") { Config.Theme = Convert.ToString(sv) == "light" ? "light" : "dark"; ApplyWindowTheme(!String.Equals(Config.Theme, "light", StringComparison.OrdinalIgnoreCase)); }
-      else if (sk == "scale" && sv != null) Config.Layout.Scale = Math.Max(0.75, Math.Min(1.35, Convert.ToDouble(sv, System.Globalization.CultureInfo.InvariantCulture)));
+      else if (sk == "scale" && sv != null) Config.ModePanelScale[ActiveMode] = Math.Max(0.75, Math.Min(1.35, Convert.ToDouble(sv, System.Globalization.CultureInfo.InvariantCulture)));
       else if (sk == "badgeOffsetY" && sv != null) Config.BadgeOffsetY = Math.Max(-0.15, Math.Min(0.15, Convert.ToDouble(sv, System.Globalization.CultureInfo.InvariantCulture)));
       else if (sk == "minimapScale" && sv != null) Config.MinimapScale = Math.Max(0.55, Math.Min(1.85, Convert.ToDouble(sv, System.Globalization.CultureInfo.InvariantCulture)));
       else if (sk == "hudScale" && sv != null) Config.HudScale = Math.Max(0.6, Math.Min(1.5, Convert.ToDouble(sv, System.Globalization.CultureInfo.InvariantCulture)));
-      else if (sk == "minimapLeft") { Config.MinimapLeft = Convert.ToBoolean(sv); Config.Panels.Remove("minimap_overlay"); }
+      else if (sk == "minimapLeft") { Config.MinimapLeft = Convert.ToBoolean(sv); PanelsForMode().Remove("minimap_overlay"); }
       else if (sk == "onboardingSeen") Config.OnboardingSeen = Convert.ToBoolean(sv);
       Save(); if (overlay != null) overlay.Sync(); PushState();
       if (resyncLoadout) await SyncLoadout();
@@ -1985,21 +2059,104 @@ namespace MayhemCompanion {
        Close();
       }
       break;
-     case "exportItemSet":
-      if (Selected == null) { ImportStatus = "Select a champion first."; PushState(); break; }
+     case "loadCollection":
+      if (collectionBusy || Game.InGame || Profile.Account == null) break;
+      collectionBusy = true; collectionFailed = false; PushState();
+      var accountForCollection = Profile.Account;
       try {
-       var bp = CurrentBuildPath();
+       var refreshed = await Bridge.ReadSkinCollection(accountForCollection);
+       if (Profile.Account != null && Profile.Account.Key == accountForCollection.Key) {
+        collection = refreshed;
+        collectionAccount = accountForCollection.Key;
+        collectionFailed = collection.Count == 0;
+       }
+      } catch { collectionFailed = true; }
+      finally { collectionBusy = false; PushState(); }
+      break;
+     case "viewMatchReview":
+      string reviewId = Json.S(msg, "matchId");
+      viewedMatchKey = Profile.History.Any(record => record.Id == reviewId) ? MatchReviewKey(reviewId) : "";
+      PushState(); break;
+     case "saveMatchNote":
+     case "attachMatchClip":
+     case "openMatchClip":
+     case "removeMatchClip":
+      {
+       string matchId = Json.S(msg, "matchId");
+       string key = MatchReviewKey(matchId);
+       if (Game.InGame || key == "" || !Profile.History.Any(record => record.Id == matchId)) break;
+       if (type == "saveMatchNote") {
+        string note = Json.S(msg, "text").Trim();
+        if (note.Length == 0) Config.MatchNotes.Remove(key);
+        else Config.MatchNotes[key] = note.Substring(0, Math.Min(3000, note.Length));
+       } else if (type == "attachMatchClip") {
+        var picker = new Microsoft.Win32.OpenFileDialog { Title = "Select a match clip",
+         Filter = "Video files|*.mp4;*.webm;*.mkv;*.mov", CheckFileExists = true };
+        if (picker.ShowDialog(this) != true) break;
+        Config.MatchClips[key] = picker.FileName;
+       } else if (type == "removeMatchClip") {
+        Config.MatchClips.Remove(key);
+       } else {
+        string video;
+        if (!Config.MatchClips.TryGetValue(key, out video) || !File.Exists(video)) {
+         StatusText = "Clip file unavailable. Attach it again.";
+         PushState();
+         break;
+        }
+        string[] extensions = { ".mp4", ".webm", ".mkv", ".mov" };
+        if (extensions.Contains(Path.GetExtension(video), StringComparer.OrdinalIgnoreCase))
+         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(video) { UseShellExecute = true });
+        break;
+       }
+       Save(); PushState(); break;
+      }
+     case "exportItemSet":
+      if (Game.InGame) { ImportStatus = "Export is available before the game."; PushState(); break; }
+      if (Selected == null || ModeData.ModeKey != ActiveMode || ModeData.ChampionSlug != Selected.Slug) {
+       ImportStatus = "Load the selected champion’s build first."; PushState(); break;
+      }
+      try {
+       var bp = CurrentBuildPath(true);
+       var requested = Json.A(msg, "guideItems").Select(Json.ToInt).Where(id => id > 0).Distinct().Take(7).ToList();
+       var allowed = new HashSet<int>(ModeData.Items.Concat(ModeData.BestItems).Concat(ModeData.Boots)
+        .Concat(ModeData.Starters).Select(item => item.Id));
+       if (requested.Count > 0 && requested.Any(id => !allowed.Contains(id))) {
+        ImportStatus = "Some saved items are unavailable for this champion and mode.";
+        PushState(); break;
+       }
+       var exportedCore = requested.Count > 0 ? requested.Where(id => !ModeData.Starters.Any(x => x.Id == id) &&
+        !ModeData.Boots.Any(x => x.Id == id)).ToList() : bp.Where(x => !x.IsBoots && x.Role != "STARTER").Select(x => x.Stat.Id).ToList();
        ImportStatus = await Bridge.ExportItemSet(
         Selected.Name, ChampionIdOf(Selected), ActiveMode,
         ModeData.Starters.Select(x => x.Id).ToList(),
-        bp.Where(x => !x.IsBoots && x.Role != "STARTER").Select(x => x.Stat.Id).ToList(),
+        exportedCore,
         ModeData.Boots.Select(x => x.Id).ToList(),
         ModeData.BestItems.Select(x => x.Id).ToList()
        );
       } catch (Exception ex) { ImportStatus = "Shop export failed: " + ex.Message; }
       PushState(); break;
      case "importRunes":
-      try { ImportStatus = await Bridge.ImportRunes(ModeData.Runes); } catch (Exception ex) { ImportStatus = "Rune import failed: " + ex.Message; }
+      if (Game.InGame) { ImportStatus = "Rune import is available before the game."; PushState(); break; }
+      try {
+       if (Selected == null || ModeData.ModeKey != ActiveMode || ModeData.ChampionSlug != Selected.Slug)
+        throw new InvalidOperationException("Load the selected champion’s build first.");
+       var page = ModeData.Runes;
+       var edited = Json.A(msg, "perks").Select(Json.ToInt).ToList();
+       if (edited.Count > 0) {
+        if (page == null || edited.Count != page.Perks.Count || edited.Distinct().Count() != edited.Count)
+         throw new InvalidOperationException("The edited page does not match the active build.");
+        for (int i = 0; i < edited.Count; i++) {
+         if (edited[i] == page.Perks[i]) continue;
+         RuneMeta original, replacement;
+         if (!MultiModeParser.DDragonRunes.TryGetValue(page.Perks[i], out original) ||
+             !MultiModeParser.DDragonRunes.TryGetValue(edited[i], out replacement) ||
+             original.Style == 0 || original.Style != replacement.Style || original.Slot != replacement.Slot)
+          throw new InvalidOperationException("Choose a rune in the same tree and slot.");
+        }
+        page = new RunePage { PrimaryStyle = page.PrimaryStyle, SecondaryStyle = page.SecondaryStyle, Perks = edited, Name = page.Name };
+       }
+       ImportStatus = await Bridge.ImportRunes(page);
+      } catch (Exception ex) { ImportStatus = "Rune import failed: " + ex.Message; }
       PushState(); break;
      case "prepareBorderless": PrepareBorderless(); PushState(); break;
      case "chooseLockfile":
@@ -2040,7 +2197,7 @@ namespace MayhemCompanion {
     }
     var mFlip = Regex.Match(txt, "\"name\"\\s*:\\s*\"FlipMiniMap\"\\s*,\\s*\"value\"\\s*:\\s*\"([01])\"", RegexOptions.IgnoreCase);
     if (mFlip.Success) Config.MinimapLeft = mFlip.Groups[1].Value == "1";
-    Config.Panels.Remove("minimap_overlay");
+    PanelsForMode().Remove("minimap_overlay");
     Save();
     StatusText = "Minimap synced from League (" + Math.Round(Config.MinimapScale * 100) + "%, " + (Config.MinimapLeft ? "Left" : "Right") + ")";
    } catch (Exception ex) { StatusText = "Minimap sync failed: " + ex.Message; }

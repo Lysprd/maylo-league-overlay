@@ -86,10 +86,84 @@ namespace MayhemCompanion {
     "An unreadable reroll must remove the stale stats without treating the remaining offer as complete");
   }
 
+  static void TestChampSelectOverlayLayout() {
+   Req(ChampSelectOverlayLayout.ContainsTierListPointer(.91, .14, 1280, 720, false),
+    "The closed tier list pill can receive clicks");
+   Req(!ChampSelectOverlayLayout.ContainsTierListPointer(.83, .14, 1280, 720, false) &&
+    !ChampSelectOverlayLayout.ContainsTierListPointer(.91, .20, 1280, 720, false),
+    "The closed tier list leaves the surrounding champion grid click-through");
+   Req(ChampSelectOverlayLayout.ContainsTierListPointer(.86, .65, 1280, 720, true) &&
+    !ChampSelectOverlayLayout.ContainsTierListPointer(.78, .65, 1280, 720, true),
+    "Opening the drawer enlarges hit testing only to the visible panel");
+   Req(ChampSelectOverlayLayout.ContainsTierListPointer(.94, .65, 2560, 1080, true) &&
+    !ChampSelectOverlayLayout.ContainsTierListPointer(.82, .65, 2560, 1080, true),
+    "The click zone stays aligned to the side panel on an ultrawide screen");
+  }
+
+  static void TestAugmentTiers() {
+   var gold = new[] { 43d, 46, 50, 52, 58 };
+   var prismatic = new[] { 37d, 40, 44, 47, 51 };
+   var catalog = gold.Select((rate, i) => new Stat { Id = i + 101, Rate = rate, Rarity = "Gold", Games = 1000 })
+    .Concat(prismatic.Select((rate, i) => new Stat { Id = i + 201, Rate = rate, Rarity = "Prismatic", Games = 1000 }))
+    .ToList();
+   catalog.Add(new Stat { Id = 301, Rate = 90, Games = 6, Rarity = "Gold" });
+   var tiers = Recommendations.AugmentTiers(catalog, 100);
+   Req(tiers[103] == "B" && tiers[105] == "S+" && tiers[205] == "S+" &&
+    !tiers.ContainsKey(301), "The same strength tier can be earned in different rarities; tiny samples stay unrated");
+   var goldOnly = Recommendations.AugmentTiers(catalog.Where(stat => stat.Rarity == "Gold"), 100);
+   Req(goldOnly.All(pair => tiers[pair.Key] == pair.Value), "A Golden Reroll cannot change the other cards' reference tiers");
+   Req(Recommendations.AugmentTiers(catalog.Where(stat => stat.Id >= 103 && stat.Id <= 105), 100).Count == 0,
+    "A few detected cards are not enough to create rarity-wide tier ratings");
+  }
+
+  static void TestReviewAndReferenceData() {
+   var sample = new LiveSummary { Seconds = 30 };
+   var player = new LivePlayer { Me = true, InventoryReported = true, Items = new List<int> { 1001 } };
+   sample.Players.Add(player);
+   var capture = new MatchReviewCapture("sample", new MatchMoment[0]);
+   Req(!capture.Observe(sample), "First inventory observation is the baseline");
+   player.Items.Add(1036);
+   sample.Seconds = 120;
+   sample.ReviewEvents.Add(new MatchMoment { Key = "dragon-1", Kind = "DragonKill", Seconds = 110 });
+   Req(capture.Observe(sample) && capture.Moments.Count == 2 && capture.Moments[1].Item == 1036,
+    "Match review orders a reported objective and a newly observed inventory item");
+   Req(!capture.Observe(sample), "Repeated live snapshots do not duplicate match moments");
+   player.InventoryReported = false;
+   player.Items.Clear();
+   Req(!capture.Observe(sample), "Missing inventory data never fabricates item changes");
+   player.InventoryReported = true;
+   player.Items.AddRange(new[] { 1001, 1036 });
+   Req(!capture.Observe(sample), "Restoring data after a missing snapshot does not repeat earlier items");
+
+   var ranked = new Dictionary<string, object> { { "queueMap", new Dictionary<string, object> {
+    { "RANKED_SOLO_5x5", new Dictionary<string, object> { { "tier", "GOLD" }, { "division", "II" }, { "leaguePoints", 24 } } }
+   } } };
+   var rank = ProfileParser.SoloRank(ranked, 1000);
+   Req(rank != null && rank.Tier == "GOLD" && rank.Lp == 24 && rank.Created == 1000 &&
+    ProfileParser.SoloRank(new Dictionary<string, object>(), 1000) == null,
+    "Rank view stores reported Solo/Duo LP and never invents missing snapshots");
+
+   var skins = ProfileParser.Skins(new object[] { new Dictionary<string, object> { { "name", "Ashe" }, { "skins", new object[] {
+    new Dictionary<string, object> { { "id", 22000 }, { "name", "Ashe" }, { "owned", true } },
+    new Dictionary<string, object> { { "id", 22002 }, { "name", "Ashe skin" }, { "ownership", new Dictionary<string, object> { { "owned", true } } } },
+    new Dictionary<string, object> { { "id", 22003 }, { "name", "Unknown ownership" } }
+   } } } });
+   Req(skins.Count == 1 && skins[0].Id == 22002 && skins[0].Owned, "Skin collection skips base skins and unknown ownership");
+
+   var reference = new[] { new Stat { Id = 3031, Pick = "30%", Rate = 40, Games = 2500 },
+    new Stat { Id = 3071, Pick = "10%", Rate = 75, Games = 2500 } };
+   var guide = BuildPlanner.Plan(reference, new int[0], new int[0], 50, id => new string[0],
+    "Adaptive", new string[0], useItemOutcomes: false);
+   Req(guide.First().Stat.Id == 3031, "Arena reference ordering uses reported popularity independently of outcomes");
+  }
+
   public static int RunRecommendations(string reportPath) {
    try {
     TestPurchaseAndAugmentRecommendations();
-    File.WriteAllText(reportPath, "PASS Maylo purchase and augment recommendations");
+    TestReviewAndReferenceData();
+    TestAugmentTiers();
+    TestChampSelectOverlayLayout();
+    File.WriteAllText(reportPath, "PASS Maylo recommendations, reference guides and match review");
     return 0;
    } catch (Exception ex) {
     File.WriteAllText(reportPath, ex.ToString());

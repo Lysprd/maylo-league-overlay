@@ -44,6 +44,9 @@ import {
   X,
   Zap,
 } from 'lucide-react';
+import { MatchReview } from '@/components/MatchReview';
+import { AugmentGuide, AugmentTier } from '@/components/AugmentGuide';
+import { BuildLibrary, RankedProgress, RecentProgress, RuneEditor, SettingsSearch, SkinCollection } from '@/components/HubTools';
 import { GlassCard } from '@/components/ui/glass-card';
 import { MayloEmblem, MayloWordmark } from '@/components/ui/brand';
 import {
@@ -65,7 +68,7 @@ import { Status } from '@/components/ui/status';
 import { postAction } from '@/lib/bridge';
 import { setThemeTransitionOrigin } from '@/lib/theme-transition';
 import { cn, fmtGold, fmtPct, iconUrl, itemIconUrl, parsePct, spellIconUrl } from '@/lib/utils';
-import type { AppState, GameModeKey, LivePlayer, MatchRecord, StatItem } from '@/types';
+import type { AppState, GameModeKey, LivePlayer, MatchRecord, AugmentEntry } from '@/types';
 
 const SR_ROLES = [
   { key: 'ALL', label: 'All' },
@@ -588,9 +591,25 @@ export function HubView({ state }: { state: AppState }) {
   const [dismissedTutorial, setDismissedTutorial] = useState(false);
   const [champSearch, setChampSearch] = useState('');
   const [tierFilter, setTierFilter] = useState('All');
-  const [augSearch, setAugSearch] = useState('');
-  const [augRarity, setAugRarity] = useState('All');
   const [selectedMatch, setSelectedMatch] = useState<MatchRecord | null>(null);
+  const main = useRef<HTMLElement>(null);
+  const reviewReturn = useRef({ scrollTop: 0, focus: null as HTMLElement | null });
+  const [onlyClips, setOnlyClips] = useState(false);
+  const settingsControls = useRef<HTMLDivElement>(null);
+  const french = state.settings.language === 'fr';
+  const openMatch = (match: MatchRecord) => {
+    reviewReturn.current = { scrollTop: main.current?.scrollTop ?? 0, focus: document.activeElement instanceof HTMLElement ? document.activeElement : null };
+    setSelectedMatch(match);
+  };
+  const closeMatch = () => {
+    setSelectedMatch(null);
+    const { scrollTop, focus } = reviewReturn.current;
+    requestAnimationFrame(() => {
+      if (main.current) main.current.scrollTop = scrollTop;
+      focus?.focus({ preventScroll: true });
+    });
+  };
+  const matchDetails = state.history.find((match) => match.id === selectedMatch?.id) ?? selectedMatch;
   const [liveFilter, setLiveFilter] = useState<'Overview' | 'Your team' | 'Opponents'>('Overview');
   const [tierSearch, setTierSearch] = useState('');
   const [historySearch, setHistorySearch] = useState('');
@@ -621,10 +640,15 @@ export function HubView({ state }: { state: AppState }) {
     setNoteDraft(null);
   }, [selected?.slug]);
 
-  // Close match detail modal automatically if view changes (e.g., Auto-Follow entering Champ Select)
+  // Follow client navigation when champion select or the game takes over.
   useEffect(() => {
     setSelectedMatch(null);
-  }, [view]);
+  }, [view, state.activeMode, game.inSelection, game.inGame]);
+
+  useEffect(() => {
+    postAction('viewMatchReview', { matchId: selectedMatch?.id ?? '' });
+    if (selectedMatch && main.current) main.current.scrollTop = 0;
+  }, [selectedMatch]);
 
   // Reset patch filters cleanly when switching game mode in the top bar
   useEffect(() => {
@@ -659,12 +683,12 @@ export function HubView({ state }: { state: AppState }) {
       } else if (state.inspectedItem) {
         e.preventDefault();
         postAction('closeItem');
-      } else if (selectedMatch) {
-        e.preventDefault();
-        setSelectedMatch(null);
       } else if (modal !== 'none') {
         e.preventDefault();
         setModal('none');
+      } else if (selectedMatch) {
+        e.preventDefault();
+        closeMatch();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -673,7 +697,7 @@ export function HubView({ state }: { state: AppState }) {
 
   const navItems = useMemo(() => {
     const items = [
-      { id: 'Dashboard', label: 'Overview', icon: LayoutGrid },
+      { id: 'Dashboard', label: french ? 'Accueil' : 'Overview', icon: LayoutGrid },
       { id: 'TierList', label: isSR ? 'Tier List' : isMayhem ? 'Mayhem Meta' : isArena ? 'Arena Meta' : 'ARAM Tier List', icon: Trophy },
       { id: 'Library', label: 'Champions', icon: Swords },
     ];
@@ -682,13 +706,14 @@ export function HubView({ state }: { state: AppState }) {
     }
     items.push(
       { id: 'PatchNotes', label: state.patchNotes?.version ? `Patch ${state.patchNotes.version}` : 'Patch Notes', icon: Flame },
-      { id: 'Live', label: 'Live game', icon: Activity },
-      { id: 'History', label: 'Match history', icon: History },
+      { id: 'Live', label: french ? 'Partie en cours' : 'Live game', icon: Activity },
+      { id: 'History', label: french ? 'Historique' : 'Match history', icon: History },
+      { id: 'Collection', label: 'Collection', icon: Square },
       { id: 'Synergies', label: isArena ? 'Duo Synergies' : isMayhem ? 'Synergies' : 'Matchups', icon: Link2 },
       { id: 'Notes', label: 'Notes', icon: FileText }
     );
     return items;
-  }, [isMayhem, isArena, hasAugments, isSR, state.patchNotes?.version]);
+  }, [isMayhem, isArena, hasAugments, isSR, french, state.patchNotes?.version]);
 
   const filteredTierList = useMemo(() => {
     const q = tierSearch.trim().toLowerCase();
@@ -734,15 +759,8 @@ export function HubView({ state }: { state: AppState }) {
     );
   }, [modeChampions, champSearch, tierFilter]);
 
-  const filteredAugments = useMemo(() => {
-    const q = augSearch.trim().toLowerCase();
-    return (state.allAugments || []).filter(
-      (a) =>
-        (augRarity === 'All' || (a.rarity || '').toLowerCase() === augRarity.toLowerCase()) &&
-        (!q || a.name.toLowerCase().includes(q))
-    );
-  }, [state.allAugments, augSearch, augRarity]);
-
+  const draftActive = game.inSelection && !game.inGame && game.modeKey === state.activeMode;
+  const draftPick = draftActive ? game.pickedChampion : null;
   const activeModeLabel = isMayhem ? 'ARAM Mayhem' : isArena ? 'Arena' : isSR ? 'Ranked SR' : 'ARAM';
 
   const modeHistory = useMemo(() => {
@@ -761,10 +779,11 @@ export function HubView({ state }: { state: AppState }) {
   const filteredHistory = useMemo(() => {
     const q = historySearch.trim().toLowerCase();
     return modeHistory.filter((m) => {
+      if (onlyClips && !m.clipName) return false;
       if (q && !m.championName.toLowerCase().includes(q) && !m.queueName.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [modeHistory, historySearch]);
+  }, [modeHistory, historySearch, onlyClips]);
 
   const computePool = (matches: MatchRecord[]) => {
     const valid = matches.filter((m) => !m.remake);
@@ -830,7 +849,7 @@ export function HubView({ state }: { state: AppState }) {
     postAction('maximizeWindow');
   };
 
-  const renderAugmentTile = (aug: StatItem) => (
+  const renderAugmentTile = (aug: AugmentEntry) => (
     <button
       key={aug.id}
       type="button"
@@ -848,17 +867,12 @@ export function HubView({ state }: { state: AppState }) {
             <span className="truncate text-[13px] font-semibold text-zinc-900 dark:text-zinc-50 group-hover:text-indigo-600 dark:group-hover:text-indigo-300">
               {aug.name}
             </span>
-            {aug.tracked && (
-              <span className="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase text-indigo-600 dark:text-indigo-300">
-                Tracked
-              </span>
-            )}
+
           </div>
           <div className="mt-0.5 flex items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400 tabular-nums">
             <span className="font-semibold text-indigo-600 dark:text-indigo-300">
-              {fmtPct(aug.rate)}
+              {parsePct(aug.pick) ? `${parsePct(aug.pick)} ${french ? 'de sélection' : 'pick rate'}` : ''}
             </span>
-            {parsePct(aug.pick) && <span>PR {parsePct(aug.pick)}</span>}
             {aug.rarity && (
                 <span
                   className={cn(
@@ -873,7 +887,7 @@ export function HubView({ state }: { state: AppState }) {
         </div>
       </div>
       <div className="flex items-center gap-2 shrink-0">
-        <TierBadge tier={aug.tier} size="sm" />
+        <AugmentTier augment={aug} french={french} />
         <ChevronRight className="size-3.5 text-zinc-400 opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
     </button>
@@ -1043,6 +1057,7 @@ export function HubView({ state }: { state: AppState }) {
               const isChampNav = item.id === 'Library';
               const active = isChampNav ? (view === 'Library' || view === 'Build') : view === item.id;
               const onClickNav = () => {
+                if (selectedMatch) closeMatch();
                 if (isChampNav) {
                   if (view === 'Build') postAction('setView', { view: 'Library' });
                   else if (selected && (game.inGame || (game.inSelection && game.champion))) postAction('setView', { view: 'Build' });
@@ -1181,7 +1196,7 @@ export function HubView({ state }: { state: AppState }) {
         </aside>
 
         {/* MAIN CONTENT (with delicate mode-aware top ambient wash) */}
-        <main className="relative flex-1 overflow-y-auto">
+        <main ref={main} className="relative flex-1 overflow-y-auto">
           <div
             aria-hidden="true"
             className="pointer-events-none fixed inset-x-0 top-12 h-64 transition-opacity duration-500"
@@ -1200,6 +1215,11 @@ export function HubView({ state }: { state: AppState }) {
             transition={{ duration: 0.22, ease: SWISS_EASE }}
             className="relative z-10 mx-auto max-w-[1160px] px-6 py-5 space-y-5"
           >
+            {matchDetails ? (
+              <MatchReview key={matchDetails.id} matchDetails={matchDetails} ddVersion={state.ddVersion}
+                french={french} inGame={game.inGame} onBack={closeMatch} />
+            ) : null}
+            <div hidden={!!matchDetails} className={matchDetails ? 'hidden' : 'space-y-5'}>
             {/* CHAMPION HERO BANNER (with Back Arrow to All Champions!) */}
             {['Build', 'Augments', 'Synergies', 'Notes'].includes(view) && selected && (
               <GlassCard surface="hub" spotlight className="p-5 swiss-grid-bg">
@@ -1209,8 +1229,8 @@ export function HubView({ state }: { state: AppState }) {
                     {view === 'Build' && (
                       <button
                         type="button"
-                        title="Back to All Champions"
-                        onClick={() => postAction('setView', { view: 'Library' })}
+                        title={draftActive ? (french ? 'Retour à la tier list' : 'Back to tier list') : (french ? 'Tous les champions' : 'All champions')}
+                        onClick={() => postAction('setView', { view: draftActive ? 'TierList' : 'Library' })}
                         className="flex size-9 items-center justify-center rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/[0.04] text-zinc-600 dark:text-zinc-300 hover:border-indigo-400/50 hover:text-zinc-900 dark:hover:text-white transition-colors shrink-0 cursor-pointer"
                       >
                         <ArrowLeft className="size-4" />
@@ -1231,7 +1251,7 @@ export function HubView({ state }: { state: AppState }) {
                         <TierBadge tier={selected.tier} size="md" />
                         <PatchTagBadge tag={selected.patchTag} />
                         <span className="inline-flex items-center rounded-lg border border-indigo-200 dark:border-indigo-400/30 bg-indigo-50 dark:bg-indigo-500/15 px-2.5 py-1 text-[11px] font-semibold leading-none text-indigo-700 dark:text-indigo-300">
-                          {state.modeSource || state.activeMode}
+                          {activeModeLabel}
                         </span>
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-zinc-500 dark:text-zinc-400 tabular-nums">
@@ -1627,6 +1647,40 @@ export function HubView({ state }: { state: AppState }) {
                     : [];
               return (
               <div className="space-y-5">
+                {(draftActive || (!game.inGame && !game.inSelection && modeHistory[0])) && (
+                  <GlassCard surface="hub" className="flex flex-wrap items-center gap-3 p-4">
+                    <ChampAvatar
+                      src={draftActive ? draftPick?.icon || '' : modeHistory[0].championIcon}
+                      alt=""
+                      className="size-11 rounded-xl border border-zinc-200 dark:border-white/12"
+                    />
+                    <div className="min-w-0 grow">
+                      <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+                        {draftActive
+                          ? draftPick?.name || (french ? 'Sélection de champion' : 'Champion select')
+                          : modeHistory[0].championName}
+                        {draftPick?.tier && <TierBadge tier={draftPick.tier} size="sm" />}
+                      </div>
+                      <p className="text-xs text-zinc-500">
+                        {draftActive ? activeModeLabel : `${modeHistory[0].queueName} · ${modeHistory[0].dateText}`}
+                      </p>
+                    </div>
+                    <Button size="sm" onClick={() => {
+                      if (!draftActive) openMatch(modeHistory[0]);
+                      else if (draftPick) postAction('openDraftBuild', { slug: draftPick.slug });
+                      else postAction('setView', { view: 'TierList' });
+                    }}>
+                      {draftActive
+                        ? draftPick
+                          ? (french ? 'Préparer ma partie' : 'Prepare my match')
+                          : (french ? 'Voir la tier list' : 'Browse the tier list')
+                        : (french ? 'Revoir ma dernière partie' : 'Review latest match')}
+                      <ChevronRight className="size-3.5" />
+                    </Button>
+                  </GlassCard>
+                )}
+                {modeHistory.length > 0 && <RecentProgress key={state.activeMode} matches={modeHistory} french={french} farm={isSR} />}
+                {isSR && <RankedProgress history={state.rankHistory} french={french} />}
                 {/* Summoner Profile + Recent W/L Form Banner */}
                 <GlassCard surface="hub" spotlight className="relative p-5 swiss-grid-bg">
                   <BorderBeam tone={isArena ? 'gold' : state.activeMode === 'ARAM' ? 'sky' : 'indigo'} />
@@ -1686,7 +1740,7 @@ export function HubView({ state }: { state: AppState }) {
                       </div>
                     </div>
 
-                    {selected && (
+                    {selected && !draftActive && (game.inGame || game.inSelection || !modeHistory.length) && (
                       <button
                         type="button"
                         onClick={() => postAction('setView', { view: 'Build' })}
@@ -1772,7 +1826,7 @@ export function HubView({ state }: { state: AppState }) {
                         </span>
                       ),
                       sub: isArena
-                        ? `Augment OCR ${state.settings.ocr ? 'ON' : 'OFF'} · Prismatic & Duos`
+                        ? 'Augment guide · Prismatic items & duos'
                         : `Flash on ${state.settings.flashKey || 'F'} · Spells ${state.settings.autoSpells ? 'ON' : 'OFF'}`,
                       icon: Zap,
                     },
@@ -1931,6 +1985,10 @@ export function HubView({ state }: { state: AppState }) {
             {/* VIEW: CHAMPION BUILD & SKILLS */}
             {view === 'Build' && (
               <div className="space-y-5">
+                {selected && <BuildLibrary key={`${state.activeMode}:${state.activeRole}:${selected.slug}`} state={state} french={french} />}
+                {selected && <RuneEditor key={`${state.activeMode}:${selected.slug}:${state.runes?.perks.join(',')}`} state={state} french={french} />}
+
+
                 {/* Visual Runes Page Card (Keystone + Primary + Secondary + Stat Shards) */}
                 {state.runes?.perkDetails && state.runes.perkDetails.length >= 6 && (
                   <GlassCard surface="hub" spotlight className="p-5">
@@ -2152,7 +2210,7 @@ export function HubView({ state }: { state: AppState }) {
                             </div>
                             <div className="mt-0.5 flex items-center gap-2 text-xs tabular-nums">
                               <span className="font-bold text-indigo-600 dark:text-indigo-300">
-                                {fmtPct(step.stat.rate)} WR
+                                {isArena ? (parsePct(step.stat.pick) || '—') : `${fmtPct(step.stat.rate)} WR`}
                               </span>
                               {parsePct(step.stat.pick) && (
                                 <span className="text-zinc-500 dark:text-zinc-400">
@@ -2259,7 +2317,7 @@ export function HubView({ state }: { state: AppState }) {
                                 </div>
                               </div>
                               <span className="text-xs font-bold text-indigo-600 dark:text-indigo-300 tabular-nums shrink-0">
-                                {fmtPct(st.rate)}
+                                {isArena ? (parsePct(st.pick) || '—') : fmtPct(st.rate)}
                               </span>
                             </div>
                           ))
@@ -2281,10 +2339,10 @@ export function HubView({ state }: { state: AppState }) {
                     <div className="flex items-center justify-between mb-3.5">
                       <div>
                         <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">
-                          Best Augments for {selected?.name}
+                          {french ? 'Guide des augments' : 'Augment guide'}
                         </h3>
                         <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                          Click any augment to view full description, combos, and preferences
+                          Browse effects and observed pick rates
                         </p>
                       </div>
                       <Button
@@ -2303,110 +2361,18 @@ export function HubView({ state }: { state: AppState }) {
               </div>
             )}
 
-            {/* VIEW: AUGMENTS */}
             {view === 'Augments' && (
-              <div className="space-y-5">
-                {/* Live OCR Controls */}
-                <GlassCard surface="hub" className="p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="flex size-9 items-center justify-center rounded-xl bg-indigo-500/12 text-indigo-600 dark:text-indigo-400">
-                        <ScanSearch className="size-4" />
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold text-zinc-900 dark:text-white">
-                          Augment OCR Engine{' '}
-                          {state.ocrLastMs > 0 && (
-                            <span className="ml-1 font-normal text-zinc-400 tabular-nums">
-                              ({state.ocrLastMs}ms)
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                          {state.ocrStatus || 'Ready to detect augment cards automatically in-game'}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button size="xs" variant="accent" onClick={() => postAction('scanAugments')}>
-                        <ScanSearch className="size-3.5" />
-                        Scan Now
-                      </Button>
-                      <Button size="xs" variant="secondary" onClick={() => postAction('showAugmentBadges')}>
-                        Show Badges
-                      </Button>
-                      <Button size="xs" variant="secondary" onClick={() => postAction('clearAugments')}>
-                        Clear
-                      </Button>
-                      <Button size="xs" variant="ghost" onClick={() => postAction('saveLastScan')}>
-                        <Bug className="size-3.5" />
-                        Debug
-                      </Button>
-                    </div>
-                  </div>
-                </GlassCard>
-
-                {/* Tracked Augments */}
-                {state.trackedAugments.length > 0 && (
-                  <GlassCard surface="hub" highlight="accent" className="p-4">
-                    <div className="text-xs font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-300 mb-3">
-                      Tracked Augments ({state.trackedAugments.length})
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                      {state.trackedAugments.map(renderAugmentTile)}
-                    </div>
-                  </GlassCard>
-                )}
-
-                {/* Search & Rarity Filter */}
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="relative flex-1 min-w-[220px] max-w-sm">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
-                    <input
-                      type="text"
-                      value={augSearch}
-                      onChange={(e) => setAugSearch(e.target.value)}
-                      placeholder="Search augments..."
-                      className="w-full rounded-xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#14151B] py-2 pl-9 pr-3 text-xs text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:border-indigo-400 focus:outline-none"
-                    />
-                  </div>
-                  <SegmentedTabs
-                    size="sm"
-                    value={augRarity}
-                    onChange={setAugRarity}
-                    options={[
-                      { value: 'All', label: 'All' },
-                      { value: 'Prismatic', label: 'Prismatic' },
-                      { value: 'Gold', label: 'Gold' },
-                      { value: 'Silver', label: 'Silver' },
-                    ]}
-                  />
+              <GlassCard surface="hub" className="space-y-3 p-4">
+                <div>
+                  <h2 className="text-base font-bold">{french ? 'Guide des augments' : 'Augment guide'}</h2>
+                  {selected && <p className="text-xs text-zinc-500">{selected.name} · {activeModeLabel} · {state.modeSource}</p>}
                 </div>
-
-                {/* Clickable Augment Catalog */}
-                {!selected ? (
-                  <GlassCard surface="hub" className="p-10 text-center space-y-3 swiss-grid-bg">
-                    <SwissDraftEmptyIllustration variant="augments" />
-                    <h3 className="font-display text-base font-bold text-zinc-900 dark:text-white">
-                      Choose a Champion First
-                    </h3>
-                    <p className="mx-auto max-w-sm text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-                      Select any champion to inspect champion-specific {isArena ? 'Arena 2v2' : 'ARAM Mayhem'} augment win rates, ratings, and best synergies.
-                    </p>
-                    <Button size="sm" variant="primary" onClick={() => postAction('setView', { view: 'Library' })}>
-                      Browse Champions
-                    </Button>
-                  </GlassCard>
-                ) : filteredAugments.length === 0 ? (
-                  <GlassCard surface="hub" className="p-10 text-center text-sm text-zinc-500 dark:text-zinc-400">
-                    No augments match your current search or rarity filter.
-                  </GlassCard>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                    {filteredAugments.map(renderAugmentTile)}
-                  </div>
+                {selected ? <AugmentGuide key={`${selected.slug}:${state.activeMode}`} augments={state.allAugments} french={french} /> : (
+                  <Button size="sm" onClick={() => postAction('setView', { view: 'Library' })}>
+                    {french ? 'Choisir un champion' : 'Choose a champion'}
+                  </Button>
                 )}
-              </div>
+              </GlassCard>
             )}
 
             {/* VIEW: LIVE GAME (Pro Scouting) */}
@@ -2620,6 +2586,8 @@ export function HubView({ state }: { state: AppState }) {
             })()}
 
             {/* VIEW: MATCH HISTORY (MODE-SCOPED & STRICT CSS GRID ALIGNMENT) */}
+            {view === 'Collection' && <SkinCollection state={state} french={french} />}
+
             {view === 'History' && (
               <div className="space-y-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2649,6 +2617,9 @@ export function HubView({ state }: { state: AppState }) {
                   </div>
                 </div>
 
+                <Button size="xs" variant={onlyClips ? 'accent' : 'secondary'} onClick={() => setOnlyClips(!onlyClips)}>
+                  {french ? 'Parties avec clip' : 'Matches with clips'}
+                </Button>
                 {/* History Summary KPIs */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
                   {[
@@ -2742,7 +2713,7 @@ export function HubView({ state }: { state: AppState }) {
                             <button
                               key={m.id}
                               type="button"
-                              onClick={() => setSelectedMatch(m)}
+                              onClick={() => openMatch(m)}
                               className="grid w-full grid-cols-[minmax(195px,1.5fr)_92px_108px_138px_188px] items-center gap-4 px-5 py-3.5 text-left transition-colors hover:bg-zinc-50 dark:hover:bg-white/[0.03] cursor-pointer"
                             >
                               {/* Col 1: Champion */}
@@ -2937,10 +2908,10 @@ export function HubView({ state }: { state: AppState }) {
               <GlassCard surface="hub" className="p-10 text-center space-y-3 swiss-grid-bg">
                 <SwissDraftEmptyIllustration variant="synergies" />
                 <h3 className="font-display text-base font-bold text-zinc-900 dark:text-white">
-                  {isArena ? 'Arena Duo Synergies' : isMayhem ? 'Champion Synergies & Combos' : 'Teammates & Matchups'}
+                  {isArena ? 'Arena Duo Synergies' : isMayhem ? 'Champion Synergies' : 'Teammates & Matchups'}
                 </h3>
                 <p className="mx-auto max-w-sm text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-                  Select a champion first to inspect {isArena ? 'top 2v2 duo partners and Top-4 synergy rates' : isMayhem ? 'synergies, matchups, and augment combos' : 'teammates and tough lane matchups'}.
+                  Select a champion first to inspect {isArena ? 'top 2v2 duo partners and Top-4 synergy rates' : isMayhem ? 'teammates and matchups' : 'teammates and tough lane matchups'}.
                 </p>
                 <Button size="sm" variant="primary" onClick={() => postAction('setView', { view: 'Library' })}>
                   Browse Champions
@@ -2955,18 +2926,13 @@ export function HubView({ state }: { state: AppState }) {
                 champLookup.set(normKey(c.slug), c);
                 if (c.assetKey) champLookup.set(normKey(c.assetKey), c);
               }
-              const augLookup = new Map<string, (typeof state.allAugments)[number]>();
-              for (const a of state.allAugments) {
-                augLookup.set(normKey(a.name), a);
-              }
               const cols = isArena
                 ? [
                     {
                       key: 'teammates',
                       title: 'Best Arena Duo Partners',
                       subtitle: 'Highest Top-4 win rate 2v2 partners',
-                      kind: 'champion' as const,
-                      tone: 'good' as const,
+                                            tone: 'good' as const,
                       list: state.teammates,
                     },
                   ]
@@ -2975,33 +2941,19 @@ export function HubView({ state }: { state: AppState }) {
                       key: 'teammates',
                       title: isMayhem ? 'Best Teammates' : 'Strong Against',
                       subtitle: isMayhem ? 'Highest win rate allies' : 'Favorable lane matchups',
-                      kind: 'champion' as const,
-                      tone: 'good' as const,
+                                            tone: 'good' as const,
                       list: state.teammates,
                     },
                     {
                       key: 'matchups',
                       title: 'Tough Matchups',
                       subtitle: isMayhem ? 'Hardest enemy picks' : 'Counter picks to watch out for',
-                      kind: 'champion' as const,
-                      tone: 'tough' as const,
+                                            tone: 'tough' as const,
                       list: state.matchups,
                     },
-                    ...(isMayhem
-                      ? [
-                          {
-                            key: 'combos',
-                            title: 'Augment Combos',
-                            subtitle: 'Best 2-augment synergies',
-                            kind: 'combo' as const,
-                            tone: 'combo' as const,
-                            list: state.combos,
-                          },
-                        ]
-                      : []),
                   ];
               return (
-                <div className={cn('grid grid-cols-1 gap-4', isArena ? 'lg:grid-cols-1 max-w-2xl' : isMayhem ? 'lg:grid-cols-3' : 'lg:grid-cols-2')}>
+                <div className={cn('grid grid-cols-1 gap-4', isArena ? 'lg:grid-cols-1 max-w-2xl' : 'lg:grid-cols-2')}>
                   {cols.map((col) => (
                     <GlassCard key={col.key} surface="hub" className="p-4 flex flex-col">
                       <div className="flex items-center justify-between gap-2 mb-3.5 pb-2.5 border-b border-zinc-200/70 dark:border-white/[0.06]">
@@ -3012,17 +2964,13 @@ export function HubView({ state }: { state: AppState }) {
                               col.tone === 'good' &&
                                 'border-emerald-500/25 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
                               col.tone === 'tough' &&
-                                'border-rose-500/25 bg-rose-500/10 text-rose-600 dark:text-rose-400',
-                              col.tone === 'combo' &&
-                                'border-indigo-500/25 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
+                                'border-rose-500/25 bg-rose-500/10 text-rose-600 dark:text-rose-400'
                             )}
                           >
                             {col.tone === 'good' ? (
                               <ThumbsUp className="size-3.5" />
-                            ) : col.tone === 'tough' ? (
-                              <Swords className="size-3.5" />
                             ) : (
-                              <Sparkles className="size-3.5" />
+                              <Swords className="size-3.5" />
                             )}
                           </div>
                           <div className="min-w-0">
@@ -3067,74 +3015,6 @@ export function HubView({ state }: { state: AppState }) {
                                 : wr < 48 && wr > 0
                                   ? 'bg-rose-500/80'
                                   : 'bg-indigo-500/80';
-
-                            if (col.kind === 'combo') {
-                              const parts = st.name.split(/\s*\+\s*/);
-                              const aug1 = parts[0] ? augLookup.get(normKey(parts[0])) : undefined;
-                              const aug2 = parts[1] ? augLookup.get(normKey(parts[1])) : undefined;
-                              const clickableId = aug1?.id || aug2?.id || 0;
-                              return (
-                                <button
-                                  key={`${st.name}-${idx}`}
-                                  type="button"
-                                  onClick={() => {
-                                    if (clickableId > 0) postAction('inspectAugment', { id: clickableId });
-                                  }}
-                                  className={cn(
-                                    'group w-full flex items-center gap-3 rounded-xl border border-zinc-200/70 dark:border-white/[0.06] bg-zinc-50/70 dark:bg-white/[0.025] px-3 py-2 text-left transition-all',
-                                    clickableId > 0 &&
-                                      'hover:border-indigo-400/50 hover:bg-white dark:hover:bg-white/[0.05] cursor-pointer'
-                                  )}
-                                >
-                                  <div className="flex items-center -space-x-2 shrink-0">
-                                    <AugmentIcon
-                                      src={aug1?.icon}
-                                      alt={parts[0] || st.name}
-                                      className="size-8 rounded-lg border border-zinc-200 dark:border-white/15 shadow-sm ring-2 ring-white dark:ring-[#14151B]"
-                                      iconClassName="size-3.5"
-                                    />
-                                    <AugmentIcon
-                                      src={aug2?.icon}
-                                      alt={parts[1] || st.name}
-                                      className="size-8 rounded-lg border border-zinc-200 dark:border-white/15 shadow-sm ring-2 ring-white dark:ring-[#14151B]"
-                                      iconClassName="size-3.5"
-                                    />
-                                  </div>
-                                  <div className="min-w-0 flex-1">
-                                    <div className="truncate text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-                                      {parts[0] || st.name}
-                                      {parts[1] && (
-                                        <span className="font-normal text-zinc-400 dark:text-zinc-500">
-                                          {' + '}
-                                        </span>
-                                      )}
-                                      {parts[1]}
-                                    </div>
-                                    <div className="mt-1.5 flex items-center gap-2">
-                                      <div className="h-1 flex-1 overflow-hidden rounded-full bg-zinc-200/80 dark:bg-white/[0.07]">
-                                        <div
-                                          className={cn('h-full rounded-full transition-all', barTone)}
-                                          style={{ width: `${barPct}%` }}
-                                        />
-                                      </div>
-                                      {(st.pick || st.games > 0) && (
-                                        <span className="font-mono-tech text-[10px] text-zinc-400 dark:text-zinc-500 tabular-nums shrink-0">
-                                          {st.pick || `${st.games}g`}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <div className="text-right shrink-0">
-                                    <div className={cn('text-xs font-bold tabular-nums', wrTone)}>
-                                      {fmtPct(wr)}
-                                    </div>
-                                    <div className="font-mono-tech text-[9px] uppercase tracking-wider text-zinc-400">
-                                      WR
-                                    </div>
-                                  </div>
-                                </button>
-                              );
-                            }
 
                             const matchedChamp = champLookup.get(normKey(st.name));
                             const avatarSrc = st.icon || matchedChamp?.icon || '';
@@ -3651,6 +3531,7 @@ export function HubView({ state }: { state: AppState }) {
                 />
               </GlassCard>
             )}
+            </div>
           </motion.div>
         </main>
       </div>
@@ -3687,7 +3568,7 @@ export function HubView({ state }: { state: AppState }) {
                     <h3 className="truncate text-base font-bold text-zinc-900 dark:text-white">
                       {state.inspectedAugment.name}
                     </h3>
-                    <TierBadge tier={state.inspectedAugment.tier} size="sm" />
+                    <AugmentTier augment={state.inspectedAugment} french={french} />
                   </div>
                   <div className="mt-1 flex items-center gap-1.5">
                     {state.inspectedAugment.rarity && (
@@ -3700,9 +3581,9 @@ export function HubView({ state }: { state: AppState }) {
                         {state.inspectedAugment.rarity}
                       </span>
                     )}
-                    <span className="text-[11px] text-zinc-500 dark:text-zinc-400 tabular-nums">
-                      {state.inspectedAugment.games.toLocaleString('en-US')} games
-                    </span>
+                    {state.inspectedAugment.games > 0 && <span className="text-[11px] text-zinc-500 tabular-nums">
+                      {state.inspectedAugment.games.toLocaleString(french ? 'fr-FR' : 'en-US')} {french ? 'parties' : 'games'}
+                    </span>}
                   </div>
                 </div>
               </div>
@@ -3716,39 +3597,9 @@ export function HubView({ state }: { state: AppState }) {
             </div>
 
             <div className="flex-1 overflow-y-auto p-5 space-y-5">
-              {/* KPI Strip */}
-              <div className="grid grid-cols-3 gap-2.5">
-                <div className="rounded-xl border border-zinc-200/80 dark:border-white/[0.08] bg-zinc-50 dark:bg-white/[0.03] p-3 text-center">
-                  <div className="text-[10px] font-semibold uppercase text-zinc-400">Win Rate</div>
-                  <div className="mt-1 text-base font-bold text-indigo-600 dark:text-indigo-300 tabular-nums">
-                    {fmtPct(state.inspectedAugment.rate)}
-                  </div>
-                </div>
-                <div className="rounded-xl border border-zinc-200/80 dark:border-white/[0.08] bg-zinc-50 dark:bg-white/[0.03] p-3 text-center">
-                  <div className="text-[10px] font-semibold uppercase text-zinc-400">vs Avg</div>
-                  <div
-                    className={cn(
-                      'mt-1 text-base font-bold tabular-nums',
-                      state.inspectedAugment.games === 0
-                        ? 'text-zinc-400'
-                        : state.inspectedAugment.delta >= 0
-                          ? 'text-teal-600 dark:text-teal-300'
-                          : 'text-rose-600 dark:text-rose-400'
-                    )}
-                  >
-                    {state.inspectedAugment.games === 0
-                      ? '—'
-                      : `${state.inspectedAugment.delta >= 0 ? '+' : ''}${state.inspectedAugment.delta.toFixed(1)}%`}
-                  </div>
-                </div>
-                <div className="rounded-xl border border-zinc-200/80 dark:border-white/[0.08] bg-zinc-50 dark:bg-white/[0.03] p-3 text-center">
-                  <div className="text-[10px] font-semibold uppercase text-zinc-400">Pick Rate</div>
-                  <div className="mt-1 text-base font-bold text-zinc-900 dark:text-white tabular-nums">
-                    {parsePct(state.inspectedAugment.pick) || '—'}
-                  </div>
-                </div>
-              </div>
-
+              {parsePct(state.inspectedAugment.pick) && (
+                <p className="text-xs text-zinc-500">{parsePct(state.inspectedAugment.pick)} {french ? 'de sélection' : 'pick rate'}</p>
+              )}
               {/* Official In-Game Description */}
               <div className="rounded-xl border border-zinc-200/80 dark:border-white/[0.08] bg-zinc-50/70 dark:bg-white/[0.03] p-4">
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
@@ -3759,90 +3610,6 @@ export function HubView({ state }: { state: AppState }) {
                 </p>
               </div>
 
-              {/* Personal Preference + Track */}
-              <div className="space-y-2.5">
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-                  Recommendation Preference
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { val: 1, label: 'Prefer', icon: ThumbsUp },
-                    { val: 0, label: 'Default', icon: Check },
-                    { val: -1, label: 'Avoid', icon: ThumbsDown },
-                  ].map((opt) => {
-                    const Icon = opt.icon;
-                    const active = state.inspectedAugment!.preference === opt.val;
-                    return (
-                      <Button
-                        key={opt.label}
-                        size="sm"
-                        variant={active ? 'accent' : 'secondary'}
-                        onClick={() =>
-                          postAction('preferAugment', {
-                            id: state.inspectedAugment!.id,
-                            value: opt.val,
-                          })
-                        }
-                      >
-                        <Icon className="size-3.5" />
-                        {opt.label}
-                      </Button>
-                    );
-                  })}
-                </div>
-                <Button
-                  size="md"
-                  variant={state.inspectedAugment.tracked ? 'accent' : 'primary'}
-                  className="w-full"
-                  onClick={() => postAction('trackAugment', { id: state.inspectedAugment!.id })}
-                >
-                  {state.inspectedAugment.tracked ? (
-                    <>
-                      <Check className="size-4" />
-                      Tracked in Active Build
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="size-4" />
-                      Track This Augment
-                    </>
-                  )}
-                </Button>
-              </div>
-
-              {/* Observed Best Combos */}
-              {state.inspectedAugment.pairings.length > 0 && (
-                <div className="space-y-2">
-                  <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-                    Observed Best Combos
-                  </div>
-                  <div className="space-y-2">
-                    {state.inspectedAugment.pairings.map((pair) => (
-                      <button
-                        key={pair.name}
-                        type="button"
-                        onClick={() => pair.id > 0 && postAction('inspectAugment', { id: pair.id })}
-                        className="flex w-full items-center justify-between gap-3 rounded-xl border border-zinc-200/80 dark:border-white/[0.08] bg-zinc-50/70 dark:bg-white/[0.03] px-3 py-2.5 text-left hover:border-indigo-400/50 cursor-pointer"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <AugmentIcon
-                            src={pair.icon}
-                            alt={pair.name}
-                            className="size-7 rounded-lg"
-                            iconClassName="size-3.5"
-                          />
-                          <span className="truncate text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-                            {pair.name}
-                          </span>
-                        </div>
-                        <span className="text-xs font-bold text-indigo-600 dark:text-indigo-300 tabular-nums">
-                          {fmtPct(pair.rate)}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           </motion.div>
         </motion.div>
@@ -3955,128 +3722,9 @@ export function HubView({ state }: { state: AppState }) {
                 className="w-full"
                 onClick={() => postAction('togglePlanItem', { id: state.inspectedItem!.id })}
               >
-                {state.inspectedItem.planned ? 'Pinned in Next Buys' : 'Pin to Build Plan'}
+                {state.inspectedItem.planned ? 'Pinned in guide' : 'Pin to guide'}
               </Button>
             </div>
-          </motion.div>
-        </motion.div>
-      )}
-      </AnimatePresence>
-
-      {/* MATCH DETAIL MODAL */}
-      <AnimatePresence>
-      {selectedMatch && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.18 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[3px] p-4"
-          onClick={() => setSelectedMatch(null)}
-        >
-          <motion.div
-            initial={{ opacity: 0, scale: 0.96, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.97, y: 6 }}
-            transition={{ duration: 0.22, ease: SWISS_EASE }}
-            className="w-full max-w-lg"
-            onClick={(e) => e.stopPropagation()}
-          >
-          <GlassCard
-            surface="hub"
-            className="w-full p-5 space-y-4"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                {selectedMatch.championIcon && (
-                  <ChampAvatar
-                    src={selectedMatch.championIcon}
-                    alt={selectedMatch.championName}
-                    className="size-11 rounded-xl border border-zinc-200 dark:border-white/12"
-                  />
-                )}
-                <div>
-                  <h3 className="text-base font-bold">
-                    {selectedMatch.championName} ·{' '}
-                    {selectedMatch.remake ? 'Remake' : selectedMatch.won ? 'Victory' : 'Defeat'}
-                  </h3>
-                  <p className="text-xs text-zinc-500">
-                    {selectedMatch.queueName} · {selectedMatch.dateText} · {selectedMatch.time}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedMatch(null)}
-                className="flex size-8 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-100 dark:hover:bg-white/10 cursor-pointer"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-            <div className="grid grid-cols-3 gap-2.5 text-center">
-              <div className="rounded-xl border border-zinc-200 dark:border-white/[0.08] p-3">
-                <div className="text-[10px] uppercase text-zinc-400">KDA</div>
-                <div className="mt-1 text-sm font-bold tabular-nums">
-                  {selectedMatch.kills}/{selectedMatch.deaths}/{selectedMatch.assists}
-                </div>
-              </div>
-              <div className="rounded-xl border border-zinc-200 dark:border-white/[0.08] p-3">
-                <div className="text-[10px] uppercase text-zinc-400">Damage</div>
-                <div className="mt-1 text-sm font-bold tabular-nums">
-                  {selectedMatch.damage.toLocaleString('en-US')}
-                </div>
-              </div>
-              <div className="rounded-xl border border-zinc-200 dark:border-white/[0.08] p-3">
-                <div className="text-[10px] uppercase text-zinc-400">Gold / CS</div>
-                <div className="mt-1 text-sm font-bold tabular-nums">
-                  {(selectedMatch.gold / 1000).toFixed(1)}k · {selectedMatch.cs} CS
-                </div>
-              </div>
-            </div>
-            {/* Match Final Build Items */}
-            {selectedMatch.items.length > 0 && (
-              <div>
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-2">
-                  Final Build
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {selectedMatch.items.slice(0, 6).map((id, i) => (
-                    <img
-                      key={`${id}-${i}`}
-                      src={itemIconUrl(id, state.ddVersion)}
-                      alt=""
-                      className="size-9 rounded-lg border border-zinc-200 dark:border-white/12 bg-zinc-900"
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-            {/* Match Mayhem Augments */}
-            {selectedMatch.augmentDetails && selectedMatch.augmentDetails.length > 0 && (
-              <div>
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-2">
-                  Augments Played
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {selectedMatch.augmentDetails.map((a) => (
-                    <div
-                      key={a.id}
-                      className="inline-flex items-center gap-2 rounded-lg border border-indigo-400/30 bg-indigo-500/10 px-2.5 py-1.5 text-xs font-medium"
-                    >
-                      <img src={iconUrl(a.icon)} alt="" className="size-5 rounded bg-zinc-900" />
-                      <span>{a.name}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div className="flex items-center justify-end gap-2">
-              <Button size="sm" variant="secondary" onClick={() => setSelectedMatch(null)}>
-                <ArrowLeft className="size-3.5" />
-                Back
-              </Button>
-            </div>
-          </GlassCard>
           </motion.div>
         </motion.div>
       )}
@@ -4123,7 +3771,15 @@ export function HubView({ state }: { state: AppState }) {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-5 space-y-5">
+            <SettingsSearch root={settingsControls} french={french} />
+            <div ref={settingsControls} className="flex-1 overflow-y-auto p-5 space-y-5">
+              <label className="flex items-center justify-between gap-3 px-2.5 text-sm">
+                <span>{french ? 'Langue des nouveaux écrans' : 'Language for new screens'}</span>
+                <select aria-label="Language · Langue" value={french ? 'fr' : 'en'} onChange={(event) => postAction('updateSetting', { key: 'language', value: event.target.value })}
+                  className="rounded border border-zinc-500/25 bg-white px-2 py-1 text-xs dark:bg-zinc-900">
+                  <option value="en">English</option><option value="fr">Français</option>
+                </select>
+              </label>
               {/* Automation */}
               <div className="space-y-1">
                 <div className="px-2.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
@@ -4172,7 +3828,7 @@ export function HubView({ state }: { state: AppState }) {
                   checked={state.settings.autoExportShop}
                   onChange={(v) => postAction('updateSetting', { key: 'autoExportShop', value: v })}
                   label="Auto-Export Build to In-Game Shop"
-                  description="Automatically creates a custom maylo item set in League shop in Champ Select & In-Game"
+                  description="Creates a reference item set during Champion Select"
                 />
                 <Switch
                   checked={state.settings.autoPage}
@@ -4185,8 +3841,30 @@ export function HubView({ state }: { state: AppState }) {
               {/* Modular Overlay Widgets */}
               <div className="space-y-1 border-t border-zinc-200/80 dark:border-white/[0.07] pt-4">
                 <div className="px-2.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                  In-Game Overlay Modules
+                  {french ? 'Overlay' : 'In-game overlay'} · {activeModeLabel}
                 </div>
+                <Button size="xs" variant="secondary" onClick={() => postAction('useMinimalOverlay')}>
+                  {french ? 'Profil minimal pour ce mode' : 'Minimal layout for this mode'}
+                </Button>
+                <details className="px-2.5 py-2">
+                  <summary className="cursor-pointer text-xs">{french ? 'Taille des panneaux' : 'Panel sizes'}</summary>
+                  <div className="mt-2 space-y-2">
+                    {[
+                      ...(isSR ? [{ key: 'perf_strip_center', label: french ? 'Statistiques personnelles' : 'Personal stats' }] : []),
+                      { key: 'build_hud', label: french ? 'Guide de build' : 'Build guide' },
+                      ...(!isSR && !isArena ? [{ key: 'champ_select_ribbon', label: french ? 'Sélection de champion' : 'Champion select' }] : []),
+                    ].map(({ key, label }) => {
+                      const scale = state.settings.widgetScale?.[key] ?? state.settings.scale ?? 1;
+                      return <label key={key} className="flex items-center gap-3 text-xs">
+                        <span className="flex-1">{label}</span>
+                        <input type="range" min={0.75} max={1.35} step={0.05} aria-label={label} value={scale}
+                          onChange={(event) => postAction('setWidgetScale', { panel: key, scale: Number(event.target.value) })} />
+                        <span className="w-9 text-right tabular-nums">{Math.round(scale * 100)}%</span>
+                      </label>;
+                    })}
+                  </div>
+                </details>
+
                 <Switch
                   checked={state.settings.overlay}
                   onChange={(v) => postAction('updateSetting', { key: 'overlay', value: v })}
@@ -4197,7 +3875,7 @@ export function HubView({ state }: { state: AppState }) {
                   checked={state.settings.showBuildOverlay}
                   onChange={(v) => postAction('updateSetting', { key: 'showBuildOverlay', value: v })}
                   label="Build Guide HUD"
-                  description="Summoner’s Rift, ARAM, Arena and Mayhem · next purchase, components and gold remaining"
+                  description="Show the opening items from the reference build. Open Alt+G for recipes."
                 />
                 <Switch
                   checked={state.settings.showPerfStrip}
@@ -4264,24 +3942,14 @@ export function HubView({ state }: { state: AppState }) {
                     </div>
                   </div>
                 )}
-                <Switch
-                  checked={state.settings.showRerollBar}
-                  onChange={(v) => postAction('updateSetting', { key: 'showRerollBar', value: v })}
-                  label="Reroll Reference Bar"
-                  description="Mayhem & Arena · recommended reroll targets while choosing an augment"
-                />
+
                 <Switch
                   checked={state.settings.showBenchBar}
                   onChange={(v) => postAction('updateSetting', { key: 'showBenchBar', value: v })}
-                  label="Smart ARAM / Mayhem Bench Bar"
-                  description="ARAM and Mayhem · ranks available bench champions during champion select"
+                  label={french ? 'Champions du banc' : 'Champions on the bench'}
+                  description={french ? 'Affiche le portrait et le tier de chaque champion disponible en sélection.' : 'Show each available champion portrait and tier during selection.'}
                 />
-                <Switch
-                  checked={state.settings.minimalHud}
-                  onChange={(v) => postAction('updateSetting', { key: 'minimalHud', value: v })}
-                  label="Ultra-Minimalist Build HUD"
-                  description="Collapses the in-game Build HUD to a single compact Next Buy pill"
-                />
+
               </div>
 
               {/* System & Custom Hotkeys */}
@@ -4352,7 +4020,6 @@ export function HubView({ state }: { state: AppState }) {
                     { field: 'sheet', label: 'In-Game Sheet', val: state.settings.hotkeySheet || 'G' },
                     { field: 'overlay', label: 'Toggle HUD', val: state.settings.hotkeyOverlay || 'M' },
                     { field: 'edit', label: 'Edit Layout', val: state.settings.hotkeyEdit || 'O' },
-                    { field: 'scan', label: 'Scan Augments', val: state.settings.hotkeyScan || 'A' },
                   ].map((hk) => (
                     <div
                       key={hk.field}
@@ -4364,6 +4031,7 @@ export function HubView({ state }: { state: AppState }) {
                       <div className="mt-1 flex items-center gap-1">
                         <span className="text-[11px] font-semibold text-zinc-400">Alt +</span>
                         <select
+                          aria-label={hk.label}
                           value={hk.val}
                           onChange={(e) =>
                             postAction('setHotkey', { field: hk.field, key: e.target.value })
@@ -4399,20 +4067,16 @@ export function HubView({ state }: { state: AppState }) {
               {/* Augment OCR & Calibration */}
               <div className="space-y-3 border-t border-zinc-200/80 dark:border-white/[0.07] pt-4">
                 <div className="px-2.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                  Augment OCR & Positioning
+                  Overlay Scale & Preview
                 </div>
-                <Switch
-                  checked={state.settings.ocr}
-                  onChange={(v) => postAction('updateSetting', { key: 'ocr', value: v })}
-                  label="Auto-Detect Augments (OCR)"
-                  description="Mayhem · reads card titles and centers the tier badges above them"
-                />
-                <Switch
-                  checked={state.settings.ocrAllModes}
-                  onChange={(v) => postAction('updateSetting', { key: 'ocrAllModes', value: v })}
-                  label="Scan augments outside Mayhem"
-                  description="Also scan in supported Summoner’s Rift and ARAM matches"
-                />
+                {hasAugments && (
+                  <Switch checked={state.settings.ocr}
+                    onChange={(value) => postAction('updateSetting', { key: 'ocr', value })}
+                    label={french ? 'Tiers sur les cartes d’augments' : 'Tiers on augment cards'}
+                    description={french ? 'Affiche la rareté et la lettre au-dessus de chaque carte détectée.' : 'Show rarity and tier with each detected card.'} />
+                )}
+
+
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 px-2.5 pt-1">
                   <div>
@@ -4423,7 +4087,7 @@ export function HubView({ state }: { state: AppState }) {
                       </span>
                     </div>
                     <input
-                      type="range"
+                      type="range" aria-label="Overlay Scale · Taille de l’overlay"
                       min={0.75}
                       max={1.35}
                       step={0.05}
@@ -4471,7 +4135,7 @@ export function HubView({ state }: { state: AppState }) {
                     {[
                       { id: 'sr_hud', label: 'SR HUD + Minimap' },
                       { id: 'bench', label: 'Bench Bar' },
-                      { id: 'altg', label: 'Alt+G Sheet' },
+                      { id: 'altg', label: 'Alt+G Guide' },
                     ].map((sc) => (
                       <Button
                         key={sc.id}
@@ -4588,7 +4252,6 @@ export function HubView({ state }: { state: AppState }) {
                 { key: 'Ctrl+Tab (hold)', desc: 'Drag & reposition overlay widgets (Tab stays free)' },
                 { key: `Alt+${state.settings.hotkeyEdit || 'O'}`, desc: 'Toggle persistent Overlay Edit & Minimap Resize mode' },
                 { key: `Alt+${state.settings.hotkeyOverlay || 'M'}`, desc: 'Show / hide all in-game overlay widgets' },
-                { key: `Alt+${state.settings.hotkeyScan || 'A'}`, desc: 'Force immediate Augment OCR scan' },
                 { key: 'Alt+L', desc: 'Open Live Match tab inside in-game overlay' },
                 { key: 'Esc', desc: 'Close in-game Command Overlay and return to game' },
               ].map((s) => (

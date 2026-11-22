@@ -5,7 +5,7 @@
 <h3 align="center">Native Windows companion &amp; transparent in-game overlay for League of Legends</h3>
 
 <p align="center">
-  Adaptive builds, live tier lists, EN/FR augment OCR and mode-scoped stats across <strong>Summoner’s Rift</strong>, <strong>Arena 2v2</strong>, <strong>ARAM</strong> and <strong>ARAM Mayhem</strong>.
+  Prepare a build during champion select, check item recipes and augment tiers in game, and review your match in the Hub. Supports <strong>Summoner’s Rift</strong>, <strong>Arena 2v2</strong>, <strong>ARAM</strong> and <strong>ARAM Mayhem</strong>.
 </p>
 
 <p align="center">
@@ -21,7 +21,7 @@
 </p>
 
 <p align="center">
-  <sub>Windows 10 / 11 x64 &nbsp;·&nbsp; No Overwolf &nbsp;·&nbsp; No ads &nbsp;·&nbsp; Signed-free open source</sub>
+  <sub>Windows 10 / 11 x64 &nbsp;·&nbsp; No Overwolf &nbsp;·&nbsp; No ads &nbsp;·&nbsp; Open source</sub>
 </p>
 
 <br />
@@ -31,19 +31,25 @@
 Everything renders in a borderless click-through WebView2 layer that stays out of the way until you need it.
 
 <p align="center">
-  <img src="docs/media/overlay-tour.gif" width="880" alt="maylo overlay tour showing the Champ Select Tier List drawer, 4-card Augment OCR, Alt+G command sheet and Summoner's Rift HUD" />
+  <img src="docs/media/overlay-tour.gif" width="880" alt="maylo overlay tour showing the Champ Select Tier List drawer, Alt+G reference guide and Summoner's Rift HUD" />
 </p>
 
 - **Champ Select Tier List drawer** — pinned on the right edge of Champion Select with instant search, `All / S+ / S / A` filters, role filters in Ranked SR, and cursor-aware click-through so moving back onto the champion grid never blocks picks or bans.
-- **Floating Champion Cards & Bench ranking** — ranks 2 to 5 spawned ARAM / ARAM Mayhem champion cards and bench rolls directly in Champion Select using the observed win rate for that mode.
-- **EN / FR Augment OCR (ARAM Mayhem & Arena 2v2)** — detects 3 or 4 augment cards in ~75 ms, places Tier, win rate, synergy and reroll targets above each card, and dismisses cleanly on pick without triggering during rerolls.
-- **Summoner’s Rift HUD** — next buy with component tracking, live CS/min & KP strip, official public objective timers, and `Tab`-hoverable `RED / BLUE` jungle clear routes while keeping the scoreboard click-through.
+- **Champion cards and bench** — the ARAM and Mayhem overlays show a compact tier badge for revealed cards and available bench champions. The benchmark labels your own champion during play.
+- **Alt+G reference** — browse items and their recipes, saved build variants, and the Mayhem or Arena augment catalog. Search augments by name, effect or rarity and sort by observed pick rate.
+- **Summoner’s Rift HUD** — opening items from the reference guide, personal CS/min and KDA, visible objective information, and movable panels.
 
 <br />
 
 ## Hub & Arena 2v2
 
 The desktop Hub automatically follows your active queue — including Practice Tool and Custom games — and keeps Overview, Tier Lists, Match History and Patch Notes scoped to the active mode.
+
+1. **Prepare your match.** Home opens the build for the champion detected in the League client. The tier list stays available during champion select. Choose a saved build for this champion, mode and role in the Hub to make it your guide in Alt+G.
+2. **Look up items and augments in game.** Alt+G opens the chosen build and its recipes. In Mayhem and Arena, search augments by effect or rarity and read their tiers within each rarity.
+3. **Review your match.** Open the latest match from Home or choose one from History. Check your final items, runes and augments where available, or filter observed timeline events by items and objectives. Save a private note or open a linked local clip in your video player.
+
+The Hub also compares recent matches, logs observed Solo/Duo rank, and reads your skin collection on request. Settings search jumps to the relevant control.
 
 <p align="center">
   <img src="docs/media/hub-tour.gif" width="880" alt="maylo desktop Hub cycling through Overview, Arena 2v2 Tier List, Arena Prismatic builds, Ranked SR builds and Patch Notes" />
@@ -73,8 +79,7 @@ The desktop Hub automatically follows your active queue — including Practice T
 | `Alt+G` or `F9` | Toggle centered in-game command sheet (Build, Augments, Live Match) |
 | `Tab` *(hold)* | Hover minimap `RED / BLUE` clear toggle or left HUD controls without losing game focus |
 | `Ctrl+Tab` *(hold)* | Drag &amp; reposition overlay widgets |
-| `Alt+O` | Toggle persistent overlay edit &amp; minimap resize mode |
-| `Alt+A` | Trigger immediate Augment OCR scan |
+| `Alt+O` | Edit the overlay layout for the current mode |
 | `Alt+M` | Show or hide all in-game overlays |
 | `Alt+L` | Open Live Match view |
 | `Esc` | Close in-game sheet or Champ Select Tier List drawer |
@@ -83,17 +88,26 @@ The desktop Hub automatically follows your active queue — including Practice T
 
 ## Riot Policy & Vanguard
 
-maylo is built to stay strictly compliant with Riot Games’ Third-Party Applications policy and Vanguard:
+Maylo is an independent project. Riot Games has not endorsed Maylo.
 
-- **Zero memory access or hooks** — no DLL injection, no DirectX/OpenGL hooks, no kernel drivers, and no `OpenProcess` / `ReadProcessMemory` / `AttachThreadInput` calls.
-- **Zero gameplay or client automation** — no simulated input (`SendInput` / `mouse_event` / `keybd_event`), no Auto-Accept, and no Enemy Summoner Spell / Ultimate cooldown tracker.
-- **Official local endpoints only** — reads Riot’s local LCU &amp; Live Client Data API (`127.0.0.1:2999`) for runes, summoner spells, item-set export, scoreboard stats and public objective events, combined with standard Windows OCR for card titles.
+- Build and augment guides are reference material. The augment catalog shows effects, rarity and reported selection rates. Arena item views show pick rates where available.
+- Maylo reads the local Game Client API for personal match observations. The local League Client API provides account data, match history, Solo/Duo LP and the skin inventory. Optional item and rune imports use the League Client API before play.
+- The card overlay and Alt+G guide use the same champion-specific tiers, grouped by rarity. Each tier is based on the reported outcome adjusted for match count, relative to the rarity median. A question mark indicates insufficient data. These changes have not yet been reviewed by Riot.
+
+| Integration | Local endpoints |
+| --- | --- |
+| Game state and visible objectives | `GET /liveclientdata/allgamedata`, `GET /lol-gameflow/v1/session`, `GET /lol-gameflow/v1/gameflow-phase`, `GET /lol-lobby/v2/lobby` |
+| Champion selection and reference assets | `GET /lol-champ-select/v1/session`, `GET /lol-champ-select/v1/current-champion`, `GET /lol-champ-select/v1/pickable-champion-ids`, `GET /lol-champ-select/v1/subset-champion-list`, `GET /lol-game-data/assets/v1/{champion-summary,cherry-augments,items}.json` |
+| Personal review, rank, and collection | `GET /lol-summoner/v1/current-summoner`, `GET /lol-match-history/v1/products/lol/current-summoner/matches`, `GET /lol-ranked/v1/current-ranked-stats`, `GET /lol-champions/v1/inventories/{summonerId}/champions` |
+| Before-match loadout import | `PATCH /lol-champ-select/v1/session/my-selection`, `GET/PUT /lol-item-sets/v1/item-sets/{summonerId}/sets`, `GET/POST /lol-perks/v1/pages`, `PUT /lol-perks/v1/pages/{id}`, `PUT /lol-perks/v1/currentpage` |
+
+See the [Riot Developer policies](https://developer.riotgames.com/policies/general) and the [League of Legends game policy](https://developer.riotgames.com/docs/lol#game-policy).
 
 <br />
 
 ## Install on Windows
 
-1. Download **`MAYLO-Setup.exe`** from the [latest release](https://github.com/Lysprd/maylo-league-overlay/releases/latest) *(requires Windows 10/11 x64 and [Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/))*.
+1. Download **`MAYLO-v<version>-Setup.exe`** from the [latest release](https://github.com/Lysprd/maylo-league-overlay/releases/latest) *(requires Windows 10/11 x64 and [Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/))*.
 2. Set League of Legends video mode to **Borderless** for the transparent in-game overlay.
 3. Updates download automatically in the background with SHA-256 verification and atomic rollback — click **Restart &amp; Update** whenever you are out of a match.
 

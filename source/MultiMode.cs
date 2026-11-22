@@ -203,11 +203,13 @@ namespace MayhemCompanion {
       var td = Json.D(treeObj);
       int tid = Json.I(td, "id");
       if (tid > 0) DDragonRunes[tid] = new RuneMeta { Id = tid, Name = Json.S(td, "name"), Icon = "https://ddragon.leagueoflegends.com/cdn/img/" + Json.S(td, "icon") };
+      int slot = 0;
       foreach (var slotObj in Json.A(td, "slots")) {
        foreach (var rObj in Json.A(Json.D(slotObj), "runes")) {
         var rd = Json.D(rObj); int rid = Json.I(rd, "id");
-        if (rid > 0) DDragonRunes[rid] = new RuneMeta { Id = rid, Name = Json.S(rd, "name"), Icon = "https://ddragon.leagueoflegends.com/cdn/img/" + Json.S(rd, "icon") };
+        if (rid > 0) DDragonRunes[rid] = new RuneMeta { Id = rid, Style = tid, Slot = slot, Name = Json.S(rd, "name"), Icon = "https://ddragon.leagueoflegends.com/cdn/img/" + Json.S(rd, "icon") };
        }
+       slot++;
       }
      }
      var shards = new Dictionary<int, Tuple<string, string>> {
@@ -368,22 +370,25 @@ namespace MayhemCompanion {
    return map;
   }
 
+  public static List<TierListEntry> MayhemTierList(IEnumerable<Champion> champions) {
+   int rank = 1;
+   var result = new List<TierListEntry>();
+   foreach (var champion in (champions ?? Enumerable.Empty<Champion>()).Where(c => c.Win > 0).OrderByDescending(c => c.Win)) {
+    int id;
+    ChampIdBySlug.TryGetValue(champion.Slug, out id);
+    result.Add(new TierListEntry {
+     Id = id, Slug = champion.Slug, Name = champion.Name, Icon = ChampIconOf(champion),
+     Role = "MAYHEM", Tier = champion.Tier, Rank = rank++, WinRate = champion.Win, PickRate = champion.Pick
+    });
+   }
+   return result;
+  }
+
   public static async Task<List<TierListEntry>> LoadTierList(string modeKey, string roleFilter, string elo, List<Champion> mayhemChamps, bool force = false) {
    await EnsureDDragon(mayhemChamps);
    var result = new List<TierListEntry>();
 
-   if (modeKey == "MAYHEM") {
-    int rank = 1;
-    foreach (var c in (mayhemChamps ?? new List<Champion>()).OrderByDescending(x => x.Win)) {
-     int cid = 0; ChampIdBySlug.TryGetValue(c.Slug, out cid);
-     result.Add(new TierListEntry {
-      Id = cid, Slug = c.Slug, Name = c.Name, Icon = ChampIconOf(c),
-      Role = "MAYHEM", Tier = String.IsNullOrEmpty(c.Tier) ? "B" : c.Tier,
-      Rank = rank++, WinRate = c.Win, PickRate = c.Pick, BanRate = 0, Kda = 0, Games = 0
-     });
-    }
-    return result;
-   }
+   if (modeKey == "MAYHEM") return MayhemTierList(mayhemChamps);
 
    string safeElo = String.IsNullOrEmpty(elo) ? "emerald_plus" : elo.ToLowerInvariant();
    if (modeKey == "ARENA") {

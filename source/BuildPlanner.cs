@@ -96,6 +96,26 @@ namespace MayhemCompanion {
    return baseline + (stat.Rate - baseline) * stat.Games / (stat.Games + 250.0);
   }
 
+  public static Dictionary<int, string> AugmentTiers(IEnumerable<Stat> catalog, int minGames) {
+   var result = new Dictionary<int, string>();
+   var groups = catalog.Where(stat => stat.Id > 0 && stat.Games >= minGames && stat.Rate > 0 && stat.Rate <= 100)
+    .GroupBy(stat => TierLogic.RarityKey(stat.Rarity));
+   foreach (var group in groups) {
+    var cards = group.GroupBy(stat => stat.Id).Select(duplicates => duplicates.OrderByDescending(stat => stat.Games).First())
+     .OrderBy(stat => stat.Rate).ToList();
+    // A rarity needs enough comparable augments to establish a reference.
+    if (group.Key == "" || cards.Count < 5) continue;
+    int middle = cards.Count / 2;
+    double median = (cards[(cards.Count - 1) / 2].Rate + cards[middle].Rate) / 2;
+    foreach (var card in cards) {
+     double delta = Score(card, median) - median;
+     result[card.Id] = delta >= 5 ? "S+" : delta >= 3 ? "S" : delta >= 1 ? "A" :
+      delta >= -1 ? "B" : delta >= -3 ? "C" : "D";
+    }
+   }
+   return result;
+  }
+
   public static Stat Best(IEnumerable<Stat> offered, double baseline, int minGames, out string reason) {
    var cards = offered.Where(x => x != null).ToList();
    var ranked = cards.Where(x => x.Games >= minGames && x.Rate > 0 && x.Rate <= 100)
@@ -144,7 +164,7 @@ namespace MayhemCompanion {
    EnemyThreatProfile threats = null,
    Func<int, string> itemNameLookup = null,
    IEnumerable<int> pinnedItems = null,
-   Func<int, double> componentProgress = null) {
+   Func<int, double> componentProgress = null, bool useItemOutcomes = true) {
 
    var owned = new HashSet<int>(inventory.Select(Canonical));
    var bootSet = new HashSet<int>(boots.Select(Canonical));
@@ -190,7 +210,7 @@ namespace MayhemCompanion {
     if (bootSet.Contains(cid) && ownsBoots) continue;
     if (delayDominik && cid == 3036 && !pinned.Contains(cid)) continue;
     double pick = Math.Max(0, Parser.Number(stat.Pick));
-    double score = EvidenceScore(stat.Rate, pick, stat.Games, baseline);
+    double score = EvidenceScore(useItemOutcomes ? stat.Rate : 0, pick, stat.Games, baseline);
     if (stat.CoreSlot > 0 && stat.CoreSlot <= 3)
      score += 5 - 2 * Math.Abs(stat.CoreSlot - Math.Min(3, nonBootOwned + 1));
     if (nonBootOwned == 0 && stat.CoreSlot == 0 && !bootSet.Contains(cid))
@@ -287,9 +307,9 @@ namespace MayhemCompanion {
      else if (stat.CoreSlot == 2) { reasons.Add("Core 2nd item power spike"); shortTip = "2nd core spike"; }
      else if (stat.CoreSlot == 3) { reasons.Add("Core 3rd item finisher"); shortTip = "3rd core spike"; }
      else if (stat.CoreSlot >= 4) { reasons.Add("Late-game situational spike"); shortTip = "Late situational"; }
-     else if (pick >= 35 && stat.Rate >= baseline + 1.5) { reasons.Add("Core staple · high win & pick"); shortTip = "Core staple"; }
+     else if (useItemOutcomes && pick >= 35 && stat.Rate >= baseline + 1.5) { reasons.Add("Core staple · high win & pick"); shortTip = "Core staple"; }
      else if (pick >= 25) { reasons.Add("Most popular core item"); shortTip = "Popular core"; }
-     else { reasons.Add("Reported item results"); shortTip = "Item stats"; }
+     else { reasons.Add(useItemOutcomes ? "Reported item results" : "Observed item selections"); shortTip = "Item stats"; }
     }
 
     bool isBoot = bootSet.Contains(cid);

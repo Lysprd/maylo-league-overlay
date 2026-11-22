@@ -20,6 +20,7 @@ namespace MayhemCompanion {
   public string LastDragonType = "";
   public List<LivePlayer> Players = new List<LivePlayer>();
   public List<string> Events = new List<string>();
+  public List<MatchMoment> ReviewEvents = new List<MatchMoment>();
   public List<ObjectiveTimer> Objectives = new List<ObjectiveTimer>();
   public List<ObjectiveTimer> Inhibitors = new List<ObjectiveTimer>();
 
@@ -98,6 +99,13 @@ namespace MayhemCompanion {
    foreach (var e in allEvents) {
     string type = Json.S(e, "EventName");
     double et = Number(e, "EventTime");
+    if (type == "DragonKill" || type == "BaronKill" || type == "HeraldKill" || type == "HordeKill" ||
+        type == "TurretKilled" || type == "InhibKilled") {
+     result.ReviewEvents.Add(new MatchMoment {
+      Key = "event:" + Json.S(e, "EventID") + ":" + type + ":" + et,
+      Seconds = et, Kind = type, Detail = Json.S(e, "DragonType")
+     });
+    }
     if (type == "DragonKill") {
      lastDragon = et;
      string dt = Json.S(e, "DragonType");

@@ -5,9 +5,6 @@ export interface Champion {
   slug: string;
   tier: string;
   win: number;
-  isCard?: boolean;
-  upgradeDelta?: number;
-  bestPick?: boolean;
   pick: number;
   icon: string;
   assetKey: string;
@@ -24,13 +21,18 @@ export interface StatItem {
   icon: string;
   games: number;
   rarity: string;
-  tier?: string;
   price?: number;
-  preference?: number;
-  tracked?: boolean;
-  recommended?: boolean;
-  synergy?: { partner: string; rate: number } | null;
-  topCombo?: { partner: string; rate: number } | null;
+}
+
+export interface AugmentEntry {
+  tier?: string | null;
+  id: number;
+  name: string;
+  icon: string;
+  rarity: string;
+  pick: string;
+  games: number;
+  description?: string;
 }
 
 export interface ComponentStatus {
@@ -58,7 +60,7 @@ export interface BuildStep {
 
 export interface OfferedSlot {
   slot: number;
-  stat: StatItem | null;
+  stat: AugmentEntry | null;
   x: number;
   y: number;
 }
@@ -144,6 +146,7 @@ export interface LivePlayer {
   champion: string;
   championName: string;
   championIcon: string;
+  championTier?: string;
   team: string;
   position?: string;
   level: number;
@@ -209,6 +212,11 @@ export interface MatchRecord {
   duration: number;
   time: string;
   dateText: string;
+  created?: number;
+  note?: string;
+  clipName?: string;
+  timeline?: { seconds: number; kind: string; detail: string; itemName: string }[];
+  runes?: { id: number; name: string; icon: string }[];
   damage: number;
   gold: number;
   cs: number;
@@ -230,23 +238,12 @@ export interface ItemDetail {
   pickRate?: string;
 }
 
-export interface AugmentDetail {
-  id: number;
-  name: string;
-  icon: string;
-  rarity: string;
-  tier: string;
-  rate: number;
-  pick: string;
-  games: number;
-  delta: number;
+export interface AugmentDetail extends AugmentEntry {
   description: string;
-  preference: number;
-  tracked: boolean;
-  pairings: { id: number; name: string; icon: string; rate: number }[];
 }
 
 export interface AppSettings {
+  language?: "fr" | "en";
   connected: boolean;
   overlay: boolean;
   showBuildOverlay: boolean;
@@ -275,6 +272,7 @@ export interface AppSettings {
   buildFocus: string;
   theme: 'light' | 'dark';
   scale: number;
+  widgetScale?: Record<string, number>;
   badgeOffsetY: number;
   minimapScale: number;
   minimapLeft: boolean;
@@ -283,13 +281,14 @@ export interface AppSettings {
   panels: Record<string, { x: number; y: number }>;
 }
 
-export interface ChampCardOffer {
+export interface DraftChampion {
   name: string;
   slug: string;
   tier: string;
-  win: number;
-  patchTag?: string;
-  bestPick?: boolean;
+  icon: string;
+}
+
+export interface ChampCardOffer extends Omit<DraftChampion, 'icon'> {
   x: number;
   y: number;
 }
@@ -302,6 +301,10 @@ export interface PortraitHit {
 
 export interface AppState {
   version: string;
+  collection?: { id: number; name: string; champion: string; tile: string; owned: boolean }[];
+  collectionBusy?: boolean;
+  collectionFailed?: boolean;
+  rankHistory?: { created: number; tier: string; division: string; lp: number }[];
   ddVersion?: string;
   pinned?: boolean;
   bootReady: boolean;
@@ -324,6 +327,8 @@ export interface AppState {
   editing: boolean;
   overlayVisible: boolean;
   champTierOpen?: boolean;
+  champSelectMode?: GameModeKey;
+  champSelectTierList?: TierListEntry[] | null;
   augmentsVisible: boolean;
   refreshingOffers: boolean;
   connectionText: string;
@@ -351,7 +356,8 @@ export interface AppState {
     gold: number;
     owned: number[];
     planned: number[];
-    bench: Champion[];
+    bench: DraftChampion[];
+    pickedChampion?: DraftChampion | null;
     champCards?: ChampCardOffer[];
     team: Champion[];
     live: LiveSummary;
@@ -359,6 +365,7 @@ export interface AppState {
   buildSummary: string;
   enemyThreats?: string[];
   buildPath: BuildStep[];
+  referenceItems?: { id: number; name: string; icon: string; total: number; components: { id: number; name: string; price: number; icon: string }[] }[];
   starters: StatItem[];
   prismaticItems?: StatItem[];
   boots: StatItem[];
@@ -366,16 +373,13 @@ export interface AppState {
   bestItems: StatItem[];
   teammates: StatItem[];
   matchups: StatItem[];
-  combos: StatItem[];
   gameLengths?: { minutes: number; winRate: number }[];
   patchNotes?: PatchNotesData;
   runes: RunePage | null;
+  runeAlternatives?: RuneMeta[][];
   skills: SkillOrder | null;
   offered: OfferedSlot[];
-  topAugments: Record<string, StatItem[]>;
-  offerAdvice?: string;
-  trackedAugments: StatItem[];
-  allAugments: StatItem[];
+  allAugments: AugmentEntry[];
   portraitPositions: PortraitHit[];
   history: MatchRecord[];
   note: string;

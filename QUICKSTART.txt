@@ -5,7 +5,7 @@ Modes: Summoner's Rift · Arena 2v2 · ARAM · ARAM Mayhem · Practice Tool / Cu
 
 Install
 -------
-1. Download the latest MAYLO-Setup.exe from:
+1. Download the latest MAYLO-v<version>-Setup.exe from:
    https://github.com/Lysprd/maylo-league-overlay/releases/latest
 2. Run the setup and open maylo from its desktop or Start menu shortcut.
    Background updates download automatically with SHA-256 verification;
@@ -17,13 +17,23 @@ Requirements
 - Windows 10/11 x64 and Microsoft Edge WebView2 Runtime
 - League of Legends set to Borderless video mode for the in-game overlay
 
+First session
+-------------
+- In champion select, open the detected champion’s build from Home.
+  Save a variant and choose it in the Alt+G selector to use it in game.
+- In Mayhem or Arena, search augments by name, effect, or rarity.
+  Tiers on the cards and in Alt+G compare augments of the same rarity.
+  A question mark means the sample is too small for a tier.
+- Open your latest game from Home or choose one in History. Filter the
+  timeline by items or objectives, save a note, or link a local clip.
+- Search Settings for a control, or reopen the first-launch guide there.
+
 Shortcuts
 ---------
-Alt+G / F9      Toggle in-game command sheet (Build, Augments, Live)
+Alt+G / F9      Open the item guide, augment catalog, and scoreboard
 Tab (hold)      Hover minimap RED/BLUE clear toggle or left HUD controls
 Ctrl+Tab (hold) Drag & reposition overlay widgets
 Alt+O           Toggle persistent overlay edit & minimap resize mode
-Alt+A           Force immediate Augment OCR scan
 Alt+M           Show or hide all overlays
 Alt+L           Open Live Match view
 Esc             Close in-game sheet or Champ Select Tier List drawer

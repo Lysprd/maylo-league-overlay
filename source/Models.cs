@@ -38,7 +38,7 @@ namespace MayhemCompanion {
  }
 
  public class RuneMeta {
-  public int Id;
+  public int Id, Style, Slot = -1;
   public string Name = "";
   public string Icon = "";
  }
@@ -122,12 +122,13 @@ namespace MayhemCompanion {
  public class OverlayPanelPosition { public double X, Y; }
 
  public class V2Settings {
+  public string Language = "";
   public int LayoutVersion = 0;
   public bool OnboardingSeen = false;
   public bool Connected = true, Overlay = true, Ocr = true, OcrAllModes = true, AutoLayout = true, AutoPage = true;
   public bool ShowBuildOverlay = true, ShowRerollBar = true, ShowSkillAdvisor = true, ShowPerfStrip = true, ShowJungleWidget = true;
   public bool ShowBenchBar = true, MinimalHud = false;
-  public bool AutoSpells = true, AutoRunes = true, AutoExportShop = true, MinimapLeft = false;
+  public bool AutoSpells, AutoRunes, AutoExportShop, MinimapLeft;
   public bool LaunchWithWindows = false, MinimizeToTray = true;
   public string FlashKey = "F", TierElo = "emerald_plus", TierRole = "ALL";
   public string HotkeySheet = "G", HotkeyOverlay = "M", HotkeyEdit = "O", HotkeyScan = "A";
@@ -141,9 +142,17 @@ namespace MayhemCompanion {
   public List<int> TrackedAugments = new List<int>();
   public Dictionary<string, int> AugmentPreferences = new Dictionary<string, int>();
   public Dictionary<string, string> Notes = new Dictionary<string, string>();
+  public Dictionary<string, string> MatchNotes = new Dictionary<string, string>();
+  public Dictionary<string, Dictionary<string, OverlayPanelPosition>> ModePanels = new Dictionary<string, Dictionary<string, OverlayPanelPosition>>();
+  public Dictionary<string, Dictionary<string, bool>> ModePanelVisibility = new Dictionary<string, Dictionary<string, bool>>();
+  public Dictionary<string, Dictionary<string, double>> ModeWidgetScale = new Dictionary<string, Dictionary<string, double>>();
+  public Dictionary<string, double> ModePanelScale = new Dictionary<string, double>();
+  public Dictionary<string, List<MatchMoment>> MatchTimelines = new Dictionary<string, List<MatchMoment>>();
+  public Dictionary<string, string> MatchClips = new Dictionary<string, string>();
  }
 
  public class GameSnapshot {
+  public string MatchId = "";
   public string Phase = "Disconnected", Champion = "", Mode = "", AssignedRole = "";
   public int QueueId = 0;
   public string ModeKey { get { return GameBridge.DetectModeKey(Mode, QueueId, Mayhem); } }
@@ -165,6 +174,14 @@ namespace MayhemCompanion {
   public static Dictionary<string, object> D(object o) { return o as Dictionary<string, object>; }
   public static object[] Array(object value) { var seq = value as System.Collections.IEnumerable; return seq == null || value is string ? new object[0] : seq.Cast<object>().ToArray(); }
   public static object[] A(Dictionary<string, object> d, string key) { return d != null && d.ContainsKey(key) ? Array(d[key]) : new object[0]; }
+ }
+
+ public static class ChampSelectOverlayLayout {
+  public static bool ContainsTierListPointer(double x, double y, int width, int height, bool open) {
+   if (width < 400 || height < 250) return false;
+   double panelWidth = Math.Min(open ? .28 : .18, (open ? .32 : .20) * height / width);
+   return x >= .99 - panelWidth && x <= .99 && y >= .12 && y <= (open ? .90 : .17);
+  }
  }
 
  public static class TierLogic {

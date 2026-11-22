@@ -133,6 +133,8 @@ namespace MayhemCompanion {
   static void ApplyFlowSession(GameSnapshot snapshot, Dictionary<string, object> flow, bool preserveExistingMode) {
    if (snapshot == null || flow == null) return;
    var gd = flow.ContainsKey("gameData") ? Json.D(flow["gameData"]) : null;
+   long matchId = Json.L(gd, "gameId");
+   if (matchId > 0) snapshot.MatchId = matchId.ToString(System.Globalization.CultureInfo.InvariantCulture);
    var q = gd != null && gd.ContainsKey("queue") ? Json.D(gd["queue"]) : null;
    var map = flow.ContainsKey("map") ? Json.D(flow["map"]) : null;
    if (q != null) snapshot.QueueId = Json.I(q, "id");
@@ -276,36 +278,25 @@ namespace MayhemCompanion {
    if (page == null || page.Perks.Count < 6) throw new Exception("No rune page available for this mode.");
    var pages = Json.Serializer().DeserializeObject(await LcuGet("/lol-perks/v1/pages")) as object[];
    var pageDicts = (pages ?? new object[0]).Select(Json.D).Where(d => d != null).ToList();
-   foreach (var d in pageDicts) {
-    if (Json.S(d, "name").StartsWith("maylo", StringComparison.OrdinalIgnoreCase) && Json.S(d, "isDeletable").Equals("true", StringComparison.OrdinalIgnoreCase)) {
-     string pid = Json.S(d, "id");
-     if (pid != "") try { await LcuRequest("DELETE", "/lol-perks/v1/pages/" + pid); } catch { }
-    }
+   const string name = "maylo import";
+   var existing = pageDicts.FirstOrDefault(d => Json.S(d, "isEditable").Equals("true", StringComparison.OrdinalIgnoreCase) &&
+     (Json.S(d, "name") == name || ((page.Name ?? "").StartsWith("maylo", StringComparison.OrdinalIgnoreCase) && Json.S(d, "name") == page.Name)));
+   int id = Json.I(existing, "id");
+   var body = Json.D(existing);
+   body = body == null ? new Dictionary<string, object>() : new Dictionary<string, object>(body);
+   body["name"] = name;
+   body["primaryStyleId"] = page.PrimaryStyle;
+   body["subStyleId"] = page.SecondaryStyle;
+   body["selectedPerkIds"] = page.Perks.ToArray();
+   body["current"] = true;
+   if (id > 0) {
+    await LcuRequest("PUT", "/lol-perks/v1/pages/" + id, Json.Serializer().Serialize(body));
+    await LcuRequest("PUT", "/lol-perks/v1/currentpage", Json.Serializer().Serialize(id));
+   } else {
+    await LcuRequest("POST", "/lol-perks/v1/pages", Json.Serializer().Serialize(body));
    }
-   string body = Json.Serializer().Serialize(new {
-    name = page.Name,
-    primaryStyleId = page.PrimaryStyle,
-    subStyleId = page.SecondaryStyle,
-    selectedPerkIds = page.Perks.ToArray(),
-    current = true
-   });
-   bool posted = false;
-   Exception postErr = null;
-   try {
-    await LcuRequest("POST", "/lol-perks/v1/pages", body);
-    posted = true;
-   } catch (Exception ex) { postErr = ex; }
-   if (!posted) {
-    // Fallback when Riot custom rune page limit is full (e.g. 2/2 or 5/5): replace the active editable page!
-    var target = pageDicts.FirstOrDefault(d => Json.S(d, "current").Equals("true", StringComparison.OrdinalIgnoreCase) && Json.S(d, "isDeletable").Equals("true", StringComparison.OrdinalIgnoreCase))
-     ?? pageDicts.FirstOrDefault(d => Json.S(d, "isDeletable").Equals("true", StringComparison.OrdinalIgnoreCase));
-    if (target != null) {
-     string tid = Json.S(target, "id");
-     if (tid != "") await LcuRequest("DELETE", "/lol-perks/v1/pages/" + tid);
-     await LcuRequest("POST", "/lol-perks/v1/pages", body);
-    } else if (postErr != null) throw postErr;
-   }
-   return "Imported rune page \"" + page.Name + "\" into League!";
+   return "Imported the Maylo rune page into League.";
+
   }
 
   public async Task ApplySpells(string champion, int[] pair, string flashKey = "F") {
@@ -350,6 +341,19 @@ namespace MayhemCompanion {
    var profile = ProfileParser.Account(Json.Serializer().Deserialize<Dictionary<string, object>>(await LcuGet("/lol-summoner/v1/current-summoner")));
    if (profile.Key == "") throw new Exception("No connected account found.");
    return profile;
+  }
+
+  public async Task<List<CollectionSkin>> ReadSkinCollection(AccountProfile account) {
+   long summonerId;
+   if (account == null || !Int64.TryParse(account.SummonerId, out summonerId) || summonerId <= 0)
+    return new List<CollectionSkin>();
+   var response = await LcuGet("/lol-champions/v1/inventories/" + summonerId + "/champions");
+   return ProfileParser.Skins(Json.Serializer().DeserializeObject(response));
+  }
+
+  public async Task<RankSnapshot> ReadSoloRank() {
+   var root = Json.D(Json.Serializer().DeserializeObject(await LcuGet("/lol-ranked/v1/current-ranked-stats")));
+   return ProfileParser.SoloRank(root, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
   }
 
   public async Task<List<MatchRecord>> ReadHistory(AccountProfile account, int count) {
