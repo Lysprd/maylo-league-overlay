@@ -24,7 +24,8 @@ import { Status } from '@/components/ui/status';
 import { SegmentedTabs } from '@/components/ui/segmented-tabs';
 import { Button, Keycap, TierBadge } from '@/components/ui/primitives';
 import { postAction } from '@/lib/bridge';
-import { AugmentGuide, AugmentTier } from '@/components/AugmentGuide';
+import { SituationalItemGuide } from '@/components/SituationalItemGuide';
+import { AugmentGuide, AugmentPickRate, AugmentTier } from '@/components/AugmentGuide';
 import { benchmarkMetrics, draftDrawerStyle, OverlayLayoutPreview } from '@/components/OverlayLayoutPreview';
 import { useSavedBuilds } from '@/components/HubTools';
 import { cn, fmtGold, fmtPct, iconUrl, itemIconUrl, parsePct, spellIconUrl } from '@/lib/utils';
@@ -274,6 +275,7 @@ function AugmentBadgeCard({ stat, width, scale, french }: { stat: AugmentEntry; 
       <div className="min-w-0 flex-1">
         <p className="truncate text-xs font-semibold text-white">{stat.name}</p>
         <p className="text-[10px] text-zinc-400">{(french && ({ Gold: 'Or', Silver: 'Argent', Prismatic: 'Prismatique' } as Record<string, string>)[stat.rarity]) || stat.rarity}</p>
+        <AugmentPickRate pick={stat.pick} french={french} className="block text-[10px] leading-tight text-zinc-300" />
       </div>
       <AugmentTier augment={stat} size="md" dark french={french} />
     </GlassCard>
@@ -373,11 +375,19 @@ function SkillOrderMatrix({
 }
 
 const ROLE_LIST = [
-  { key: 'top', label: 'Top' },
-  { key: 'jungle', label: 'Jungle' },
-  { key: 'mid', label: 'Mid' },
-  { key: 'adc', label: 'ADC' },
-  { key: 'support', label: 'Support' },
+  { key: 'top', fr: 'Top', en: 'Top' },
+  { key: 'jungle', fr: 'Jungle', en: 'Jungle' },
+  { key: 'mid', fr: 'Mid', en: 'Mid' },
+  { key: 'adc', fr: 'ADC', en: 'ADC' },
+  { key: 'support', fr: 'Support', en: 'Support' },
+] as const;
+
+const BUILD_FOCUS = [
+  { key: 'Adaptive', fr: 'Adaptatif', en: 'Adaptive' },
+  { key: 'Ability power', fr: 'Puissance (AP)', en: 'Ability power' },
+  { key: 'On-hit', fr: 'À l’impact', en: 'On-hit' },
+  { key: 'Critical strike', fr: 'Critique', en: 'Critical strike' },
+  { key: 'Survival', fr: 'Survie', en: 'Survival' },
 ] as const;
 
 // Match the item ID normalization used by the native BuildPlanner.
@@ -434,7 +444,6 @@ function InGameCommandSheet({ state, builds }: { state: AppState; builds: Return
   const me = useMemo(() => live.players.find((p) => p.me) ?? null, [live.players]);
   const minutes = Math.max(1 / 60, (live.seconds || 0) / 60);
   const csPerMin = me && live.seconds > 20 ? me.cs / minutes : 0;
-  const focuses = ['Adaptive', 'Ability power', 'On-hit', 'Critical strike', 'Survival'];
 
   const modeLabel = (!state.preview && state.game.modeLabel) || (
     state.activeMode === 'MAYHEM'
@@ -637,18 +646,12 @@ function InGameCommandSheet({ state, builds }: { state: AppState; builds: Return
               value={tab}
               onChange={(v) => postAction('setInGameSheetTab', { tab: v })}
               className="border-white/[0.1] bg-white/[0.04]"
-              options={
-                hasAugments
-                  ? [
-                      { value: 'build', label: french ? 'Build et compétences' : 'Build & Skills', icon: <Swords className="size-3" /> },
-                      { value: 'augments', label: 'Augments', icon: <Sparkles className="size-3" /> },
-                      { value: 'live', label: french ? 'Partie en cours' : 'Live Match', icon: <Timer className="size-3" /> },
-                    ]
-                  : [
-                      { value: 'build', label: french ? 'Build et compétences' : 'Build & Skills', icon: <Swords className="size-3" /> },
-                      { value: 'live', label: french ? 'Partie en cours' : 'Live Match', icon: <Timer className="size-3" /> },
-                    ]
-              }
+              options={[
+                { value: 'build', label: french ? 'Build et compétences' : 'Build & Skills', icon: <Swords className="size-3" /> },
+                { value: 'situational', label: french ? 'Situationnels' : 'Situational', icon: <Compass className="size-3" /> },
+                ...(hasAugments ? [{ value: 'augments' as const, label: 'Augments', icon: <Sparkles className="size-3" /> }] : []),
+                { value: 'live', label: french ? 'Partie en cours' : 'Live Match', icon: <Timer className="size-3" /> },
+              ]}
             />
             <button
               type="button"
@@ -664,7 +667,7 @@ function InGameCommandSheet({ state, builds }: { state: AppState; builds: Return
 
         {/* Scrollable Content */}
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-3 py-3 sm:px-5 sm:py-4">
-          {(tab === 'build' || tab === 'augments') && !guideReady && (
+          {(tab === 'build' || tab === 'augments' || tab === 'situational') && !guideReady && (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 p-3 text-sm text-zinc-300">
               <p role="status">{french ? 'Le guide du champion joué est indisponible.' : 'The guide for the champion in this match is unavailable.'}</p>
               {game.pickedChampion && <Button size="xs" onClick={() => postAction('useLiveBuild')}>
@@ -686,13 +689,66 @@ function InGameCommandSheet({ state, builds }: { state: AppState; builds: Return
                   <progress className="block h-1.5 w-full accent-indigo-400" max={progress.steps.length} value={progress.acquired}
                     aria-label={french ? 'Progression du build' : 'Build progress'} />
                 )}
-                {!!saved.length && (
-                  <select value={variant?.id ?? ''} onChange={(event) => { selectGuide(event.target.value); setItemId(null); }}
-                    aria-label={french ? 'Choisir un build' : 'Choose a build'} className="rounded bg-zinc-900 p-1.5 text-xs text-white">
-                    <option value="">{french ? 'Guide par défaut' : 'Default guide'}</option>
-                    {saved.map((build) => <option key={build.id} value={build.id}>{build.name}</option>)}
-                  </select>
-                )}
+                <div className="space-y-2 rounded-lg border border-white/10 bg-black/20 p-2.5">
+                  {state.activeMode === 'SR' && (
+                    <fieldset className="flex flex-wrap items-center gap-1.5">
+                      <legend className="mb-1 text-[11px] font-semibold text-zinc-300">{french ? 'Voie' : 'Role'}</legend>
+                      {ROLE_LIST.map((role) => {
+                        const active = state.activeRole === role.key;
+                        const detected = state.detectedRole === role.key;
+                        return (
+                          <button key={role.key} type="button" aria-pressed={active}
+                            onClick={() => { setItemId(null); postAction('setRole', { role: role.key }); }}
+                            className={cn('rounded-md px-2 py-1 text-xs', active
+                              ? 'bg-indigo-500/30 font-semibold text-indigo-100 ring-1 ring-indigo-400/70'
+                              : 'bg-white/5 text-zinc-300 hover:bg-white/10')}>
+                            {french ? role.fr : role.en}{detected ? ' · Auto' : ''}
+                          </button>
+                        );
+                      })}
+                    </fieldset>
+                  )}
+                  <fieldset className="flex flex-wrap items-center gap-1.5">
+                    <legend className="mb-1 text-[11px] font-semibold text-zinc-300">{french ? 'Orientation du build' : 'Build focus'}</legend>
+                    {BUILD_FOCUS.map((focus) => {
+                      const active = !variant && state.settings.buildFocus === focus.key;
+                      return (
+                        <button key={focus.key} type="button" aria-pressed={active} onClick={() => {
+                          if (variant) selectGuide('');
+                          setItemId(null);
+                          postAction('setBuildFocus', { focus: focus.key });
+                        }} className={cn('rounded-md px-2 py-1 text-xs', active
+                          ? 'bg-indigo-500/30 font-semibold text-indigo-100 ring-1 ring-indigo-400/70'
+                          : 'bg-white/5 text-zinc-300 hover:bg-white/10')}>
+                          {french ? focus.fr : focus.en}
+                        </button>
+                      );
+                    })}
+                  </fieldset>
+                  {(saved.length > 0 || !state.game.inGame) && (
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      {!!saved.length && (
+                        <label className="flex flex-wrap items-center gap-2 text-xs text-zinc-300">
+                          {french ? 'Variante' : 'Variant'}
+                          <select value={variant?.id ?? ''} onChange={(event) => { selectGuide(event.target.value); setItemId(null); }}
+                            aria-label={french ? 'Choisir un build' : 'Choose a build'} className="rounded bg-zinc-900 p-1.5 text-white">
+                            <option value="">{french ? 'Guide selon l’orientation' : 'Guide by focus'}</option>
+                            {saved.map((build) => <option key={build.id} value={build.id}>{build.name}</option>)}
+                          </select>
+                        </label>
+                      )}
+                      {!state.game.inGame && (
+                        <Button size="xs" variant="secondary" disabled={!champ || !state.settings.connected}
+                          onClick={() => postAction('exportItemSet', variant ? { guideItems: variant.items.map(({ id }) => id) } : undefined)}
+                          className="border-white/12 bg-white/[0.06] text-zinc-100 hover:bg-white/[0.12]">
+                          <Download className="size-3" />
+                          {french ? 'Exporter vers la boutique' : 'Export to shop'}
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                  {state.importStatus && <p role="status" className="text-xs text-teal-300">{state.importStatus}</p>}
+                </div>
                 <div className="grid items-start gap-3 sm:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
                   <ol className="space-y-1.5" aria-label={french ? 'Ordre du build' : 'Build order'}>
                     {progress.steps.map((item) => {
@@ -738,85 +794,6 @@ function InGameCommandSheet({ state, builds }: { state: AppState; builds: Return
                 </div>
                 {!referenceItems.length && <p className="text-xs text-zinc-400">{french ? 'Guide indisponible.' : 'Build guide unavailable.'}</p>}
               </section>
-
-              <details className="rounded-lg border border-white/10 p-3">
-                <summary className="cursor-pointer text-xs font-semibold text-zinc-200">
-                  {french ? 'Options du guide' : 'Guide options'}
-                </summary>
-                <div className="mt-3">
-              {/* Role Bar (SR) + Focus Bar + Actions */}
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-3">
-                  {state.activeMode === 'SR' && (
-                    <div className="flex items-center gap-1 rounded-xl border border-white/[0.08] bg-white/[0.03] p-1">
-                      {ROLE_LIST.map((r) => {
-                        const active = state.activeRole === r.key;
-                        const viable = state.availableRoles.includes(r.key);
-                        const detected = state.detectedRole === r.key;
-                        return (
-                          <button
-                            key={r.key}
-                            type="button"
-                            onClick={() => postAction('setRole', { role: r.key })}
-                            className={cn(
-                              'rounded-lg px-2 py-1 text-[10px] font-semibold transition-colors cursor-pointer',
-                              active
-                                ? 'bg-indigo-500 text-white'
-                                : viable
-                                  ? 'text-zinc-200 hover:bg-white/[0.08]'
-                                  : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.05]'
-                            )}
-                          >
-                            {r.label}
-                            {detected ? ' · Auto' : ''}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[11px] font-medium text-zinc-400 mr-0.5">Focus</span>
-                    {focuses.map((f) => {
-                      const active = state.settings.buildFocus === f;
-                      return (
-                        <button
-                          key={f}
-                          type="button"
-                          onClick={() => postAction('setBuildFocus', { focus: f })}
-                          className={cn(
-                            'rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors cursor-pointer',
-                            active
-                              ? 'border-indigo-400/60 bg-indigo-500/22 text-indigo-100'
-                              : 'border-white/[0.08] bg-white/[0.03] text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.07]'
-                          )}
-                        >
-                          {f}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {state.importStatus && (
-                    <span className="text-[10px] font-medium text-teal-300 truncate max-w-[200px]">
-                      {state.importStatus}
-                    </span>
-                  )}
-                  {!state.game.inGame && <Button
-                    size="xs"
-                    variant="secondary"
-                    disabled={!champ || state.game.inGame}
-                    onClick={() => postAction('exportItemSet', variant ? { guideItems: variant.items.map(({ id }) => id) } : undefined)}
-                    className="border-white/12 bg-white/[0.06] text-zinc-100 hover:bg-white/[0.12]"
-                  >
-                    <Download className="size-3" />
-                    {french ? 'Exporter vers la boutique' : 'Export to shop'}
-                  </Button>}
-                </div>
-              </div>
-
-                </div>
-              </details>
 
               {state.skills && state.skills.levels.length > 0 && (
                 <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3.5">
@@ -911,6 +888,11 @@ function InGameCommandSheet({ state, builds }: { state: AppState; builds: Return
               </div>
             </>
           )}
+
+          {tab === 'situational' && guideReady && <SituationalItemGuide
+            items={state.situationalItems}
+            owned={new Set(state.game.inGame && !state.preview ? state.game.owned : [])}
+            french={french} />}
 
           {tab === 'augments' && guideReady && (
             <AugmentGuide key={`${state.activeMode}:${champ?.slug}`} augments={state.allAugments} dark french={french} />

@@ -12,16 +12,48 @@ const orderOf = (list: readonly string[], value: string) => {
   return index < 0 ? list.length : index;
 };
 
+function validTier(tier?: string | null) {
+  const value = tier?.trim().toUpperCase();
+  return value && tierOrder.includes(value) ? value : null;
+}
+
+export function augmentPickLabel(pick: string, french: boolean) {
+  if (!/^\s*\d+(?:[.,]\d+)?\s*%\s*$/.test(pick)) return null;
+  const number = Number.parseFloat(pick.replace(',', '.'));
+  if (number < 0 || number > 100) return null;
+  return new Intl.NumberFormat(french ? 'fr-FR' : 'en-US', { style: 'percent', maximumFractionDigits: 2 })
+    .format(number / 100);
+}
+
+function unratedHint(augment: AugmentEntry, french: boolean) {
+  switch (augment.unratedReason) {
+    case 'no-sample': return french ? 'Aucun échantillon pour ce champion.' : 'No sample for this champion.';
+    case 'small-sample': return french ? `Trop peu de parties recensées (${augment.games}).` : `Too few recorded games (${augment.games}).`;
+    case 'no-outcome': return french ? 'La source ne fournit aucun résultat exploitable.' : 'The source has no usable outcome data.';
+    case 'unknown-rarity': return french ? 'Rareté indisponible pour le classement.' : 'Rarity unavailable for ranking.';
+    case 'no-baseline': return french ? 'Trop peu d’augments comparables de cette rareté.' : 'Too few comparable augments in this rarity.';
+    default: return french ? 'Tier indisponible pour ce champion.' : 'Tier unavailable for this champion.';
+  }
+}
+
+export function AugmentPickRate({ pick, french, className }: { pick: string; french: boolean; className?: string }) {
+  const rate = augmentPickLabel(pick, french);
+  return <span className={className}>
+    {french ? 'Sélection' : 'Pick rate'} <span className="whitespace-nowrap font-semibold tabular-nums">{rate ?? '—'}</span>
+  </span>;
+}
+
 export function AugmentTier({ augment, dark = false, french = false, size = 'sm' }: {
   augment: Pick<AugmentEntry, 'tier'>;
   dark?: boolean;
   french?: boolean;
   size?: 'sm' | 'md';
 }) {
-  const tier = augment.tier?.trim().toUpperCase();
-  if (!tier || !tierOrder.includes(tier)) return null;
-  const label = french ? `Tier ${tier} dans sa rareté` : `Tier ${tier} within its rarity`;
-  return <span className="shrink-0" title={label} aria-label={label}><TierBadge tier={tier} size={size} dark={dark} /></span>;
+  const tier = validTier(augment.tier);
+  const label = tier
+    ? (french ? `Tier ${tier} dans sa rareté` : `Tier ${tier} within its rarity`)
+    : (french ? 'Tier indisponible' : 'Tier unavailable');
+  return <span className="shrink-0" title={label} aria-label={label}><TierBadge tier={tier ?? '?'} size={size} dark={dark} /></span>;
 }
 const normalize = (text: string) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
@@ -77,10 +109,10 @@ export function AugmentGuide({ augments, dark = false, french = false }: {
         ))}
       </div>
       <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-        {french ? 'Les tiers comparent les augments de même rareté pour ce champion. Ils s’affichent quand il y a assez de données.' :
-          'Tiers compare augments of the same rarity for this champion and appear when enough data is available.'}
+        {french ? 'Les tiers comparent les augments de même rareté pour ce champion. Le « ? » indique un tier indisponible.' :
+          'Tiers compare augments of the same rarity for this champion. A “?” indicates an unavailable tier.'}
       </p>
-      {augments.length > 0 && !augments.some(({ tier }) => tier && tierOrder.includes(tier.trim().toUpperCase())) && (
+      {augments.length > 0 && !augments.some(({ tier }) => validTier(tier)) && (
         <p className="text-xs text-zinc-500 dark:text-zinc-400">
           {french ? 'Aucun tier disponible pour ce champion dans ce mode.' : 'No tiers are available for this champion in this mode.'}
         </p>
@@ -88,8 +120,7 @@ export function AugmentGuide({ augments, dark = false, french = false }: {
       {visible.length === 0 && <p className="text-sm text-zinc-500">{french ? 'Aucun augment trouvé.' : 'No augments found.'}</p>}
       <div className="grid content-start gap-2 sm:grid-cols-2">
         {visible.map((augment) => {
-          const pick = Number.parseFloat(augment.pick);
-          const hasPick = Number.isFinite(pick) && pick >= 0 && pick <= 100;
+          const hint = validTier(augment.tier) ? null : unratedHint(augment, french);
           const isOpen = expanded === augment.id;
           const rarityIndex = rarities.findIndex((value) => value === augment.rarity);
           return (
@@ -104,14 +135,12 @@ export function AugmentGuide({ augments, dark = false, french = false }: {
                   </span>
                 </span>
                 <AugmentTier augment={augment} dark={dark} french={french} />
-                {hasPick && <span className="shrink-0 text-xs tabular-nums text-indigo-500 dark:text-indigo-300">
-                  {new Intl.NumberFormat(french ? 'fr-FR' : 'en-US', { style: 'percent', maximumFractionDigits: 2 }).format(pick / 100)}{' '}
-                  {french ? 'de sélection' : 'pick rate'}
-                </span>}
+                <AugmentPickRate pick={augment.pick} french={french} className="shrink-0 text-[10px] text-zinc-500 dark:text-zinc-400" />
               </button>
-              {isOpen && <p className="border-t border-zinc-500/20 px-3 py-2 text-xs leading-relaxed">
-                {augment.description || (french ? 'Description indisponible.' : 'Description unavailable.')}
-              </p>}
+              {isOpen && <div className="space-y-1 border-t border-zinc-500/20 px-3 py-2 text-xs leading-relaxed">
+                <p>{augment.description || (french ? 'Description indisponible.' : 'Description unavailable.')}</p>
+                {hint && <p className="text-zinc-500 dark:text-zinc-400">{hint}</p>}
+              </div>}
             </div>
           );
         })}

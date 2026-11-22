@@ -36,7 +36,7 @@ Everything renders in a borderless click-through WebView2 layer that stays out o
 
 - **Champ Select Tier List drawer** — pinned on the right edge of Champion Select with instant search, `All / S+ / S / A` filters, role filters in Ranked SR, and cursor-aware click-through so moving back onto the champion grid never blocks picks or bans.
 - **Champion cards and bench** — the ARAM and Mayhem overlays show compact tiers on revealed cards and in the corner of recognized bench portraits. Revealed cards show a short note excerpt, and a note icon marks bench portraits with a saved note. Private mode hides both. The benchmark labels your own champion during play.
-- **Alt+G reference** — browse items and their recipes, saved build variants, and the Mayhem or Arena augment catalog. Search augments by name, effect or rarity and sort by observed pick rate.
+- **Alt+G reference** — browse items and their recipes, saved build variants, and the Mayhem or Arena augment catalog. Search augments by name, effect or rarity and sort by observed pick rate. The Situational tab groups shop items by effects such as armor penetration, anti-heal, burst protection and utility, with prices and recipes from Data Dragon.
 - **Summoner’s Rift HUD** — opening items from your active guide, a configurable benchmark for CS/min, KDA, kill participation and game time, and movable panels. Preview your layout and the champion-select click area in Alt+O.
 
 <br />
@@ -92,7 +92,7 @@ Maylo is an independent project. Riot Games has not endorsed Maylo.
 
 - Build and augment guides are reference material. The augment catalog shows effects, rarity and reported selection rates. Arena item views show pick rates where available.
 - Maylo reads the local Game Client API for personal match observations. The local League Client API provides account data, match history, Solo/Duo LP and the skin inventory. Optional item and rune imports use the League Client API before play.
-- The card overlay and Alt+G guide use the same champion-specific tiers, grouped by rarity. Each tier is based on the reported outcome adjusted for match count, relative to the rarity median. Tiers appear when there is enough data. These changes have not yet been reviewed by Riot.
+- The card overlay and Alt+G guide use the same champion-specific tiers, grouped by rarity. Each tier is based on the reported outcome adjusted for match count, relative to the rarity median. A question mark means the tier is unavailable. The selection rate is shown separately when reported. These changes have not yet been reviewed by Riot.
 
 | Integration | Local endpoints |
 | --- | --- |

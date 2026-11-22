@@ -33,6 +33,7 @@ export interface AugmentEntry {
   pick: string;
   games: number;
   description?: string;
+  unratedReason?: 'no-sample' | 'small-sample' | 'no-outcome' | 'unknown-rarity' | 'no-baseline' | null;
 }
 
 export interface ComponentStatus {
@@ -195,6 +196,17 @@ export interface LiveSummary {
   inventoryValue?: { blue: number; red: number; partial: boolean } | null;
 }
 
+export interface SituationalItem {
+  id: number;
+  name: string;
+  icon: string;
+  total: number;
+  categories: string[];
+  stats: string[];
+  effects: string[];
+  components: { id: number; name: string; price: number; icon: string }[];
+}
+
 export interface MatchRecord {
   id: string;
   championId: number;
@@ -325,7 +337,7 @@ export interface AppState {
   privateMode: boolean;
   hubActive: boolean;
   inGameSheet: boolean;
-  inGameSheetTab: 'build' | 'augments' | 'live';
+  inGameSheetTab: 'build' | 'augments' | 'live' | 'situational';
   preview: boolean;
   previewScene?: string;
   previewAugmentCount?: number;
@@ -370,6 +382,7 @@ export interface AppState {
   };
   buildSummary: string;
   enemyThreats?: string[];
+  situationalItems?: SituationalItem[] | null;
   buildPath: BuildStep[];
   referenceItems?: { id: number; name: string; icon: string; total: number; components: { id: number; name: string; price: number; icon: string }[] }[];
   starters: StatItem[];

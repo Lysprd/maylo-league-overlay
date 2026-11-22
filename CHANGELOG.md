@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.0-beta.17
+
+- Put lane, build focus and saved variants at the top of Alt+G. Selecting a focus switches from a saved variant to the corresponding reference guide.
+- Show the selection rate alongside each augment tier. Use a question mark for a missing tier and explain the reason in Alt+G.
+- Add an Alt+G situational item catalog with offensive, defensive and utility filters, item effects, prices and recipes for the active shop.
+
 ## v0.2.0-beta.16
 
 - Refresh augment tiers when rarity data arrives, and use the same champion and rarity tiers from the catalog on live cards.

@@ -200,6 +200,38 @@ namespace MayhemCompanion {
    Req(augments.Single(row => row.Id == 1338).Rate == 52, "Preserve supported rates for tier scoring");
   }
 
+  static void TestSituationalItems() {
+   var item = new Dictionary<string, object> {
+    { "maps", new Dictionary<string, object> { { "11", true }, { "12", true }, { "30", false } } },
+    { "purchasable", true }, { "priceTotal", 2900 }, { "categories", new[] { "ArmorPenetration" } },
+    { "description", "<stats>30% Armor Penetration</stats><passive>Grievous Wounds</passive>" }
+   };
+   Req(SituationalItems.Available(item, "SR", "Gwen") && SituationalItems.Available(item, "MAYHEM", "Gwen") &&
+    !SituationalItems.Available(item, "ARENA", "Gwen"), "Respect the item shop map without using mode variants from another map");
+   Req(SituationalItems.Categories(item).SequenceEqual(new[] { "armor-pen", "anti-heal" }),
+    "A hybrid item can appear in both relevant categories");
+   item["requiredChampion"] = "Kalista";
+   Req(!SituationalItems.Available(item, "SR", "Gwen") && SituationalItems.Available(item, "SR", "Kalista"),
+    "Champion-locked items must only appear for the appropriate champion");
+   item["inStore"] = false;
+   Req(!SituationalItems.Available(item, "SR", "Kalista"), "Hidden shop items must not appear");
+   item["description"] = "<stats>15 Lethality</stats><passive>Shield Reaver</passive>";
+   Req(SituationalItems.Categories(item).SequenceEqual(new[] { "lethality", "anti-shield" }),
+    "Flat penetration and shield reduction must not be tagged as percentage armor penetration");
+   item["description"] = "Damaging Abilities burn enemies for 2% max Health magic damage per second";
+   item["categories"] = new[] { "SpellDamage" };
+   Req(SituationalItems.Categories(item).Contains("health-damage"), "Max health damage belongs in the health damage filter");
+  }
+
+  static void TestUnratedAugmentReason() {
+   var stat = new Stat { Games = 16, Rarity = "Gold", Rate = 0 };
+   Req(Recommendations.UnratedAugmentReason(stat, 100) == "small-sample", "Separate a small sample from a missing outcome");
+   stat.Games = 250;
+   Req(Recommendations.UnratedAugmentReason(stat, 100) == "no-outcome", "Popularity alone must not produce a tier");
+   stat.Rate = 53;
+   Req(Recommendations.UnratedAugmentReason(stat, 100) == "no-baseline", "A valid outcome on its own still needs a rarity baseline");
+  }
+
   static void TestAugmentTiers() {
    var gold = new[] { 43d, 46, 50, 52, 58 };
    var prismatic = new[] { 37d, 40, 44, 47, 51 };
@@ -262,6 +294,8 @@ namespace MayhemCompanion {
     TestPurchaseAndAugmentRecommendations();
     TestReviewAndReferenceData();
     TestAugmentTiers();
+    TestUnratedAugmentReason();
+    TestSituationalItems();
     TestWithheldAugmentPopularity();
     TestChampSelectOverlayLayout();
     TestStaleAugmentSlotExpires();

@@ -191,7 +191,11 @@ namespace MayhemCompanion {
       DDragonItemPrices[id] = total;
       var fromIds = Json.A(d, "from").Select(x => { int n; int.TryParse(Convert.ToString(x), out n); return n; }).Where(n => n > 0).Cast<object>().ToArray();
       DDragonItems[id] = new Dictionary<string, object> {
-       { "id", id }, { "name", name }, { "priceTotal", total }, { "from", fromIds }, { "to", Json.A(d, "into") }, { "description", Json.S(d, "description") }, { "categories", Json.A(d, "tags") }
+       { "id", id }, { "name", name }, { "priceTotal", total }, { "from", fromIds }, { "to", Json.A(d, "into") },
+       { "description", Json.S(d, "description") }, { "categories", Json.A(d, "tags") },
+       { "maps", d.ContainsKey("maps") ? Json.D(d["maps"]) : null }, { "purchasable", Json.S(gold, "purchasable") },
+       { "inStore", Json.S(d, "inStore") }, { "hideFromAll", Json.S(d, "hideFromAll") },
+       { "requiredChampion", Json.S(d, "requiredChampion") }
       };
      }
     }
@@ -851,7 +855,9 @@ namespace MayhemCompanion {
      double wrVal = Dbl(ad, "win_rate") * 100.0;
      if (wrVal <= 0 && play > 0) wrVal = win * 100.0 / play;
      wrVal = Math.Round(wrVal, 2);
-     double pr = Math.Round(Dbl(ad, "pick_rate") * 100.0, 2);
+     double pickRate;
+     bool hasPick = Double.TryParse(Json.S(ad, "pick_rate"), System.Globalization.NumberStyles.Float,
+      System.Globalization.CultureInfo.InvariantCulture, out pickRate) && pickRate >= 0 && pickRate <= 1;
      string aName;
      if (!AugmentNameById.TryGetValue(aid, out aName) || String.IsNullOrEmpty(aName)) {
       List<string> als;
@@ -862,7 +868,7 @@ namespace MayhemCompanion {
      data.Augments.Add(new Stat {
       Id = aid, Name = aName, Icon = aIcon, Rarity = rarity,
       Rate = wrVal, Games = play,
-      Pick = pr.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "%",
+      Pick = hasPick ? (pickRate * 100).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "%" : "",
       Win = wrVal.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "%"
      });
     }

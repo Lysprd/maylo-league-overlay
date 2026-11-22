@@ -12,6 +12,62 @@ namespace MayhemCompanion {
 
  public class ComponentStatus { public int Id; public bool Owned; }
 
+ public static class SituationalItems {
+  static bool Has(string text, params string[] phrases) {
+   return phrases.Any(phrase => text.IndexOf(phrase, StringComparison.OrdinalIgnoreCase) >= 0);
+  }
+
+  public static bool Available(Dictionary<string, object> item, string mode, string champion) {
+   string map = mode == "SR" ? "11" : mode == "ARENA" ? "30" : mode == "ARAM" || mode == "MAYHEM" ? "12" : "";
+   var maps = item.ContainsKey("maps") ? Json.D(item["maps"]) : null;
+   string requiredChampion = Json.S(item, "requiredChampion");
+   return map != "" && Json.S(maps, map).Equals("true", StringComparison.OrdinalIgnoreCase) &&
+    Json.S(item, "purchasable").Equals("true", StringComparison.OrdinalIgnoreCase) &&
+    !Json.S(item, "inStore").Equals("false", StringComparison.OrdinalIgnoreCase) &&
+    !Json.S(item, "hideFromAll").Equals("true", StringComparison.OrdinalIgnoreCase) &&
+    Json.I(item, "priceTotal") > 0 &&
+    (requiredChampion == "" || GameBridge.Norm(requiredChampion) == GameBridge.Norm(champion));
+  }
+
+  public static IEnumerable<string> Categories(Dictionary<string, object> item) {
+   var tags = new HashSet<string>(Json.A(item, "categories").Select(Convert.ToString), StringComparer.OrdinalIgnoreCase);
+   string description = Parser.Clean(Json.S(item, "description"));
+   bool lethality = Has(description, "Lethality");
+   if ((tags.Contains("ArmorPenetration") && !lethality) ||
+       Has(description, "Armor Penetration", "reduce their Armor", "reduces their Armor", "reduces the target's Armor", "Armor Reduction"))
+    yield return "armor-pen";
+   if (lethality) yield return "lethality";
+   if (tags.Contains("MagicPenetration") || Has(description, "Magic Penetration", "reduces their Magic Resist", "reduce their Magic Resist"))
+    yield return "magic-pen";
+   if (Has(description, "Grievous Wounds", "% Wounds")) yield return "anti-heal";
+   if (Has(description, "Shield Reaver", "reduces Shields they gain", "bonus damage to shields", "damage to shields"))
+    yield return "anti-shield";
+   if (Has(description, "enemy's current Health", "enemy current Health", "the target's max Health", "target max Health",
+       "target's bonus Health", "enemy's max Health", "their max Health", "their bonus Health", "champions based on their bonus Health") ||
+       Has(description, "burn enemies for") && Has(description, "max Health"))
+    yield return "health-damage";
+   if (tags.Contains("Armor")) yield return "armor";
+   if (tags.Contains("SpellBlock")) yield return "magic-resist";
+   if (tags.Contains("Tenacity") || Has(description, "Tenacity", "Remove all crowd control debuffs", "removes all crowd control debuffs",
+       "remove all disabling effects", "reduces the duration of"))
+    yield return "crowd-control";
+   if (Has(description, "reduces incoming damage from Attacks", "reduces damage from Attacks", "damage from Critical Strikes",
+       "damage taken from Critical Strikes", "attack speed of nearby enemies", "damage taken from Attacks"))
+    yield return "anti-attacks";
+   if (Has(description, "Stasis", "Lifeline", "Spell Shield", "resurrects", "Rebirth", "absorbs magic damage"))
+    yield return "burst";
+   if (tags.Contains("LifeSteal") || tags.Contains("SpellVamp") || Has(description, "Omnivamp", "Life Steal"))
+    yield return "sustain";
+   if (tags.Contains("Boots") || tags.Contains("NonbootsMovement") || Has(description, "Dash to", "Dash in a direction"))
+    yield return "mobility";
+   if (tags.Contains("Slow")) yield return "slows";
+   if (Has(description, "shield nearby allies", "grant nearby allies a shield", "grants you and nearby allies a Shield",
+       "Heal an ally", "heals the nearest allied champion", "heal nearby allies"))
+    yield return "team-protection";
+   if (tags.Contains("Mana") || tags.Contains("ManaRegen")) yield return "mana";
+  }
+ }
+
  public class EnemyThreatProfile {
   public bool HeavyAD, HeavyAP, NeedsAntiHeal, NeedsAntiTank;
   public int AdCount, ApCount, TankCount, HealerCount, ArmoredCount;
@@ -94,6 +150,14 @@ namespace MayhemCompanion {
  public static class Recommendations {
   public static double Score(Stat stat, double baseline) {
    return baseline + (stat.Rate - baseline) * stat.Games / (stat.Games + 250.0);
+  }
+
+  public static string UnratedAugmentReason(Stat stat, int minGames) {
+   if (stat.Games <= 0) return "no-sample";
+   if (stat.Games < minGames) return "small-sample";
+   if (!(stat.Rate > 0 && stat.Rate <= 100)) return "no-outcome";
+   if (TierLogic.RarityKey(stat.Rarity) == "") return "unknown-rarity";
+   return "no-baseline";
   }
 
   public static Dictionary<int, string> AugmentTiers(IEnumerable<Stat> catalog, int minGames) {

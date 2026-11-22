@@ -1621,10 +1621,12 @@ namespace MayhemCompanion {
   string matchTierScope = "";
   Dictionary<int, string> augmentTiers = new Dictionary<int, string>();
 
+  int MinAugmentGames { get { return ActiveMode == "ARENA" ? 30 : 100; } }
+
   void UpdateAugmentTiers(Stat[] catalog, bool matchActive) {
    string scope = matchActive && Selected != null ? ActiveMode + ":" + Selected.Slug : "";
    if (augmentTierSource == ModeData && scope == matchTierScope) return;
-   var next = Recommendations.AugmentTiers(catalog, ActiveMode == "ARENA" ? 30 : 100);
+   var next = Recommendations.AugmentTiers(catalog, MinAugmentGames);
    if (scope != "" && scope == matchTierScope) {
     foreach (var pair in next)
      if (!augmentTiers.ContainsKey(pair.Key)) augmentTiers.Add(pair.Key, pair.Value);
@@ -1638,10 +1640,45 @@ namespace MayhemCompanion {
    augmentTiers.TryGetValue(s.Id, out tier);
    return new {
     id = s.Id, name = s.Name, icon = s.Icon ?? "", rarity = TierLogic.RarityKey(s.Rarity),
-    tier = tier,
+    tier = tier, unratedReason = tier == null ? Recommendations.UnratedAugmentReason(s, MinAugmentGames) : null,
     pick = s.Pick ?? "", games = s.Games,
     description = includeDescription ? MultiModeParser.GetAugmentDescription(s.Id, s.Name, Bridge.AugmentDescriptions) : ""
    };
+  }
+
+  string situationalItemScope = "";
+  object[] situationalItemCatalog = new object[0];
+
+  object[] SituationalItemCatalog() {
+   var items = MultiModeParser.DDragonItems;
+   var scope = ActiveMode + ":" + MultiModeParser.DDragonVersion + ":" + items.Count + ":" +
+    Bridge.Items.Count + ":" + (Selected == null ? "" : Selected.AssetKey);
+   if (scope == situationalItemScope) return situationalItemCatalog;
+   string champion = Selected == null ? "" : Selected.AssetKey;
+   situationalItemCatalog = items.Where(pair => SituationalItems.Available(pair.Value, ActiveMode, champion))
+    .Select(pair => new { id = pair.Key, item = pair.Value, categories = SituationalItems.Categories(pair.Value).ToArray() })
+    .Where(entry => entry.categories.Length > 0)
+    .OrderBy(entry => Json.A(entry.item, "to").Length > 0)
+    .ThenBy(entry => ItemName(entry.id))
+    .Select(entry => {
+     Dictionary<string, object> localItem;
+     Bridge.Items.TryGetValue(entry.id, out localItem);
+     string description = Json.S(localItem, "description");
+     if (description == "") description = Json.S(entry.item, "description");
+     var copy = ItemCopy.Parse(description);
+     return (object)new {
+      id = entry.id, name = ItemName(entry.id), icon = MultiModeParser.ItemIconOf(entry.id),
+      total = Json.I(entry.item, "priceTotal"), categories = entry.categories,
+      stats = copy.Stats, effects = copy.Paragraphs,
+      components = BuildPlanner.Components(entry.id, new int[0], items).Select(component => {
+       Dictionary<string, object> definition;
+       items.TryGetValue(component.Id, out definition);
+       return new { id = component.Id, name = ItemName(component.Id), price = Json.I(definition, "priceTotal"), icon = MultiModeParser.ItemIconOf(component.Id) };
+      }).ToArray()
+     };
+    }).ToArray();
+   situationalItemScope = scope;
+   return situationalItemCatalog;
   }
 
   public string BuildStateJson() {
@@ -1842,6 +1879,7 @@ namespace MayhemCompanion {
     },
     buildSummary = summary,
     enemyThreats = new string[0],
+    situationalItems = InGameSheet && InGameSheetTab == "situational" ? SituationalItemCatalog() : null,
     referenceItems = (hasReference ? ModeData.Items.Concat(ModeData.Boots).Concat(ModeData.Starters).Concat(ModeData.BestItems) : Enumerable.Empty<Stat>())
      .Where(item => item.Id > 0).GroupBy(item => item.Id).Select(group => group.First()).Select(item => {
       int total = Price(item.Id);
@@ -2074,6 +2112,7 @@ namespace MayhemCompanion {
      case "clearPlan": plannedItems.Clear(); PushState(); break;
      case "refreshProfile": await RefreshProfile(true); break;
      case "refreshDatabases":
+      situationalItemScope = "";
       StatusText = "Syncing Riot Data Dragon, CommunityDragon & OP.GG…"; PushState();
       await MultiModeParser.EnsureDDragon(Champions, true);
       await LoadHome(true);

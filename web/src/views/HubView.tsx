@@ -45,7 +45,7 @@ import {
 } from 'lucide-react';
 import { BENCHMARK_METRICS, benchmarkMetrics, OverlayLayoutPreview } from '@/components/OverlayLayoutPreview';
 import { MatchReview } from '@/components/MatchReview';
-import { AugmentGuide, AugmentTier } from '@/components/AugmentGuide';
+import { AugmentGuide, AugmentPickRate, AugmentTier } from '@/components/AugmentGuide';
 import { BuildLibrary, RankedProgress, RecentProgress, RuneEditor, SettingsSearch, SkinCollection } from '@/components/HubTools';
 import { GlassCard } from '@/components/ui/glass-card';
 import { MayloEmblem, MayloWordmark } from '@/components/ui/brand';
@@ -838,9 +838,7 @@ export function HubView({ state }: { state: AppState }) {
 
           </div>
           <div className="mt-0.5 flex items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400 tabular-nums">
-            <span className="font-semibold text-indigo-600 dark:text-indigo-300">
-              {parsePct(aug.pick) ? `${parsePct(aug.pick)} ${french ? 'de sélection' : 'pick rate'}` : ''}
-            </span>
+            <AugmentPickRate pick={aug.pick} french={french} className="text-indigo-600 dark:text-indigo-300" />
             {aug.rarity && (
                 <span
                   className={cn(
@@ -3465,9 +3463,7 @@ export function HubView({ state }: { state: AppState }) {
             </div>
 
             <div className="flex-1 overflow-y-auto p-5 space-y-5">
-              {parsePct(state.inspectedAugment.pick) && (
-                <p className="text-xs text-zinc-500">{parsePct(state.inspectedAugment.pick)} {french ? 'de sélection' : 'pick rate'}</p>
-              )}
+              <AugmentPickRate pick={state.inspectedAugment.pick} french={french} className="block text-xs text-zinc-500" />
               {/* Official In-Game Description */}
               <div className="rounded-xl border border-zinc-200/80 dark:border-white/[0.08] bg-zinc-50/70 dark:bg-white/[0.03] p-4">
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
