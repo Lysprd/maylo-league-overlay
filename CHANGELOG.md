@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.0-beta.14
+
+- Load bench portrait art from League first, refresh changed benches immediately and use aligned portrait matches to place the remaining badges in the reported bench order.
+
 ## v0.2.0-beta.13
 
 ### Hub

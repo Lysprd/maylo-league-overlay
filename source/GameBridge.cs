@@ -191,6 +191,35 @@ namespace MayhemCompanion {
    } catch (TimeoutException) { InvalidateConnection(); throw; }
   }
 
+  public async Task<byte[]> ReadChampionPortrait(int id) {
+   if (id <= 0) return null;
+   await Connect();
+   var url = localBase + "/lol-game-data/assets/v1/champion-icons/" + id + ".png";
+   var request = (HttpWebRequest)WebRequest.Create(url);
+   request.Proxy = null;
+   request.ServerCertificateValidationCallback = (s, c, ch, e) => true;
+   request.Headers["Authorization"] = auth;
+   request.AllowAutoRedirect = false;
+   var pending = request.GetResponseAsync();
+   if (await Task.WhenAny(pending, Task.Delay(1200)) != pending) {
+    request.Abort();
+    try { using (var ignored = await pending) { } } catch { }
+    return null;
+   }
+   using (var response = await pending)
+   using (var input = response.GetResponseStream())
+   using (var data = new MemoryStream()) {
+    var copy = input.CopyToAsync(data);
+    if (await Task.WhenAny(copy, Task.Delay(1200)) != copy) {
+     request.Abort();
+     try { await copy; } catch { }
+     return null;
+    }
+    await copy;
+    return data.ToArray();
+   }
+  }
+
   Task<string> LcuGet(string path) { return LcuRequest("GET", path); }
 
   string FindLock() {

@@ -632,7 +632,7 @@ namespace MayhemCompanion {
    ocrTimer.Tick += async (s, e) => {
     if (Game.InSelection && !Game.InGame) {
      ocrTimer.Interval = TimeSpan.FromMilliseconds(150);
-     bool allowCards = Config.Overlay && OverlayVisible && Config.Connected && !HubActive && !InGameSheet && !IsOverlayEditing && !champCardBusy
+     bool allowCards = Config.Overlay && OverlayVisible && Config.Connected && !HubActive && !InGameSheet && !IsOverlayEditing
       && (Game.ModeKey == "MAYHEM" || Game.ModeKey == "ARAM");
      if (allowCards) {
       if (ModePanelVisible("bench", Config.ShowBenchBar)) {
@@ -1281,10 +1281,10 @@ namespace MayhemCompanion {
   }
 
   async Task ReadBenchPortraits() {
-   if (benchScanBusy || DateTime.UtcNow < nextBenchScan || Game.Bench.Count == 0) return;
+   if (benchScanBusy || Game.Bench.Count == 0) return;
    string patch = MultiModeParser.DDragonVersion;
    IntPtr target = Game.Window;
-   if (String.IsNullOrEmpty(patch) || target == IntPtr.Zero ||
+   if (target == IntPtr.Zero ||
        !Native.IsWindowVisible(target) || Native.IsIconic(target) ||
        !Native.SameApplication(Native.GetForegroundWindow(), target)) return;
    var bounds = Native.Bounds(target);
@@ -1293,17 +1293,24 @@ namespace MayhemCompanion {
    int[] bench = Game.Bench.ToArray();
    var champions = bench.Select(FromId).Where(c => c != null &&
     Regex.IsMatch(c.AssetKey ?? "", @"\A[a-zA-Z0-9]+\z")).ToList();
+   champions = champions.GroupBy(c => c.Slug).Select(group => group.First()).ToList();
    if (champions.Count == 0) return;
    string scope = patch + ":" + Game.ModeKey + ":" + bounds.Width + ":" + bounds.Height + ":" + String.Join(",", bench);
+   if (scope == benchScanScope && DateTime.UtcNow < nextBenchScan) return;
    if (scope != benchScanScope) { benchScanScope = scope; benchSignature = 0; portraitPositions.Clear(); }
    benchScanBusy = true;
-   nextBenchScan = DateTime.UtcNow.AddMilliseconds(1250);
+   nextBenchScan = DateTime.UtcNow.AddMilliseconds(400);
    try {
     var missing = champions.Where(c => !benchPortraitImages.ContainsKey(patch + ":" + c.Slug)).ToArray();
     await Task.WhenAll(missing.Select(async c => {
      try {
-      string url = "https://ddragon.leagueoflegends.com/cdn/" + patch + "/img/champion/" + c.AssetKey + ".png";
-      var png = await benchPortraitClient.GetByteArrayAsync(url);
+      byte[] png = null;
+      try { png = await Bridge.ReadChampionPortrait(ChampionIdOf(c)); } catch { }
+      if (png == null && !String.IsNullOrEmpty(patch)) {
+       string url = "https://ddragon.leagueoflegends.com/cdn/" + patch + "/img/champion/" + c.AssetKey + ".png";
+       png = await benchPortraitClient.GetByteArrayAsync(url);
+      }
+      if (png == null) return;
       using (var stream = new MemoryStream(png)) {
        var icon = new BitmapImage();
        icon.BeginInit(); icon.CacheOption = BitmapCacheOption.OnLoad; icon.StreamSource = stream; icon.EndInit(); icon.Freeze();
@@ -1318,7 +1325,7 @@ namespace MayhemCompanion {
     }
     if (images.Count == 0 || closing || !Game.InSelection || Game.InGame || !bench.SequenceEqual(Game.Bench)) return;
     int bandHeight = (int)(bounds.Height * .30);
-    ulong previous = images.Count == champions.Count ? benchSignature : 0;
+    ulong previous = portraitPositions.Count == champions.Count ? benchSignature : 0;
     var scan = await Task.Run(() => {
      using (var frame = new System.Drawing.Bitmap(bounds.Width, bandHeight, System.Drawing.Imaging.PixelFormat.Format32bppArgb)) {
       using (var graphics = System.Drawing.Graphics.FromImage(frame))

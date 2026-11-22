@@ -122,6 +122,20 @@ namespace MayhemCompanion {
     "The click zone stays aligned to the side panel on an ultrawide screen");
   }
 
+  static void TestBenchRow() {
+   var bench = Enumerable.Range(0, 5).Select(i => new Champion { Slug = "bench-" + i }).ToList();
+   var first = new PortraitHit { Champion = bench[0], X = .30, Y = .25, Size = .04 };
+   var third = new PortraitHit { Champion = bench[2], X = .394, Y = .25, Size = .04 };
+   var row = Vision.FillBenchRow(new List<PortraitHit> { first, third }, bench, 5);
+   Req(row.Count == 5 && row[1].Champion == bench[1] && Math.Abs(row[4].X - .488) < .0001,
+    "Two aligned anchors can place the other champions in their reported slot order");
+   Req(Vision.FillBenchRow(new List<PortraitHit> { first }, bench, 5).Count == 1,
+    "A single anchor must not guess which slots contain other champions");
+   third.Y = .6;
+   Req(Vision.FillBenchRow(new List<PortraitHit> { first, third }, bench, 5).Count == 2,
+    "Unaligned anchors must not create a row");
+  }
+
   static void TestWebBridgeSource() {
    Req(HybridHubWindow.IsAppPage("https://maylo.local/index.html?theme=light#hub") &&
     HybridHubWindow.IsAppPage("https://maylo.local/index.html#overlay"),
@@ -197,6 +211,7 @@ namespace MayhemCompanion {
     TestChampSelectOverlayLayout();
     TestStaleAugmentSlotExpires();
     TestWebBridgeSource();
+    TestBenchRow();
     File.WriteAllText(reportPath, "PASS Maylo recommendations, reference guides and match review");
     return 0;
    } catch (Exception ex) {
