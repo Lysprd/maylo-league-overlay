@@ -92,7 +92,7 @@ Maylo is an independent project. Riot Games has not endorsed Maylo.
 
 - Build and augment guides are reference material. The augment catalog shows effects, rarity and reported selection rates. Arena item views show pick rates where available.
 - Maylo reads the local Game Client API for personal match observations. The local League Client API provides account data, match history, Solo/Duo LP and the skin inventory. Optional item and rune imports use the League Client API before play.
-- The card overlay and Alt+G guide use the same champion-specific tiers, grouped by rarity. Each tier is based on the reported outcome adjusted for match count, relative to the rarity median. A question mark indicates insufficient data. These changes have not yet been reviewed by Riot.
+- The card overlay and Alt+G guide use the same champion-specific tiers, grouped by rarity. Each tier is based on the reported outcome adjusted for match count, relative to the rarity median. Tiers appear when there is enough data. These changes have not yet been reviewed by Riot.
 
 | Integration | Local endpoints |
 | --- | --- |

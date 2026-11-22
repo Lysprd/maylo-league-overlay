@@ -146,6 +146,22 @@ namespace MayhemCompanion {
     "Only the built-in HTTPS app page can use the bridge");
   }
 
+  static void TestWithheldAugmentPopularity() {
+   var serializer = Json.Serializer();
+   var rows = new[] {
+    new { id = 1337, name = "Fixture", icon_url = "/icons/augments/1337.png", rarity = "Prismatic",
+     games = 16, win_rate = "25.00", pick_rate = "0.39", withheld = true },
+    new { id = 1338, name = "Rated", icon_url = "/icons/augments/1338.png", rarity = "Gold",
+     games = 1000, win_rate = "52.00", pick_rate = "1.00", withheld = false }
+   };
+   string html = "<script>self.__next_f.push(" + serializer.Serialize(new object[] { 1, serializer.Serialize(rows) }) + ")</script>";
+   var augments = Parser.AllAugments(html);
+   var withheld = augments.Single(row => row.Id == 1337);
+   Req(withheld.Rate == 0 && withheld.Win == "" && withheld.Pick == "0.39 %" && withheld.Rarity == "Prismatic",
+    "Preserve observed popularity without importing a withheld result");
+   Req(augments.Single(row => row.Id == 1338).Rate == 52, "Preserve supported rates for tier scoring");
+  }
+
   static void TestAugmentTiers() {
    var gold = new[] { 43d, 46, 50, 52, 58 };
    var prismatic = new[] { 37d, 40, 44, 47, 51 };
@@ -208,6 +224,7 @@ namespace MayhemCompanion {
     TestPurchaseAndAugmentRecommendations();
     TestReviewAndReferenceData();
     TestAugmentTiers();
+    TestWithheldAugmentPopularity();
     TestChampSelectOverlayLayout();
     TestStaleAugmentSlotExpires();
     TestWebBridgeSource();

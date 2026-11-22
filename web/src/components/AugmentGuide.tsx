@@ -17,10 +17,10 @@ export function AugmentTier({ augment, dark = false, french = false }: {
   dark?: boolean;
   french?: boolean;
 }) {
-  const label = augment.tier
-    ? (french ? `Tier ${augment.tier} dans sa rareté` : `Tier ${augment.tier} within its rarity`)
-    : (french ? 'Données insuffisantes pour un tier' : 'Insufficient data for a tier');
-  return <span className="shrink-0" title={label} aria-label={label}><TierBadge tier={augment.tier ?? undefined} size="sm" dark={dark} /></span>;
+  const tier = augment.tier;
+  if (!tier || !tierOrder.includes(tier)) return null;
+  const label = french ? `Tier ${tier} dans sa rareté` : `Tier ${tier} within its rarity`;
+  return <span className="shrink-0" title={label} aria-label={label}><TierBadge tier={tier} size="sm" dark={dark} /></span>;
 }
 const normalize = (text: string) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
@@ -76,8 +76,8 @@ export function AugmentGuide({ augments, dark = false, french = false }: {
         ))}
       </div>
       <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-        {french ? 'Les tiers comparent les augments de même rareté pour ce champion. ? indique un manque de données.' :
-          'Tiers compare augments of the same rarity for this champion. ? means there is not enough data.'}
+        {french ? 'Les tiers comparent les augments de même rareté pour ce champion. Ils s’affichent quand il y a assez de données.' :
+          'Tiers compare augments of the same rarity for this champion and appear when enough data is available.'}
       </p>
       {visible.length === 0 && <p className="text-sm text-zinc-500">{french ? 'Aucun augment trouvé.' : 'No augments found.'}</p>}
       <div className="grid content-start gap-2 sm:grid-cols-2">

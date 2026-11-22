@@ -218,13 +218,17 @@ namespace MayhemCompanion {
       if (!m.Value.Contains("/icons/augments/") || !m.Value.Contains("\"win_rate\"")) continue;
       var d = serializer.Deserialize<Dictionary<string, object>>(m.Value);
       if (!d.ContainsKey("name") || !d.ContainsKey("win_rate") || !d.ContainsKey("pick_rate") || !d.ContainsKey("id") || !d.ContainsKey("icon_url")) continue;
-      if (d.ContainsKey("withheld") && Convert.ToBoolean(d["withheld"])) continue;
-      string win = Convert.ToString(d["win_rate"], System.Globalization.CultureInfo.InvariantCulture); if (Number(win) <= 0) continue;
-      result.Add(new Stat { Name = Convert.ToString(d["name"]), Pick = Convert.ToString(d["pick_rate"], System.Globalization.CultureInfo.InvariantCulture) + " %", Win = win + " %", Rate = Number(win), Id = Json.ToInt(d["id"]), Icon = Convert.ToString(d["icon_url"]), Games = d.ContainsKey("games") ? Json.ToInt(d["games"]) : 0, Rarity = d.ContainsKey("rarity") ? Convert.ToString(d["rarity"]) : "" });
+      bool withheld = Json.S(d, "withheld").Equals("true", StringComparison.OrdinalIgnoreCase);
+      double rate = withheld ? 0 : Number(Json.S(d, "win_rate"));
+      string pick = Json.S(d, "pick_rate");
+      result.Add(new Stat { Name = Json.S(d, "name"), Pick = pick == "" || pick == "—" ? "" : pick + " %",
+       Win = rate > 0 ? Json.S(d, "win_rate") + " %" : "", Rate = rate, Id = Json.I(d, "id"),
+       Icon = Json.S(d, "icon_url"), Games = Json.I(d, "games"), Rarity = Json.S(d, "rarity") });
      }
     } catch { }
    }
-   return result.Where(x => x.Id > 0).GroupBy(x => x.Id).Select(x => x.First()).ToList();
+   return result.Where(x => x.Id > 0).GroupBy(x => x.Id)
+    .Select(group => group.OrderByDescending(row => row.Rate > 0).ThenByDescending(row => row.Games).First()).ToList();
   }
 
   public static List<Stat> Section(string html, string title) {

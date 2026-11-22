@@ -23,7 +23,7 @@ First session
   Save a variant and choose it in the Alt+G selector to use it in game.
 - In Mayhem or Arena, search augments by name, effect, or rarity.
   Tiers on the cards and in Alt+G compare augments of the same rarity.
-  A question mark means the sample is too small for a tier.
+  Tiers appear when there is enough data.
 - Open your latest game from Home or choose one in History. Filter the
   timeline by items or objectives, save a note, or link a local clip.
 - Search Settings for a control, or reopen the first-launch guide there.

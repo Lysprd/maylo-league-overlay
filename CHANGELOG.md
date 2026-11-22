@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.0-beta.15
+
+- Show an augment tier only when supported by the data. Keep the name and rarity visible for unranked augments. Preserve available Mayhem pick rates in the guide even when the source withholds results.
+- Advance the compact build HUD as items appear in your inventory. Keep the full order in Alt+G and mark owned items.
+
 ## v0.2.0-beta.14
 
 - Load bench portrait art from League first, refresh changed benches immediately and use aligned portrait matches to place the remaining badges in the reported bench order.
