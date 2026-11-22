@@ -267,7 +267,7 @@ namespace MayhemCompanion {
   bool benchScanBusy;
   ulong benchSignature;
   string benchScanScope = "";
-  DateTime nextBenchScan;
+  DateTime nextBenchScan, lastGoodBenchScan;
   int inspectedItemId = -1, inspectedAugmentId = -1, generation, tierGeneration;
   string fastChampion = "", displayedClientChampion = "";
   DateTime lastHubToggle = DateTime.MinValue, hubOpened = DateTime.MinValue, lastGoodGame = DateTime.MinValue, lastFastSelection = DateTime.MinValue, loadoutAttempt = DateTime.MinValue;
@@ -1075,9 +1075,13 @@ namespace MayhemCompanion {
    if (!IsAugmentMode || ModeData.ModeKey != ActiveMode) return;
    foreach (var stat in ModeData.Augments.Where(augment => TierLogic.RarityKey(augment.Rarity) == "")) {
     string rarity;
-    if (Bridge.AugmentRarities.TryGetValue(stat.Id, out rarity) ||
-        MultiModeParser.AugmentRarityById.TryGetValue(stat.Id, out rarity))
-     stat.Rarity = TierLogic.RarityKey(rarity);
+    if (!Bridge.AugmentRarities.TryGetValue(stat.Id, out rarity) || TierLogic.RarityKey(rarity) == "")
+     MultiModeParser.AugmentRarityById.TryGetValue(stat.Id, out rarity);
+    string resolved = TierLogic.RarityKey(rarity);
+    if (resolved != "") {
+     stat.Rarity = resolved;
+     augmentTierSource = null;
+    }
    }
    var seenIds = new HashSet<int>(ModeData.Augments.Select(x => x.Id));
    var catalogIds = ActiveMode == "MAYHEM"
@@ -1297,7 +1301,12 @@ namespace MayhemCompanion {
    if (champions.Count == 0) return;
    string scope = patch + ":" + Game.ModeKey + ":" + bounds.Width + ":" + bounds.Height + ":" + String.Join(",", bench);
    if (scope == benchScanScope && DateTime.UtcNow < nextBenchScan) return;
-   if (scope != benchScanScope) { benchScanScope = scope; benchSignature = 0; portraitPositions.Clear(); }
+   if (scope != benchScanScope) {
+    benchScanScope = scope;
+    benchSignature = 0;
+    lastGoodBenchScan = DateTime.MinValue;
+    portraitPositions.Clear();
+   }
    benchScanBusy = true;
    nextBenchScan = DateTime.UtcNow.AddMilliseconds(400);
    try {
@@ -1324,7 +1333,7 @@ namespace MayhemCompanion {
      if (benchPortraitImages.TryGetValue(patch + ":" + c.Slug, out icon)) images[c.Slug] = icon;
     }
     if (images.Count == 0 || closing || !Game.InSelection || Game.InGame || !bench.SequenceEqual(Game.Bench)) return;
-    int bandHeight = (int)(bounds.Height * .30);
+    int bandHeight = (int)(bounds.Height * .25);
     ulong previous = portraitPositions.Count == champions.Count ? benchSignature : 0;
     var scan = await Task.Run(() => {
      using (var frame = new System.Drawing.Bitmap(bounds.Width, bandHeight, System.Drawing.Imaging.PixelFormat.Format32bppArgb)) {
@@ -1343,8 +1352,14 @@ namespace MayhemCompanion {
     var currentBounds = Native.Bounds(target);
     if (bounds.Width != currentBounds.Width || bounds.Height != currentBounds.Height ||
         bounds.Left != currentBounds.Left || bounds.Top != currentBounds.Top) return;
-    benchSignature = scan.Item1;
     if (scan.Item2 == null) return;
+    if (scan.Item2.Count == 0) {
+     benchSignature = 0;
+     if (portraitPositions.Count == 0 || DateTime.UtcNow - lastGoodBenchScan < TimeSpan.FromMilliseconds(1200)) return;
+    } else {
+     benchSignature = scan.Item1;
+     lastGoodBenchScan = DateTime.UtcNow;
+    }
     portraitPositions = scan.Item2;
     PushState();
    } catch { }
@@ -1608,11 +1623,14 @@ namespace MayhemCompanion {
 
   void UpdateAugmentTiers(Stat[] catalog, bool matchActive) {
    string scope = matchActive && Selected != null ? ActiveMode + ":" + Selected.Slug : "";
-   if (scope != "" && scope == matchTierScope && augmentTiers.Count > 0) return;
    if (augmentTierSource == ModeData && scope == matchTierScope) return;
+   var next = Recommendations.AugmentTiers(catalog, ActiveMode == "ARENA" ? 30 : 100);
+   if (scope != "" && scope == matchTierScope) {
+    foreach (var pair in next)
+     if (!augmentTiers.ContainsKey(pair.Key)) augmentTiers.Add(pair.Key, pair.Value);
+   } else augmentTiers = next;
    augmentTierSource = ModeData;
    matchTierScope = scope;
-   augmentTiers = Recommendations.AugmentTiers(catalog, ActiveMode == "ARENA" ? 30 : 100);
   }
 
   object SerializeAugment(Stat s, bool includeDescription = true) {

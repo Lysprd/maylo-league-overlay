@@ -275,7 +275,7 @@ function AugmentBadgeCard({ stat, width, scale, french }: { stat: AugmentEntry; 
         <p className="truncate text-xs font-semibold text-white">{stat.name}</p>
         <p className="text-[10px] text-zinc-400">{(french && ({ Gold: 'Or', Silver: 'Argent', Prismatic: 'Prismatique' } as Record<string, string>)[stat.rarity]) || stat.rarity}</p>
       </div>
-      <AugmentTier augment={stat} dark french={french} />
+      <AugmentTier augment={stat} size="md" dark french={french} />
     </GlassCard>
   );
 }
@@ -385,8 +385,11 @@ function buildItemKey(id: number) {
   return id >= 220000 && id < 230000 ? id % 10000 : id;
 }
 
-function ownedGuideItems(state: AppState) {
-  return new Set(state.game.inGame && !state.preview ? state.game.owned.map(buildItemKey) : []);
+function buildProgress<T extends { id: number }>(state: AppState, items: T[]) {
+  const owned = new Set(state.game.inGame && !state.preview ? state.game.owned.map(buildItemKey) : []);
+  const steps = items.map((item, index) => ({ ...item, step: index + 1, owned: owned.has(buildItemKey(item.id)) }));
+  const remaining = steps.filter((item) => !item.owned);
+  return { steps, remaining, current: remaining[0], acquired: steps.length - remaining.length };
 }
 
 function InGameCommandSheet({ state, builds }: { state: AppState; builds: ReturnType<typeof useSavedBuilds> }) {
@@ -424,9 +427,8 @@ function InGameCommandSheet({ state, builds }: { state: AppState; builds: Return
   const referenceItems = variant
     ? variant.items.map((item) => state.referenceItems?.find((entry) => entry.id === item.id) || { ...item, icon: '', total: 0, components: [] })
     : opening;
-  const ownedItems = ownedGuideItems(state);
-  const guideItem = referenceItems.find((item) => item.id === itemId) ??
-    referenceItems.find((item) => !ownedItems.has(buildItemKey(item.id))) ?? referenceItems[0];
+  const progress = buildProgress(state, referenceItems);
+  const guideItem = progress.steps.find((item) => item.id === itemId) ?? progress.current ?? progress.steps[0];
   const french = state.settings.language === 'fr';
   const live = state.game.live;
   const me = useMemo(() => live.players.find((p) => p.me) ?? null, [live.players]);
@@ -675,8 +677,15 @@ function InGameCommandSheet({ state, builds }: { state: AppState; builds: Return
 
               <section className="space-y-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
                 <div className="flex justify-between gap-2 text-xs text-zinc-400">
-                  <span>{french ? 'Ordre du build' : 'Build order'}</span><span>{state.modeSource}</span>
+                  <span className="font-semibold text-zinc-100">{french ? 'Ordre du build' : 'Build order'}</span>
+                  {!!progress.steps.length && (
+                    <span className="shrink-0 tabular-nums">{progress.acquired}/{progress.steps.length} {french ? 'acquis' : 'owned'}</span>
+                  )}
                 </div>
+                {!!progress.steps.length && (
+                  <progress className="block h-1.5 w-full accent-indigo-400" max={progress.steps.length} value={progress.acquired}
+                    aria-label={french ? 'Progression du build' : 'Build progress'} />
+                )}
                 {!!saved.length && (
                   <select value={variant?.id ?? ''} onChange={(event) => { selectGuide(event.target.value); setItemId(null); }}
                     aria-label={french ? 'Choisir un build' : 'Choose a build'} className="rounded bg-zinc-900 p-1.5 text-xs text-white">
@@ -686,17 +695,21 @@ function InGameCommandSheet({ state, builds }: { state: AppState; builds: Return
                 )}
                 <div className="grid items-start gap-3 sm:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
                   <ol className="space-y-1.5" aria-label={french ? 'Ordre du build' : 'Build order'}>
-                    {referenceItems.map((item, index) => {
-                      const owned = ownedItems.has(buildItemKey(item.id));
+                    {progress.steps.map((item) => {
+                      const current = item.id === progress.current?.id;
                       return (
                         <li key={item.id}>
-                          <button type="button" aria-pressed={guideItem?.id === item.id} onClick={() => setItemId(item.id)}
+                          <button type="button" aria-pressed={guideItem?.id === item.id} aria-current={current ? 'step' : undefined}
+                            onClick={() => setItemId(item.id)}
                             className={cn('flex w-full items-center gap-2 rounded-lg border p-2 text-left text-xs hover:border-indigo-400/60',
-                              guideItem?.id === item.id ? 'border-indigo-400/65 bg-indigo-500/15' : 'border-white/10')}>
-                            <span className="grid size-5 shrink-0 place-items-center rounded bg-white/10 font-bold tabular-nums text-zinc-200">{index + 1}</span>
+                              guideItem?.id === item.id || current ? 'border-indigo-400/65 bg-indigo-500/15' : 'border-white/10')}>
+                            <span className="grid size-5 shrink-0 place-items-center rounded bg-white/10 font-bold tabular-nums text-zinc-200">{item.step}</span>
                             <img src={item.icon ? iconUrl(item.icon) : itemIconUrl(item.id, state.ddVersion)} alt="" className="size-7 shrink-0 rounded" />
-                            <span className="flex-1 font-semibold text-white">{item.name}</span>
-                            {owned ? <span className="flex shrink-0 items-center gap-1 text-emerald-300">
+                            <span className="min-w-0 flex-1 font-semibold text-white">
+                              {item.name}
+                              {current && <span className="block text-[10px] text-indigo-200">{french ? 'Étape actuelle' : 'Current step'}</span>}
+                            </span>
+                            {item.owned ? <span className="flex shrink-0 items-center gap-1 text-emerald-300">
                               <Check className="size-3" aria-hidden />{french ? 'Acheté' : 'Owned'}
                             </span> : item.total > 0 && <span className="shrink-0 text-zinc-400">{fmtGold(item.total)}</span>}
                           </button>
@@ -1304,7 +1317,8 @@ export function OverlayView({ state }: { state: AppState }) {
   const offeredWithStat = state.offered.flatMap((offer) => {
     if (!offer.stat) return [];
     const x = augmentPreview ? 0.5 + (offer.slot - (previewCount - 1) / 2) * previewGap : offer.x;
-    return x > 0 && x < 1 ? [{ ...offer, stat: offer.stat, x }] : [];
+    const tier = state.allAugments.find((augment) => augment.id === offer.stat?.id && augment.rarity === offer.stat.rarity)?.tier;
+    return x > 0 && x < 1 ? [{ ...offer, stat: { ...offer.stat, tier: tier ?? offer.stat.tier }, x }] : [];
   });
 
   const showChampSelect =
@@ -1330,9 +1344,8 @@ export function OverlayView({ state }: { state: AppState }) {
         ...item, icon: state.referenceItems?.find((reference) => reference.id === item.id)?.icon,
       }))
     : state.buildPath.map(({ stat }) => stat);
-  const ownedItems = ownedGuideItems(state);
-  const pendingHudItems = hudItems.map((item, index) => ({ ...item, step: index + 1 }))
-    .filter(({ id }) => !ownedItems.has(buildItemKey(id))).slice(0, 4);
+  const hudProgress = buildProgress(state, hudItems);
+  const hudCurrent = hudProgress.current;
   const showBuildHud = showInGameHud && state.settings.showBuildOverlay && hudItems.length > 0 &&
     (!state.game.inGame || state.preview || state.activeMode === state.game.modeKey);
   const isSR = pScene === 'sr_hud' || (state.game.inGame
@@ -1494,15 +1507,21 @@ export function OverlayView({ state }: { state: AppState }) {
         <DraggableSlot panelKey="build_hud" title="Build Guide" defaultX={0.012} defaultY={0.018}
           editing={editing} savedPanels={saved} scale={widgetScale("build_hud")} passThrough>
           <GlassCard surface="overlay" className="px-2.5 py-2">
-            <p className="max-w-40 truncate text-[10px] font-semibold text-zinc-300">
-              {builds.guide?.name ?? 'Build'} · Alt+{state.settings.hotkeySheet || 'G'}
-            </p>
-            {pendingHudItems.length ? (
+            <div className="flex items-center justify-between gap-2 text-[10px] font-semibold">
+              <span className="tabular-nums text-zinc-300">
+                {hudCurrent
+                  ? `${state.settings.language === 'fr' ? 'Étape' : 'Step'} ${hudCurrent.step}/${hudItems.length}`
+                  : (state.settings.language === 'fr' ? 'Build complet' : 'Build complete')}
+              </span>
+              <span className="text-zinc-400">Alt+{state.settings.hotkeySheet || 'G'}</span>
+            </div>
+            {hudCurrent && <p className="mt-0.5 max-w-44 truncate text-xs font-bold text-white">{hudCurrent.name}</p>}
+            {hudCurrent && (
               <ol className="mt-1 flex items-center gap-1.5" aria-label={state.settings.language === 'fr' ? 'Objets restants du build' : 'Remaining build items'}>
-                {pendingHudItems.map((item, index) => (
-                  <li key={item.id} className="flex items-center gap-0.5">
+                {hudProgress.remaining.slice(0, 4).map((item, index) => (
+                  <li key={item.id} aria-current={index === 0 ? 'step' : undefined} className="flex items-center gap-0.5">
                     {index > 0 && <ChevronRight className="size-2 text-zinc-400" aria-hidden />}
-                    <div className="flex flex-col items-center">
+                    <div className={cn('flex flex-col items-center rounded p-0.5', index === 0 && 'bg-indigo-500/20 ring-1 ring-indigo-400/70')}>
                       <img src={item.icon ? iconUrl(item.icon) : itemIconUrl(item.id, state.ddVersion)}
                         alt={item.name} className="size-6 rounded" />
                       <span className="text-[9px] font-bold leading-tight tabular-nums text-zinc-200">{item.step}</span>
@@ -1510,7 +1529,7 @@ export function OverlayView({ state }: { state: AppState }) {
                   </li>
                 ))}
               </ol>
-            ) : <p className="mt-1 text-[10px] text-emerald-300">{state.settings.language === 'fr' ? 'Build complet' : 'Build complete'}</p>}
+            )}
           </GlassCard>
         </DraggableSlot>
       )}

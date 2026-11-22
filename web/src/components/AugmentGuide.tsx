@@ -12,15 +12,16 @@ const orderOf = (list: readonly string[], value: string) => {
   return index < 0 ? list.length : index;
 };
 
-export function AugmentTier({ augment, dark = false, french = false }: {
+export function AugmentTier({ augment, dark = false, french = false, size = 'sm' }: {
   augment: Pick<AugmentEntry, 'tier'>;
   dark?: boolean;
   french?: boolean;
+  size?: 'sm' | 'md';
 }) {
-  const tier = augment.tier;
+  const tier = augment.tier?.trim().toUpperCase();
   if (!tier || !tierOrder.includes(tier)) return null;
   const label = french ? `Tier ${tier} dans sa rareté` : `Tier ${tier} within its rarity`;
-  return <span className="shrink-0" title={label} aria-label={label}><TierBadge tier={tier} size="sm" dark={dark} /></span>;
+  return <span className="shrink-0" title={label} aria-label={label}><TierBadge tier={tier} size={size} dark={dark} /></span>;
 }
 const normalize = (text: string) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
@@ -79,6 +80,11 @@ export function AugmentGuide({ augments, dark = false, french = false }: {
         {french ? 'Les tiers comparent les augments de même rareté pour ce champion. Ils s’affichent quand il y a assez de données.' :
           'Tiers compare augments of the same rarity for this champion and appear when enough data is available.'}
       </p>
+      {augments.length > 0 && !augments.some(({ tier }) => tier && tierOrder.includes(tier.trim().toUpperCase())) && (
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          {french ? 'Aucun tier disponible pour ce champion dans ce mode.' : 'No tiers are available for this champion in this mode.'}
+        </p>
+      )}
       {visible.length === 0 && <p className="text-sm text-zinc-500">{french ? 'Aucun augment trouvé.' : 'No augments found.'}</p>}
       <div className="grid content-start gap-2 sm:grid-cols-2">
         {visible.map((augment) => {

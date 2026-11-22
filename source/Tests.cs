@@ -129,11 +129,49 @@ namespace MayhemCompanion {
    var row = Vision.FillBenchRow(new List<PortraitHit> { first, third }, bench, 5);
    Req(row.Count == 5 && row[1].Champion == bench[1] && Math.Abs(row[4].X - .488) < .0001,
     "Two aligned anchors can place the other champions in their reported slot order");
-   Req(Vision.FillBenchRow(new List<PortraitHit> { first }, bench, 5).Count == 1,
-    "A single anchor must not guess which slots contain other champions");
+   Req(Vision.FillBenchRow(new List<PortraitHit> { first }, bench, 5).Count == 0,
+    "A single anchor must not place badges on an unconfirmed bench");
+   var side = new PortraitHit { Champion = bench[1], X = .12, Y = .25, Size = .04, Confidence = .99 };
+   var offRow = new PortraitHit { Champion = bench[3], X = .44, Y = .65, Size = .04, Confidence = .99 };
+   var withOutliers = Vision.FillBenchRow(new List<PortraitHit> { first, third, side, offRow }, bench, 5);
+   Req(withOutliers.Count == 5 && Math.Abs(withOutliers[1].X - .347) < .0001 &&
+    Math.Abs(withOutliers[3].Y - .25) < .0001, "Side and off-row candidates must not receive misplaced badges");
    third.Y = .6;
-   Req(Vision.FillBenchRow(new List<PortraitHit> { first, third }, bench, 5).Count == 2,
+   Req(Vision.FillBenchRow(new List<PortraitHit> { first, third }, bench, 5).Count == 0,
     "Unaligned anchors must not create a row");
+  }
+
+  static void TestGrayBenchPortraits() {
+   var champions = Enumerable.Range(0, 2).Select(i => new Champion { Slug = "gray-" + i }).ToList();
+   var icons = new Dictionary<string, System.Windows.Media.Imaging.BitmapImage>();
+   using (var frame = new Bitmap(640, 100, PixelFormat.Format32bppArgb)) {
+    for (int index = 0; index < champions.Count; index++) {
+     var random = new Random(416 + index);
+     using (var icon = new Bitmap(24, 24, PixelFormat.Format32bppArgb))
+     using (var png = new MemoryStream()) {
+      for (int y = 0; y < 24; y += 3) for (int x = 0; x < 24; x += 3) {
+       var color = Color.FromArgb(random.Next(24, 256), random.Next(24, 256), random.Next(24, 256));
+       int gray = (color.B * 114 + color.G * 587 + color.R * 299) / 1000 * 2 / 3;
+       for (int dy = 0; dy < 3; dy++) for (int dx = 0; dx < 3; dx++) {
+        icon.SetPixel(x + dx, y + dy, color);
+        frame.SetPixel(238 + index * 30 + x + dx, 15 + y + dy, Color.FromArgb(gray, gray, gray));
+        frame.SetPixel(10 + index * 30 + x + dx, 15 + y + dy, color);
+       }
+      }
+      icon.Save(png, ImageFormat.Png);
+      png.Position = 0;
+      var image = new System.Windows.Media.Imaging.BitmapImage();
+      image.BeginInit();
+      image.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+      image.StreamSource = png;
+      image.EndInit();
+      icons[champions[index].Slug] = image;
+     }
+    }
+    var hits = Vision.BenchPortraits(frame, champions, icons);
+    Req(hits.Count == 2 && hits.All(hit => hit.Confidence >= .84 && hit.X > .37 && hit.X < .46),
+     "Grayscale bench portraits must match even if colored copies appear in the sidebar");
+   }
   }
 
   static void TestWebBridgeSource() {
@@ -229,6 +267,7 @@ namespace MayhemCompanion {
     TestStaleAugmentSlotExpires();
     TestWebBridgeSource();
     TestBenchRow();
+    TestGrayBenchPortraits();
     File.WriteAllText(reportPath, "PASS Maylo recommendations, reference guides and match review");
     return 0;
    } catch (Exception ex) {

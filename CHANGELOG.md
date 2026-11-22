@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.0-beta.16
+
+- Refresh augment tiers when rarity data arrives, and use the same champion and rarity tiers from the catalog on live cards.
+- Highlight the active build step in the mini-HUD and Alt+G. Show the next item’s name and the number of items already owned.
+- Match dimmed bench portraits and limit badges to the confirmed top-center row. Ignore sidebar portraits and keep badges stable across brief scan misses.
+
 ## v0.2.0-beta.15
 
 - Show an augment tier only when supported by the data. Keep the name and rarity visible for unranked augments. Preserve available Mayhem pick rates in the guide even when the source withholds results.
