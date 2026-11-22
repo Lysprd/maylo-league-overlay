@@ -262,6 +262,12 @@ namespace MayhemCompanion {
   readonly Dictionary<string, DateTime> lastActionFire = new Dictionary<string, DateTime>();
   readonly HashSet<string> refreshedThisLaunch = new HashSet<string>();
   List<PortraitHit> portraitPositions = new List<PortraitHit>();
+  readonly Dictionary<string, BitmapImage> benchPortraitImages = new Dictionary<string, BitmapImage>();
+  readonly System.Net.Http.HttpClient benchPortraitClient = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+  bool benchScanBusy;
+  ulong benchSignature;
+  string benchScanScope = "";
+  DateTime nextBenchScan;
   int inspectedItemId = -1, inspectedAugmentId = -1, generation, tierGeneration;
   string fastChampion = "", displayedClientChampion = "";
   DateTime lastHubToggle = DateTime.MinValue, hubOpened = DateTime.MinValue, lastGoodGame = DateTime.MinValue, lastFastSelection = DateTime.MinValue, loadoutAttempt = DateTime.MinValue;
@@ -628,8 +634,18 @@ namespace MayhemCompanion {
      ocrTimer.Interval = TimeSpan.FromMilliseconds(150);
      bool allowCards = Config.Overlay && OverlayVisible && Config.Connected && !HubActive && !InGameSheet && !IsOverlayEditing && !champCardBusy
       && (Game.ModeKey == "MAYHEM" || Game.ModeKey == "ARAM");
-     if (allowCards) await ReadChampSelectCards();
+     if (allowCards) {
+      if (ModePanelVisible("bench", Config.ShowBenchBar)) {
+       var _ = ReadBenchPortraits();
+      }
+      await ReadChampSelectCards();
+     }
      return;
+    }
+    if (portraitPositions.Count > 0) {
+     portraitPositions.Clear();
+     benchSignature = 0;
+     benchScanScope = "";
     }
     if (champSelectCards.Count > 0) {
      champSelectCards = new List<ChampionCardHit>();
@@ -932,7 +948,7 @@ namespace MayhemCompanion {
 
   void EnforceModeView() {
    if (!IsAugmentMode) {
-    if (View == "Augments") View = "TierList";
+    if (View == "Augments") View = "Library";
     if (InGameSheetTab == "augments") InGameSheetTab = "build";
    }
   }
@@ -1262,6 +1278,70 @@ namespace MayhemCompanion {
   async Task RefreshProfile(bool force) {
    if (!Config.Connected) return;
    if (await Profile.Refresh(Bridge, force) && !closing) PushState();
+  }
+
+  async Task ReadBenchPortraits() {
+   if (benchScanBusy || DateTime.UtcNow < nextBenchScan || Game.Bench.Count == 0) return;
+   string patch = MultiModeParser.DDragonVersion;
+   IntPtr target = Game.Window;
+   if (String.IsNullOrEmpty(patch) || target == IntPtr.Zero ||
+       !Native.IsWindowVisible(target) || Native.IsIconic(target) ||
+       !Native.SameApplication(Native.GetForegroundWindow(), target)) return;
+   var bounds = Native.Bounds(target);
+   if (bounds.Width < 400 || bounds.Height < 250) return;
+
+   int[] bench = Game.Bench.ToArray();
+   var champions = bench.Select(FromId).Where(c => c != null &&
+    Regex.IsMatch(c.AssetKey ?? "", @"\A[a-zA-Z0-9]+\z")).ToList();
+   if (champions.Count == 0) return;
+   string scope = patch + ":" + Game.ModeKey + ":" + bounds.Width + ":" + bounds.Height + ":" + String.Join(",", bench);
+   if (scope != benchScanScope) { benchScanScope = scope; benchSignature = 0; portraitPositions.Clear(); }
+   benchScanBusy = true;
+   nextBenchScan = DateTime.UtcNow.AddMilliseconds(1250);
+   try {
+    var missing = champions.Where(c => !benchPortraitImages.ContainsKey(patch + ":" + c.Slug)).ToArray();
+    await Task.WhenAll(missing.Select(async c => {
+     try {
+      string url = "https://ddragon.leagueoflegends.com/cdn/" + patch + "/img/champion/" + c.AssetKey + ".png";
+      var png = await benchPortraitClient.GetByteArrayAsync(url);
+      using (var stream = new MemoryStream(png)) {
+       var icon = new BitmapImage();
+       icon.BeginInit(); icon.CacheOption = BitmapCacheOption.OnLoad; icon.StreamSource = stream; icon.EndInit(); icon.Freeze();
+       benchPortraitImages[patch + ":" + c.Slug] = icon;
+      }
+     } catch { }
+    }));
+    var images = new Dictionary<string, BitmapImage>();
+    foreach (var c in champions) {
+     BitmapImage icon;
+     if (benchPortraitImages.TryGetValue(patch + ":" + c.Slug, out icon)) images[c.Slug] = icon;
+    }
+    if (images.Count == 0 || closing || !Game.InSelection || Game.InGame || !bench.SequenceEqual(Game.Bench)) return;
+    int bandHeight = (int)(bounds.Height * .30);
+    ulong previous = images.Count == champions.Count ? benchSignature : 0;
+    var scan = await Task.Run(() => {
+     using (var frame = new System.Drawing.Bitmap(bounds.Width, bandHeight, System.Drawing.Imaging.PixelFormat.Format32bppArgb)) {
+      using (var graphics = System.Drawing.Graphics.FromImage(frame))
+       graphics.CopyFromScreen(bounds.Left, bounds.Top, 0, 0, frame.Size);
+      ulong signature = AugmentOcr.BandSignature(frame);
+      if (signature == previous) return Tuple.Create(signature, (List<PortraitHit>)null);
+      var hits = Vision.BenchPortraits(frame, champions, images);
+      foreach (var hit in hits) hit.Y *= bandHeight / (double)bounds.Height;
+      return Tuple.Create(signature, hits);
+     }
+    });
+    if (closing || !Game.InSelection || Game.InGame || !OverlayVisible || !Config.Overlay || HubActive ||
+        Game.Window != target || !Native.SameApplication(Native.GetForegroundWindow(), target) ||
+        !bench.SequenceEqual(Game.Bench)) return;
+    var currentBounds = Native.Bounds(target);
+    if (bounds.Width != currentBounds.Width || bounds.Height != currentBounds.Height ||
+        bounds.Left != currentBounds.Left || bounds.Top != currentBounds.Top) return;
+    benchSignature = scan.Item1;
+    if (scan.Item2 == null) return;
+    portraitPositions = scan.Item2;
+    PushState();
+   } catch { }
+   finally { benchScanBusy = false; }
   }
 
   async Task ReadChampSelectCards() {
@@ -1702,6 +1782,11 @@ namespace MayhemCompanion {
      bench = rawBench.Select(draftChampion).ToArray(),
      pickedChampion = actualPick != null ? draftChampion(actualPick) : null,
      champCards = champCardsPayload,
+     benchPortraits = previewDraft
+      ? rawBench.Select((c, i) => new { slug = c.Slug, x = .32 + .075 * i, y = .075, size = .045 }).ToArray()
+      : (Game.InSelection && !Game.InGame ? portraitPositions : new List<PortraitHit>())
+       .Where(hit => rawBench.Any(c => c.Slug == hit.Champion.Slug))
+       .Select(hit => new { slug = hit.Champion.Slug, x = hit.X, y = hit.Y, size = hit.Size }).ToArray(),
      team = Game.Team.Select(FromId).Where(c => c != null).Select(c => new { name = c.Name, slug = c.Slug, tier = c.Tier, win = c.Win, pick = c.Pick, icon = MultiModeParser.ChampIconOf(c), assetKey = c.AssetKey }).ToArray(),
      live = new {
       clock = Game.Live.Clock, seconds = Game.Live.Seconds, health = Game.Live.Health, maxHealth = Game.Live.MaxHealth,
@@ -1989,7 +2074,7 @@ namespace MayhemCompanion {
       {
        string widget = Json.S(msg, "panel");
        double size;
-       if (!new[] { "build_hud", "perf_strip_center", "champ_select_ribbon" }.Contains(widget) ||
+       if (!new[] { "build_hud", "perf_strip_center" }.Contains(widget) ||
            !Double.TryParse(Json.S(msg, "scale"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out size) ||
            Double.IsNaN(size) || Double.IsInfinity(size)) break;
        Dictionary<string, double> map;

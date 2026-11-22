@@ -364,6 +364,7 @@ export interface AppState {
     bench: DraftChampion[];
     pickedChampion?: DraftChampion | null;
     champCards?: ChampCardOffer[];
+    benchPortraits?: { slug: string; x: number; y: number; size: number }[];
     team: Champion[];
     live: LiveSummary;
   };

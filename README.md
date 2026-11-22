@@ -35,7 +35,7 @@ Everything renders in a borderless click-through WebView2 layer that stays out o
 </p>
 
 - **Champ Select Tier List drawer** — pinned on the right edge of Champion Select with instant search, `All / S+ / S / A` filters, role filters in Ranked SR, and cursor-aware click-through so moving back onto the champion grid never blocks picks or bans.
-- **Champion cards and bench** — the ARAM and Mayhem overlays show a compact tier badge for revealed cards and available bench champions. During selection, the cards show a short excerpt of your saved champion notes. Private mode hides these excerpts. The benchmark labels your own champion during play.
+- **Champion cards and bench** — the ARAM and Mayhem overlays show compact tiers on revealed cards and in the corner of recognized bench portraits. Revealed cards show a short note excerpt, and a note icon marks bench portraits with a saved note. Private mode hides both. The benchmark labels your own champion during play.
 - **Alt+G reference** — browse items and their recipes, saved build variants, and the Mayhem or Arena augment catalog. Search augments by name, effect or rarity and sort by observed pick rate.
 - **Summoner’s Rift HUD** — opening items from your active guide, a configurable benchmark for CS/min, KDA, kill participation and game time, and movable panels. Preview your layout and the champion-select click area in Alt+O.
 
@@ -43,7 +43,7 @@ Everything renders in a borderless click-through WebView2 layer that stays out o
 
 ## Hub & Arena 2v2
 
-The desktop Hub automatically follows your active queue — including Practice Tool and Custom games — and keeps Overview, Tier Lists, Match History and Patch Notes scoped to the active mode.
+The desktop Hub automatically follows your active queue — including Practice Tool and Custom games — and keeps Overview, Champions, Match History and Patch Notes scoped to the active mode. Champions combines the tier list and champion catalog, with a shared search and direct access to builds.
 
 1. **Prepare your match.** Home opens the build for the champion detected in the League client. The tier list stays available during champion select. The Build page opens on the active guide, recipes and import actions. Choose a saved variant for this champion, mode and role to use it in the mini-HUD and Alt+G.
 2. **Look up items and augments in game.** Alt+G opens the chosen build and its recipes. In Mayhem and Arena, search augments by effect or rarity and read their tiers within each rarity.

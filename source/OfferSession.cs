@@ -96,10 +96,10 @@ namespace MayhemCompanion {
      damped = new AugmentHit { Stat = h.Stat, X = clicked.X, Y = clicked.Y };
     } else if (Visible) {
      for (int i = 0; i < MaxSlots; i++) {
-      if (Choices[i] != null && Choices[i].Id == h.Stat.Id && Positions[i] != null && Math.Abs(Positions[i].X - h.X) < 0.045) {
+      if (Choices[i] != null && Choices[i].Id == h.Stat.Id && Positions[i] != null && Math.Abs(Positions[i].X - h.X) < 0.085) {
        damped = new AugmentHit {
         Stat = h.Stat, X = Positions[i].X,
-        Y = Math.Abs(Positions[i].Y - h.Y) < 0.025 ? Positions[i].Y : h.Y
+        Y = Positions[i].Y
        };
        break;
       }

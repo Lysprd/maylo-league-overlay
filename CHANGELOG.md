@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.2.0-beta.13
+
+### Hub
+
+- Merge Meta and Champions into one mode-specific list with search, tier filters, and direct build access. Keep the role and rank filters for Summoner’s Rift, and retain your search and filters when returning from a build.
+- Keep champions without statistics available for browsing and mark their tier as unknown.
+
+### Overlay
+
+- Anchor each augment badge to its own card. Hovering a card or rerolling a slot no longer shifts neighboring badges.
+- Number the first four build items in the compact HUD. Alt+G shows the full build in order and opens the first recipe by default. On wider screens, the recipe sits beside the list. Secondary build options can be expanded when needed.
+- Replace the champion-select ribbon with compact, click-through tier badges on recognized ARAM and Mayhem bench portraits. A note icon indicates a saved note, which can be read in the tier-list drawer. Revealed champion cards retain their note excerpts.
+
 ## v0.2.0-beta.12
 
 - Show saved champion notes on champion-select cards and the top ribbon. Private mode suppresses the notes.

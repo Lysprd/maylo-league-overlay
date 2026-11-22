@@ -451,7 +451,7 @@ namespace MayhemCompanion {
       bcid = Json.ToInt(obj);
      }
      if (bcid <= 0 || !ChampionNames.ContainsKey(bcid)) return;
-     if (!snapshot.Bench.Contains(bcid)) snapshot.Bench.Add(bcid);
+     if (!forceCard && !snapshot.Bench.Contains(bcid)) snapshot.Bench.Add(bcid);
      if (prio && !snapshot.PriorityCards.Contains(bcid)) snapshot.PriorityCards.Add(bcid);
     };
     foreach (var v in Json.A(session, "benchChampions")) addBenchOrCard(v, false);

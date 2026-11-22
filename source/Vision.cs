@@ -3,7 +3,6 @@ using System.Linq;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
-using System.IO;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using PixelFormat = System.Drawing.Imaging.PixelFormat;
@@ -25,31 +24,36 @@ namespace MayhemCompanion {
    for (int i = 0; i < t.U.Length; i++) { int xx = x + (int)(size * (.12 + t.U[i] * .152)), yy = y + (int)(size * (.12 + t.Y[i] * .152)); int p = (yy * frame.W + xx) * 4; for (int c = 0; c < 3; c++) { double n = frame.P[p + c]; sum += n; sq += n * n; dot += n * t.V[i * 3 + c]; } }
    double denom = Math.Sqrt(Math.Max(1, sq - sum * sum / t.V.Length)) * t.Norm; return (dot - sum * t.Mean) / denom;
   }
-  public static List<PortraitHit> Portraits(byte[] png, List<Champion> candidates, Dictionary<string, BitmapImage> images) {
+  public static List<PortraitHit> BenchPortraits(Bitmap original, List<Champion> candidates, Dictionary<string, BitmapImage> images) {
    var result = new List<PortraitHit>();
-   using (var stream = new MemoryStream(png)) using (var original = new Bitmap(stream)) using (var small = new Bitmap(640, (int)(640.0 * original.Height / original.Width), PixelFormat.Format32bppArgb)) {
+   using (var small = new Bitmap(640, Math.Max(1, (int)(640.0 * original.Height / original.Width)), PixelFormat.Format32bppArgb)) {
     using (var g = Graphics.FromImage(small)) { g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBilinear; g.DrawImage(original, new Rectangle(0, 0, small.Width, small.Height)); }
     var frame = new Pixels(small);
     foreach (var champion in candidates.GroupBy(c => c.Slug).Select(g => g.First())) {
      BitmapImage image; if (!images.TryGetValue(champion.Slug, out image)) continue;
      var template = Make(image); if (template == null) continue;
      double best = .75; int bx = 0, by = 0, bs = 0;
-     foreach (int size in new[] { 18, 21, 24, 27, 30, 32, 36, 40, 44, 49, 56 }) {
+     foreach (int size in new[] { 12, 15, 18, 21, 24, 27, 30, 34, 39, 45, 52, 60 }) {
       int maxX = frame.W - size, maxY = frame.H - size;
-      for (int y = 14; y < Math.Min(maxY, (int)(frame.H * .91)); y += 3) for (int x = 4; x < maxX; x += 3) {
-       if (x > frame.W * .82 || (y > frame.H * .42 && x > frame.W * .25)) continue;
+      for (int y = 0; y <= maxY; y += 3) for (int x = 0; x <= maxX; x += 3) {
        double score = Score(frame, template, x, y, size); if (score > best) { best = score; bx = x; by = y; bs = size; }
       }
      }
      if (bs == 0) continue;
      int startX = bx, startY = by, startSize = bs;
-     for (int size = Math.Max(14, startSize - 2); size <= startSize + 2; size++) for (int y = Math.Max(0, startY - 3); y <= Math.Min(frame.H - size - 1, startY + 3); y++) for (int x = Math.Max(0, startX - 3); x <= Math.Min(frame.W - size - 1, startX + 3); x++) { double score = Score(frame, template, x, y, size); if (score > best) { best = score; bx = x; by = y; bs = size; } }
+     for (int size = Math.Max(10, startSize - 2); size <= startSize + 2; size++) for (int y = Math.Max(0, startY - 3); y <= Math.Min(frame.H - size - 1, startY + 3); y++) for (int x = Math.Max(0, startX - 3); x <= Math.Min(frame.W - size - 1, startX + 3); x++) { double score = Score(frame, template, x, y, size); if (score > best) { best = score; bx = x; by = y; bs = size; } }
      if (best < .90) continue;
      var hit = new PortraitHit { Champion = champion, X = (bx + bs * .5) / frame.W, Y = (double)by / frame.H, Size = (double)bs / frame.W, Confidence = best };
-     if (!result.Any(h => Math.Abs(h.X - hit.X) < hit.Size * .6 && Math.Abs(h.Y - hit.Y) < hit.Size * .6)) result.Add(hit);
+     result.Add(hit);
     }
    }
-   return result;
+   var confirmed = new List<PortraitHit>();
+   foreach (var hit in result.OrderByDescending(h => h.Confidence)) {
+    if (confirmed.Any(h => Math.Abs(h.X - hit.X) < Math.Min(h.Size, hit.Size) * .7 &&
+      Math.Abs(h.Y - hit.Y) * original.Height < Math.Min(h.Size, hit.Size) * original.Width * .7)) continue;
+    confirmed.Add(hit);
+   }
+   return confirmed;
   }
  }
 }

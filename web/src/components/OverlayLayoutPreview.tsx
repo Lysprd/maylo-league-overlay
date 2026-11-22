@@ -30,17 +30,13 @@ export function OverlayLayoutPreview({ state, french, dark = false }: { state: A
   const size = drawerOpen ? draftDrawer.open : draftDrawer.closed;
   const ratios = state.settings.panels || {};
   const widgets = [
-    ...(draft
-      ? state.settings.showBenchBar && ['MAYHEM','ARAM'].includes(state.activeMode)
-        ? [{ key: 'champ_select_ribbon', x: .5, y: .008, label: french ? 'Banc' : 'Bench' }]
-        : []
-      : [
+    ...(!draft ? [
           ...(state.settings.showBuildOverlay ? [{ key: 'build_hud', x: .012, y: .018, label: 'Build' }] : []),
           ...(state.activeMode === 'SR' && state.settings.showPerfStrip ? [{ key: 'perf_strip_center', x: .5, y: .042, label: 'Benchmark' }] : []),
           ...(state.activeMode === 'SR' && state.settings.showJungleWidget ? [{
             key: 'minimap_overlay', x: state.settings.minimapLeft ? .0045 : .9955, y: .989, label: french ? 'Minicarte' : 'Minimap',
           }] : []),
-        ]),
+        ] : []),
   ];
   return (
     <div className={`space-y-2 text-xs ${dark ? 'text-zinc-100' : ''}`}>

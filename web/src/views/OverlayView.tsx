@@ -6,6 +6,7 @@ import {
   Coins,
   Compass,
   Download,
+  FileText,
   GripHorizontal,
   Minus,
   Plus,
@@ -414,7 +415,7 @@ function InGameCommandSheet({ state, builds }: { state: AppState; builds: Return
   const referenceItems = variant
     ? variant.items.map((item) => state.referenceItems?.find((entry) => entry.id === item.id) || { ...item, icon: '', total: 0, components: [] })
     : opening;
-  const guideItem = referenceItems.find((item) => item.id === itemId);
+  const guideItem = referenceItems.find((item) => item.id === itemId) ?? referenceItems[0];
   const french = state.settings.language === 'fr';
   const live = state.game.live;
   const me = useMemo(() => live.players.find((p) => p.me) ?? null, [live.players]);
@@ -660,6 +661,60 @@ function InGameCommandSheet({ state, builds }: { state: AppState; builds: Return
           )}
           {tab === 'build' && guideReady && (
             <>
+
+              <section className="space-y-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                <div className="flex justify-between gap-2 text-xs text-zinc-400">
+                  <span>{french ? 'Ordre du build' : 'Build order'}</span><span>{state.modeSource}</span>
+                </div>
+                {!!saved.length && (
+                  <select value={variant?.id ?? ''} onChange={(event) => { selectGuide(event.target.value); setItemId(null); }}
+                    aria-label={french ? 'Choisir un build' : 'Choose a build'} className="rounded bg-zinc-900 p-1.5 text-xs text-white">
+                    <option value="">{french ? 'Guide par défaut' : 'Default guide'}</option>
+                    {saved.map((build) => <option key={build.id} value={build.id}>{build.name}</option>)}
+                  </select>
+                )}
+                <div className="grid items-start gap-3 sm:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+                  <ol className="space-y-1.5" aria-label={french ? 'Ordre du build' : 'Build order'}>
+                    {referenceItems.map((item, index) => (
+                      <li key={item.id}>
+                        <button type="button" aria-pressed={guideItem?.id === item.id} onClick={() => setItemId(item.id)}
+                          className={cn('flex w-full items-center gap-2 rounded-lg border p-2 text-left text-xs hover:border-indigo-400/60',
+                            guideItem?.id === item.id ? 'border-indigo-400/65 bg-indigo-500/15' : 'border-white/10')}>
+                          <span className="grid size-5 shrink-0 place-items-center rounded bg-white/10 font-bold tabular-nums text-zinc-200">{index + 1}</span>
+                          <img src={item.icon ? iconUrl(item.icon) : itemIconUrl(item.id, state.ddVersion)} alt="" className="size-7 shrink-0 rounded" />
+                          <span className="flex-1 font-semibold text-white">{item.name}</span>
+                          {item.total > 0 && <span className="shrink-0 text-zinc-400">{fmtGold(item.total)}</span>}
+                        </button>
+                      </li>
+                    ))}
+                  </ol>
+                  {guideItem && (
+                    <div className="rounded-lg border border-white/10 bg-black/20 p-3 text-xs text-zinc-300">
+                      <div className="text-[10px] text-zinc-400">{french ? 'Recette' : 'Recipe'}</div>
+                      <strong className="text-white">{guideItem.name}</strong>
+                      {guideItem.components.length > 0 ? (
+                        <ul className="mt-2 grid gap-2">
+                          {guideItem.components.map((component, index) => (
+                            <li key={`${component.id}-${index}`} className="flex items-center gap-1.5">
+                              <img src={component.icon ? iconUrl(component.icon) : itemIconUrl(component.id, state.ddVersion)} alt="" className="size-5 rounded" />
+                              <span className="grow">{component.name}</span><span>{fmtGold(component.price)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : <p className="mt-2 text-zinc-400">
+                        {guideItem.total > 0 ? (french ? 'Aucun composant.' : 'No components.') : (french ? 'Recette indisponible.' : 'Recipe unavailable.')}
+                      </p>}
+                    </div>
+                  )}
+                </div>
+                {!referenceItems.length && <p className="text-xs text-zinc-400">{french ? 'Guide indisponible.' : 'Build guide unavailable.'}</p>}
+              </section>
+
+              <details className="rounded-lg border border-white/10 p-3">
+                <summary className="cursor-pointer text-xs font-semibold text-zinc-200">
+                  {french ? 'Options du guide' : 'Guide options'}
+                </summary>
+                <div className="mt-3">
               {/* Role Bar (SR) + Focus Bar + Actions */}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-3">
@@ -718,7 +773,7 @@ function InGameCommandSheet({ state, builds }: { state: AppState; builds: Return
                       {state.importStatus}
                     </span>
                   )}
-                  <Button
+                  {!state.game.inGame && <Button
                     size="xs"
                     variant="secondary"
                     disabled={!champ || state.game.inGame}
@@ -726,51 +781,13 @@ function InGameCommandSheet({ state, builds }: { state: AppState; builds: Return
                     className="border-white/12 bg-white/[0.06] text-zinc-100 hover:bg-white/[0.12]"
                   >
                     <Download className="size-3" />
-                    Export to Shop
-                  </Button>
+                    {french ? 'Exporter vers la boutique' : 'Export to shop'}
+                  </Button>}
                 </div>
               </div>
 
-              <section className="space-y-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                <div className="flex justify-between gap-2 text-xs text-zinc-400">
-                  <span>{french ? 'Guide de build' : 'Build reference'}</span><span>{state.modeSource}</span>
                 </div>
-                {!!saved.length && (
-                  <select value={variant?.id ?? ''} onChange={(event) => { selectGuide(event.target.value); setItemId(null); }}
-                    aria-label={french ? 'Choisir un build' : 'Choose a build'} className="rounded bg-zinc-900 p-1.5 text-xs text-white">
-                    <option value="">{french ? 'Guide par défaut' : 'Default guide'}</option>
-                    {saved.map((build) => <option key={build.id} value={build.id}>{build.name}</option>)}
-                  </select>
-                )}
-                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {referenceItems.map((item) => (
-                    <button key={item.id} type="button" aria-pressed={itemId === item.id}
-                      onClick={() => setItemId(item.id)}
-                      className={cn('flex items-center gap-2 rounded-lg border p-2 text-left text-xs hover:border-indigo-400/50',
-                        itemId === item.id ? 'border-indigo-400/60 bg-indigo-500/15' : 'border-white/10')}>
-                      <img src={item.icon ? iconUrl(item.icon) : itemIconUrl(item.id, state.ddVersion)} alt="" className="size-7 rounded" />
-                      <span className="flex-1 font-semibold text-white">{item.name}</span>
-                      {item.total > 0 && <span className="text-zinc-400">{fmtGold(item.total)}</span>}
-                    </button>
-                  ))}
-                </div>
-                {guideItem && (
-                  <div className="border-t border-white/10 pt-2 text-xs text-zinc-300">
-                    <strong className="text-white">{guideItem.name}</strong>
-                    {guideItem.components.length > 0 && (
-                      <ul className="mt-2 flex flex-wrap gap-2">
-                        {guideItem.components.map((component, index) => (
-                          <li key={`${component.id}-${index}`} className="flex items-center gap-1.5">
-                            <img src={component.icon ? iconUrl(component.icon) : itemIconUrl(component.id, state.ddVersion)} alt="" className="size-4 rounded" />
-                            {component.name} · {fmtGold(component.price)}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                )}
-                {!referenceItems.length && <p className="text-xs text-zinc-400">{french ? 'Guide indisponible.' : 'Build guide unavailable.'}</p>}
-              </section>
+              </details>
 
               {state.skills && state.skills.levels.length > 0 && (
                 <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3.5">
@@ -1090,6 +1107,8 @@ function ChampSelectTierDrawer({ state }: { state: AppState }) {
           ) : (
             rows.map((row, idx) => {
               const isSelected = state.selected?.slug === row.slug;
+              const note = state.game.pickedChampion?.slug === row.slug ? state.game.pickedChampion.note
+                : state.game.bench.find(({ slug }) => slug === row.slug)?.note;
               return (
                 <button
                   key={`${row.slug}-${row.role}-${idx}`}
@@ -1138,6 +1157,7 @@ function ChampSelectTierDrawer({ state }: { state: AppState }) {
                           </span>
                         )}
                       </div>
+                      {note && <p className="line-clamp-2 text-[10px] leading-tight text-zinc-300">{note}</p>}
                       <div className="text-[9px] text-zinc-400 tabular-nums leading-tight">
                         {isSR && row.role ? `${row.role} · ` : ''}
                         PR {fmtPct(row.pickRate)}
@@ -1278,12 +1298,7 @@ export function OverlayView({ state }: { state: AppState }) {
     (augmentPreview || (state.game.inGame && state.augmentsVisible && state.settings.ocr)) &&
     offeredWithStat.length > 0;
 
-  const titleYs = offeredWithStat.map((o) => o.y).filter((y) => y > 0).sort((a, b) => a - b);
-  const rowY = titleYs.length > 0
-    ? (titleYs[Math.floor((titleYs.length - 1) / 2)] + titleYs[Math.floor(titleYs.length / 2)]) / 2
-    : 0.40;
   const badgeOffset = state.settings.badgeOffsetY || 0;
-  const baseAugY = Math.max(0.11, Math.min(0.46, rowY - 0.19 + badgeOffset));
   const moveAugments = (delta: number) => postAction('updateSetting', {
     key: 'badgeOffsetY',
     value: Math.max(-0.15, Math.min(0.15, Math.round((badgeOffset + delta) * 100) / 100)),
@@ -1425,69 +1440,36 @@ export function OverlayView({ state }: { state: AppState }) {
               </motion.div>
             );
           })}
-          {(() => {
-            const picked = state.game.pickedChampion;
-            const cardSlugs = new Set(state.game.champCards?.map((card) => card.slug));
-            const bench = state.settings.showBenchBar
-              ? state.game.bench.filter((champion) => !cardSlugs.has(champion.slug) && champion.slug !== picked?.slug) : [];
+          {state.settings.showBenchBar && state.game.benchPortraits?.map((portrait) => {
+            const champion = state.game.bench.find(({ slug }) => slug === portrait.slug);
+            if (!champion) return null;
             const french = state.settings.language === 'fr';
-            if (!picked && !bench.length) return null;
             return (
-              <DraggableSlot panelKey="champ_select_ribbon" title={french ? 'Sélection de champion' : 'Champion select'}
-                defaultX={0.5} defaultY={0.008} anchor="top-center" editing={editing} savedPanels={saved}
-                scale={widgetScale('champ_select_ribbon')} passThrough>
-                <GlassCard surface="overlay" className="flex max-w-[78vw] flex-wrap items-center gap-2 p-1.5">
-                  {picked && <div data-draft-current className="flex items-center gap-1.5">
-                    <span className="text-[10px] text-zinc-300">{french ? 'Sélection' : 'Selected'}</span>
-                    <DraftChampionBadge champion={picked} portrait french={french} />
-                  </div>}
-                  {!!bench.length && <div data-draft-bench className="flex flex-wrap items-center gap-1">
-                    <span className="px-1 text-[10px] text-zinc-300">{french ? 'Banc' : 'Bench'}</span>
-                    {bench.map((champion) => <DraftChampionBadge key={champion.slug} champion={champion} portrait french={french} />)}
-                  </div>}
-                </GlassCard>
-              </DraggableSlot>
+              <div key={portrait.slug} data-bench-tier={portrait.slug}
+                className="pointer-events-none fixed z-30 -translate-x-full"
+                style={{ left: `${(portrait.x + portrait.size / 2) * 100}vw`, top: `${portrait.y * 100}vh` }}>
+                <div className="flex items-center gap-0.5 rounded bg-[#10131c]/95 shadow ring-1 ring-white/15"
+                  aria-label={`${champion.name} · ${champion.tier ? `Tier ${champion.tier}` : '?'}${champion.note ? ` · ${champion.note}` : ''}`}>
+                  {champion.note && <FileText className="ml-0.5 size-2.5 text-zinc-200" aria-label={french ? 'Note enregistrée' : 'Saved note'} />}
+                  <TierBadge tier={champion.tier} size="xs" dark />
+                </div>
+              </div>
             );
-          })()}
+          })}
           {(!editing || pScene === 'bench') && <ChampSelectTierDrawer state={state} />}
         </>
       )}
 
-      {showAugments && (
-        <>
-          <DraggableSlot
-            panelKey="augment_row"
-            title="Augments"
-            defaultX={0.5}
-            defaultY={baseAugY}
-            anchor="center-bottom"
-            editing={editing}
-            scale={1}
-            movable={false}
-            passThrough
-          >
-            <div className="grid w-[calc(100vw-8px)] grid-cols-[minmax(0,1fr)] items-end">
-              {offeredWithStat.map((slot) => {
-                const nearestGap = Math.min(
-                  slot.x * 2, (1 - slot.x) * 2,
-                  ...(augmentPreview ? offeredWithStat : state.offered).filter((other) => other.x > 0 && other.slot !== slot.slot)
-                    .map((other) => Math.abs(other.x - slot.x)),
-                );
-                const width = `min(228px, calc((${nearestGap * 100}vw - 8px) / ${scale}))`;
-                return (
-                  <div key={slot.slot} data-augment-badge={slot.slot}
-                    className="col-start-1 row-start-1 w-max -translate-x-1/2 justify-self-start"
-                    style={{ marginLeft: `calc(${slot.x * 100}vw - ${PANEL_INSET}px)` }}
-                  >
-                    <AugmentBadgeCard stat={slot.stat} width={width} scale={scale} french={state.settings.language === 'fr'} />
-                  </div>
-                );
-              })}
-            </div>
-          </DraggableSlot>
-
-        </>
-      )}
+      {showAugments && offeredWithStat.map((slot) => {
+        const y = Math.max(0.11, Math.min(0.46, (slot.y || 0.40) - 0.19 + badgeOffset));
+        return (
+          <div key={slot.slot} data-augment-badge={slot.slot}
+            className="pointer-events-none fixed -translate-x-1/2 -translate-y-full"
+            style={{ left: `${slot.x * 100}vw`, top: `${y * 100}vh` }}>
+            <AugmentBadgeCard stat={slot.stat} width={`min(178px, calc(15vw / ${scale}))`} scale={scale} french={state.settings.language === 'fr'} />
+          </div>
+        );
+      })}
 
       {showBuildHud && (
         <DraggableSlot panelKey="build_hud" title="Build Guide" defaultX={0.012} defaultY={0.018}
@@ -1496,12 +1478,18 @@ export function OverlayView({ state }: { state: AppState }) {
             <p className="max-w-40 truncate text-[10px] font-semibold text-zinc-300">
               {builds.guide?.name ?? 'Build'} · Alt+{state.settings.hotkeySheet || 'G'}
             </p>
-            <div className="mt-1.5 flex gap-1">
-              {hudItems.slice(0, 4).map((item) => (
-                <img key={item.id} src={item.icon ? iconUrl(item.icon) : itemIconUrl(item.id, state.ddVersion)}
-                  alt={item.name} className="size-6 rounded" />
+            <ol className="mt-1 flex items-center gap-1.5" aria-label={state.settings.language === 'fr' ? 'Ordre du build' : 'Build order'}>
+              {hudItems.slice(0, 4).map((item, index) => (
+                <li key={item.id} className="flex items-center gap-0.5">
+                  {index > 0 && <ChevronRight className="size-2 text-zinc-400" aria-hidden />}
+                  <div className="flex flex-col items-center">
+                    <img src={item.icon ? iconUrl(item.icon) : itemIconUrl(item.id, state.ddVersion)}
+                      alt={item.name} className="size-6 rounded" />
+                    <span className="text-[9px] font-bold leading-tight tabular-nums text-zinc-200">{index + 1}</span>
+                  </div>
+                </li>
               ))}
-            </div>
+            </ol>
           </GlassCard>
         </DraggableSlot>
       )}

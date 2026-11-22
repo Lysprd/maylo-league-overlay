@@ -72,6 +72,11 @@ namespace MayhemCompanion {
     new AugmentHit { Stat = otherGold, X = .5, Y = .4 }
    };
    Req(offer.Observe(opening, now), "Two Gold cards must open the offer");
+   var hover = new List<AugmentHit> {
+    new AugmentHit { Stat = gold, X = .33, Y = .46 }, opening[1]
+   };
+   Req(!offer.Observe(hover, now.AddMilliseconds(25)) && offer.Positions[0].X == .3 && offer.Positions[0].Y == .4 &&
+    offer.Positions[1].Y == .4, "Hovering a card must keep its badge and neighboring badges anchored");
    Req(offer.TrackClick(.3, .72, now.AddMilliseconds(50)) && offer.PendingRerollId == gold.Id,
     "Reroll must mark only the clicked Gold card as pending");
    var replacement = new List<AugmentHit> {

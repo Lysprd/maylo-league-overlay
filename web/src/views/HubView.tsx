@@ -39,7 +39,6 @@ import {
   ThumbsUp,
   Timer,
   TrendingUp,
-  Trophy,
   Wand2,
   X,
   Zap,
@@ -614,7 +613,6 @@ export function HubView({ state }: { state: AppState }) {
     ? state.history.find((match) => match.id === selectedMatch.id)
     : undefined;
   const [liveFilter, setLiveFilter] = useState<'Overview' | 'Your team' | 'Opponents'>('Overview');
-  const [tierSearch, setTierSearch] = useState('');
   const [historySearch, setHistorySearch] = useState('');
   const [patchCat, setPatchCat] = useState<'champion' | 'augment' | 'item' | 'system'>('champion');
   const [patchFilter, setPatchFilter] = useState<'all' | 'buff' | 'nerf' | 'other'>('all');
@@ -633,7 +631,7 @@ export function HubView({ state }: { state: AppState }) {
   const game = state.game;
   const unsupportedMatch = (game.inGame || game.inSelection) && game.modeKey === '';
   const rawView = state.view || 'Dashboard';
-  const normalizedView = !hasAugments && rawView === 'Augments' ? 'TierList' : rawView;
+  const normalizedView = rawView === 'TierList' || (!hasAugments && rawView === 'Augments') ? 'Library' : rawView;
   // If user enters Build without a selected champion, cleanly show the full Champions grid!
   const view = normalizedView === 'Build' && !selected ? 'Library' : normalizedView;
   const tutorialOpen = replayTutorial || (state.settings.onboardingSeen === false && !dismissedTutorial);
@@ -705,7 +703,6 @@ export function HubView({ state }: { state: AppState }) {
   const navItems = useMemo(() => {
     const items = [
       { id: 'Dashboard', label: french ? 'Accueil' : 'Overview', icon: LayoutGrid },
-      { id: 'TierList', label: isSR ? 'Tier List' : isMayhem ? 'Mayhem Meta' : isArena ? 'Arena Meta' : 'ARAM Tier List', icon: Trophy },
       { id: 'Library', label: 'Champions', icon: Swords },
     ];
     if (hasAugments) {
@@ -722,49 +719,22 @@ export function HubView({ state }: { state: AppState }) {
     return items;
   }, [isMayhem, isArena, hasAugments, isSR, french, state.patchNotes?.version]);
 
-  const filteredTierList = useMemo(() => {
-    const q = tierSearch.trim().toLowerCase();
-    return (state.tierList || []).filter((t) => !q || t.name.toLowerCase().includes(q) || t.slug.includes(q));
-  }, [state.tierList, tierSearch]);
-
-  const modeChampions = useMemo(() => {
-    const base = state.champions || [];
-    if (isMayhem || !state.tierList || state.tierList.length === 0) return base;
-    const bySlug = new Map<string, (typeof base)[number]>();
-    for (const c of base) bySlug.set(c.slug, c);
-    const seen = new Set<string>();
-    const merged: typeof base = [];
-    for (const t of state.tierList) {
-      if (seen.has(t.slug)) continue;
-      seen.add(t.slug);
-      const ref = bySlug.get(t.slug);
-      merged.push({
-        name: t.name,
-        slug: t.slug,
-        tier: t.tier,
-        win: t.winRate,
-        pick: t.pickRate,
-        icon: t.icon || ref?.icon || '',
-        assetKey: ref?.assetKey || t.slug,
-        patchTag: t.patchTag || ref?.patchTag || '',
-      });
-    }
-    for (const c of base) {
-      if (!seen.has(c.slug)) {
-        merged.push({ ...c, tier: 'D', win: 0, pick: 0 });
-      }
-    }
-    return merged;
-  }, [isMayhem, state.champions, state.tierList]);
-
-  const filteredChampions = useMemo(() => {
-    const q = champSearch.trim().toLowerCase();
-    return modeChampions.filter(
-      (c) =>
-        (tierFilter === 'All' || c.tier.toUpperCase().startsWith(tierFilter)) &&
-        (!q || c.name.toLowerCase().includes(q) || c.slug.includes(q))
-    );
-  }, [modeChampions, champSearch, tierFilter]);
+  const tierRole = (state.settings.tierRole || 'ALL').toUpperCase();
+  const championRows = useMemo(() => {
+    const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const query = normalize(champSearch.trim());
+    const rankedSlugs = new Set(state.tierList.map(({ slug }) => slug));
+    const ranked = state.tierList.map((row, index) => ({ ...row, position: row.rank || index + 1 }));
+    const unranked = !isSR || tierRole === 'ALL'
+      ? state.champions.filter(({ slug }) => !rankedSlugs.has(slug)).map((champion) => ({
+          name: champion.name, slug: champion.slug, icon: champion.icon, patchTag: champion.patchTag,
+          role: '', tier: '', position: null, rankDelta: 0, winRate: 0, pickRate: 0, banRate: 0, counters: [],
+        }))
+      : [];
+    return [...ranked, ...unranked].filter(({ name, slug, tier }) =>
+      (tierFilter === 'All' || tier === tierFilter) &&
+      (!query || normalize(name).includes(query) || normalize(slug).includes(query)));
+  }, [champSearch, isSR, state.champions, state.tierList, tierFilter, tierRole]);
 
   const draftActive = game.inSelection && !game.inGame && game.modeKey === state.activeMode;
   const draftPick = draftActive ? game.pickedChampion : null;
@@ -1056,13 +1026,7 @@ export function HubView({ state }: { state: AppState }) {
               const active = isChampNav ? (view === 'Library' || view === 'Build') : view === item.id;
               const onClickNav = () => {
                 if (selectedMatch) closeMatch();
-                if (isChampNav) {
-                  if (view === 'Build') postAction('setView', { view: 'Library' });
-                  else if (selected && (game.inGame || (game.inSelection && game.champion))) postAction('setView', { view: 'Build' });
-                  else postAction('setView', { view: 'Library' });
-                } else {
-                  postAction('setView', { view: item.id });
-                }
+                postAction('setView', { view: item.id });
               };
               return (
                 <button
@@ -1227,8 +1191,8 @@ export function HubView({ state }: { state: AppState }) {
                     {view === 'Build' && (
                       <button
                         type="button"
-                        title={draftActive ? (french ? 'Retour à la tier list' : 'Back to tier list') : (french ? 'Tous les champions' : 'All champions')}
-                        onClick={() => postAction('setView', { view: draftActive ? 'TierList' : 'Library' })}
+                        title={french ? 'Retour aux champions' : 'Back to champions'}
+                        onClick={() => postAction('setView', { view: 'Library' })}
                         className="flex size-9 items-center justify-center rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/[0.04] text-zinc-600 dark:text-zinc-300 hover:border-indigo-400/50 hover:text-zinc-900 dark:hover:text-white transition-colors shrink-0 cursor-pointer"
                       >
                         <ArrowLeft className="size-4" />
@@ -1424,46 +1388,34 @@ export function HubView({ state }: { state: AppState }) {
               </GlassCard>
             )}
 
-            {/* VIEW: MODE-ADAPTIVE TIER LIST (Role & Elo in Ranked SR, ARAM, Mayhem) */}
-            {view === 'TierList' && (
+            {view === 'Library' && (
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h2 className="text-base font-bold text-zinc-900 dark:text-white">
-                      {isSR
-                        ? `Ranked Solo/Duo Tier List`
-                        : isMayhem
-                          ? 'ARAM Mayhem Tier List'
-                          : isArena
-                            ? 'Arena 2v2 Tier List'
-                            : 'ARAM Tier List'}
-                    </h2>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                      {isSR
-                        ? `Live OP.GG data · Click any champion to open its role-specific build & skill order`
-                        : isArena
-                          ? `Live OP.GG Arena data · Top-4 Win Rate, Pick & Ban rates · Click any champion for Augments & Prismatic Items`
-                          : `Click any champion to inspect optimal build path & live stats`}
+                    <h1 className="text-base font-bold text-zinc-900 dark:text-white">Champions</h1>
+                    <p className="text-xs text-zinc-500">
+                      {activeModeLabel} · {french ? 'Classement et builds' : 'Tiers and builds'}
                     </p>
                   </div>
-                  <div className="relative min-w-[200px] max-w-xs flex-1">
+                  <div className="relative min-w-[180px] max-w-xs flex-1">
                     <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" />
-                    <input
-                      type="text"
-                      value={tierSearch}
-                      onChange={(e) => setTierSearch(e.target.value)}
-                      placeholder="Filter champion..."
-                      className="w-full rounded-xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#14151B] py-1.5 pl-8 pr-3 text-xs text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:border-indigo-400 focus:outline-none"
-                    />
+                    <input type="search" value={champSearch} onChange={(event) => setChampSearch(event.target.value)}
+                      aria-label={french ? 'Rechercher un champion' : 'Search champions'}
+                      placeholder={french ? 'Rechercher un champion…' : 'Search champions…'}
+                      className="w-full rounded-xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#14151B] py-2 pl-8 pr-3 text-xs text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:border-indigo-400 focus:outline-none" />
                   </div>
                 </div>
+                <SegmentedTabs size="sm" className="flex-wrap" value={tierFilter} onChange={setTierFilter}
+                  options={['All', 'S+', 'S', 'A', 'B', 'C', 'D'].map((value) => ({
+                    value, label: value === 'All' ? (french ? 'Tous les tiers' : 'All tiers') : value,
+                  }))} />
 
                 {/* SR Role + Elo Filter Bar */}
                 {isSR && (
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <SegmentedTabs
                       size="sm"
-                      value={(state.settings.tierRole || 'ALL').toUpperCase()}
+                      value={tierRole}
                       onChange={(r) => postAction('setTierFilter', { role: r })}
                       options={SR_ROLES.map((r) => ({ value: r.key, label: r.label }))}
                     />
@@ -1492,11 +1444,9 @@ export function HubView({ state }: { state: AppState }) {
 
                 {/* Strictly Aligned Tier List Grid */}
                 <GlassCard surface="hub" className="overflow-hidden">
-                  {filteredTierList.length === 0 ? (
+                  {championRows.length === 0 ? (
                     <div className="p-10 text-center text-sm text-zinc-500 dark:text-zinc-400">
-                      {state.tierList.length === 0
-                        ? 'Loading live Tier List data…'
-                        : 'No champions match your search.'}
+                      {french ? 'Aucun champion ne correspond à ces filtres.' : 'No champions match these filters.'}
                     </div>
                   ) : (
                     <div className="overflow-x-auto">
@@ -1521,7 +1471,7 @@ export function HubView({ state }: { state: AppState }) {
                           {isSR && <div className="text-right">Counters</div>}
                         </div>
 
-                        {filteredTierList.slice(0, 180).map((row, idx) => (
+                        {championRows.map((row, idx) => (
                           <button
                             key={`${row.slug}-${row.role}-${idx}`}
                             type="button"
@@ -1542,7 +1492,7 @@ export function HubView({ state }: { state: AppState }) {
                             )}
                           >
                             <div className="flex flex-col items-center justify-center text-xs font-semibold text-zinc-400 tabular-nums leading-tight">
-                              <span>{row.rank || idx + 1}</span>
+                              <span>{row.position ?? '—'}</span>
                               {row.rankDelta ? (
                                 <span
                                   className={cn(
@@ -1572,7 +1522,7 @@ export function HubView({ state }: { state: AppState }) {
                             {isSR && (
                               <div className="text-center">
                                 <span className="rounded-md border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/[0.05] px-2 py-0.5 text-[10px] font-bold uppercase text-zinc-600 dark:text-zinc-300">
-                                  {row.role}
+                                  {row.role || '—'}
                                 </span>
                               </div>
                             )}
@@ -1666,12 +1616,12 @@ export function HubView({ state }: { state: AppState }) {
                     <Button size="sm" onClick={() => {
                       if (!draftActive) openMatch(modeHistory[0]);
                       else if (draftPick) postAction('openDraftBuild', { slug: draftPick.slug });
-                      else postAction('setView', { view: 'TierList' });
+                      else postAction('setView', { view: 'Library' });
                     }}>
                       {draftActive
                         ? draftPick
                           ? (french ? 'Préparer ma partie' : 'Prepare my match')
-                          : (french ? 'Voir la tier list' : 'Browse the tier list')
+                          : (french ? 'Voir les champions' : 'Browse champions')
                         : (french ? 'Revoir ma dernière partie' : 'Review latest match')}
                       <ChevronRight className="size-3.5" />
                     </Button>
@@ -1943,9 +1893,9 @@ export function HubView({ state }: { state: AppState }) {
                     <Button
                       size="xs"
                       variant="secondary"
-                      onClick={() => postAction('setView', { view: 'TierList' })}
+                      onClick={() => postAction('setView', { view: 'Library' })}
                     >
-                      Full Tier List
+                      {french ? 'Voir les champions' : 'Browse champions'}
                     </Button>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -2818,91 +2768,6 @@ export function HubView({ state }: { state: AppState }) {
                     </div>
                   )}
                 </GlassCard>
-              </div>
-            )}
-
-            {/* VIEW: CHAMPIONS LIBRARY */}
-            {view === 'Library' && (
-              <div className="space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="relative flex-1 min-w-[220px] max-w-sm">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
-                    <input
-                      type="text"
-                      value={champSearch}
-                      onChange={(e) => setChampSearch(e.target.value)}
-                      placeholder="Search champions..."
-                      className="w-full rounded-xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#14151B] py-2 pl-9 pr-3 text-xs text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:border-indigo-400 focus:outline-none"
-                    />
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {selected && (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => postAction('setView', { view: 'Build' })}
-                      >
-                        <ChampAvatar src={selected.icon} alt={selected.name} className="size-4 rounded" />
-                        <span>{selected.name}</span>
-                        <ChevronRight className="size-3.5" />
-                      </Button>
-                    )}
-                    <SegmentedTabs
-                      size="sm"
-                      value={tierFilter}
-                      onChange={setTierFilter}
-                      options={[
-                        { value: 'All', label: 'All' },
-                        { value: 'S', label: 'S' },
-                        { value: 'A', label: 'A' },
-                        { value: 'B', label: 'B' },
-                        { value: 'C', label: 'C' },
-                        { value: 'D', label: 'D' },
-                      ]}
-                    />
-                  </div>
-                </div>
-                {filteredChampions.length === 0 ? (
-                  <GlassCard surface="hub" className="p-10 text-center space-y-2.5 swiss-grid-bg">
-                    <SwissDraftEmptyIllustration variant="champions" />
-                    <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-                      No champions match your search or tier filter.
-                    </p>
-                  </GlassCard>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    {filteredChampions.map((c) => (
-                      <button
-                        key={c.slug}
-                        type="button"
-                        onClick={() => postAction('selectChampion', { slug: c.slug, view: 'Build' })}
-                        className="flex items-center justify-between gap-3 rounded-xl border border-zinc-200/80 dark:border-white/[0.08] bg-white dark:bg-[#14151B] p-3 text-left transition-all hover:border-indigo-400/50 cursor-pointer"
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          {c.icon && (
-                            <ChampAvatar
-                              src={c.icon}
-                              alt={c.name}
-                              className="size-10 rounded-xl border border-zinc-200 dark:border-white/12"
-                            />
-                          )}
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <span className="truncate text-[13px] font-semibold text-zinc-900 dark:text-white">
-                                {c.name}
-                              </span>
-                              <PatchTagBadge tag={c.patchTag} compact />
-                            </div>
-                            <div className="text-[11px] text-zinc-500 dark:text-zinc-400 tabular-nums">
-                              {fmtPct(c.win)} WR · {fmtPct(c.pick)} PR
-                            </div>
-                          </div>
-                        </div>
-                        <TierBadge tier={c.tier} size="sm" />
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
             )}
 
@@ -3855,7 +3720,6 @@ export function HubView({ state }: { state: AppState }) {
                     {[
                       ...(isSR ? [{ key: 'perf_strip_center', label: french ? 'Statistiques personnelles' : 'Personal stats' }] : []),
                       { key: 'build_hud', label: french ? 'Guide de build' : 'Build guide' },
-                      ...(!isSR && !isArena ? [{ key: 'champ_select_ribbon', label: french ? 'Sélection de champion' : 'Champion select' }] : []),
                     ].map(({ key, label }) => {
                       const scale = state.settings.widgetScale?.[key] ?? state.settings.scale ?? 1;
                       return <label key={key} className="flex items-center gap-3 text-xs">
@@ -3965,8 +3829,8 @@ export function HubView({ state }: { state: AppState }) {
                 <Switch
                   checked={state.settings.showBenchBar}
                   onChange={(v) => postAction('updateSetting', { key: 'showBenchBar', value: v })}
-                  label={french ? 'Champions du banc' : 'Champions on the bench'}
-                  description={french ? 'Affiche le portrait et le tier de chaque champion disponible en sélection.' : 'Show each available champion portrait and tier during selection.'}
+                  label={french ? 'Tiers sur les portraits du banc' : 'Tiers on bench portraits'}
+                  description={french ? 'Pose un petit badge sur les portraits reconnus en ARAM et Mayhem.' : 'Add a small badge to recognized ARAM and Mayhem bench portraits.'}
                 />
 
               </div>
@@ -4153,7 +4017,7 @@ export function HubView({ state }: { state: AppState }) {
                   <div className="flex flex-wrap items-center gap-1.5">
                     {[
                       { id: 'sr_hud', label: 'SR HUD + Minimap' },
-                      { id: 'bench', label: 'Bench Bar' },
+                      { id: 'bench', label: french ? 'Badges du banc' : 'Bench badges' },
                       { id: 'altg', label: 'Alt+G Guide' },
                     ].map((sc) => (
                       <Button
