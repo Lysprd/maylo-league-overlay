@@ -33,7 +33,7 @@ Shortcuts
 Alt+G / F9      Open the item guide, augment catalog, and scoreboard
 Tab (hold)      Hover minimap RED/BLUE clear toggle or left HUD controls
 Ctrl+Tab (hold) Drag & reposition overlay widgets
-Alt+O           Toggle persistent overlay edit & minimap resize mode
+Alt+O           Edit the overlay or preview layouts by resolution
 Alt+M           Show or hide all overlays
 Alt+L           Open Live Match view
 Esc             Close in-game sheet or Champ Select Tier List drawer

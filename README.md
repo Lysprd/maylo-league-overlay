@@ -37,7 +37,7 @@ Everything renders in a borderless click-through WebView2 layer that stays out o
 - **Champ Select Tier List drawer** — pinned on the right edge of Champion Select with instant search, `All / S+ / S / A` filters, role filters in Ranked SR, and cursor-aware click-through so moving back onto the champion grid never blocks picks or bans.
 - **Champion cards and bench** — the ARAM and Mayhem overlays show a compact tier badge for revealed cards and available bench champions. The benchmark labels your own champion during play.
 - **Alt+G reference** — browse items and their recipes, saved build variants, and the Mayhem or Arena augment catalog. Search augments by name, effect or rarity and sort by observed pick rate.
-- **Summoner’s Rift HUD** — opening items from the reference guide, personal CS/min and KDA, visible objective information, and movable panels.
+- **Summoner’s Rift HUD** — opening items from your active guide, a configurable benchmark for CS/min, KDA, kill participation and game time, and movable panels. Preview your layout and the champion-select click area in Alt+O.
 
 <br />
 
@@ -45,7 +45,7 @@ Everything renders in a borderless click-through WebView2 layer that stays out o
 
 The desktop Hub automatically follows your active queue — including Practice Tool and Custom games — and keeps Overview, Tier Lists, Match History and Patch Notes scoped to the active mode.
 
-1. **Prepare your match.** Home opens the build for the champion detected in the League client. The tier list stays available during champion select. Choose a saved build for this champion, mode and role in the Hub to make it your guide in Alt+G.
+1. **Prepare your match.** Home opens the build for the champion detected in the League client. The tier list stays available during champion select. The Build page opens on the active guide, recipes and import actions. Choose a saved variant for this champion, mode and role to use it in the mini-HUD and Alt+G.
 2. **Look up items and augments in game.** Alt+G opens the chosen build and its recipes. In Mayhem and Arena, search augments by effect or rarity and read their tiers within each rarity.
 3. **Review your match.** Open the latest match from Home or choose one from History. Check your final items, runes and augments where available, or filter observed timeline events by items and objectives. Save a private note or open a linked local clip in your video player.
 

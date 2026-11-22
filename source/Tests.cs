@@ -86,6 +86,23 @@ namespace MayhemCompanion {
     "An unreadable reroll must remove the stale stats without treating the remaining offer as complete");
   }
 
+  static void TestStaleAugmentSlotExpires() {
+   var offer = new OfferSession();
+   var now = DateTime.UtcNow;
+   var cards = new List<AugmentHit> {
+    new AugmentHit { Stat = new Stat { Id = 101 }, X = .3, Y = .4 },
+    new AugmentHit { Stat = new Stat { Id = 102 }, X = .5, Y = .4 },
+    new AugmentHit { Stat = new Stat { Id = 103 }, X = .7, Y = .4 }
+   };
+   Req(offer.Observe(cards, now), "Open all three cards");
+   cards.RemoveAt(2);
+   Req(!offer.Observe(cards, now.AddMilliseconds(200)) && offer.Choices[2] != null,
+    "Brief OCR dropouts keep the third card stable");
+   Req(offer.Observe(cards, now.AddMilliseconds(2500)) && offer.Choices[2] == null &&
+    offer.Choices[0].Id == 101 && offer.Choices[1].Id == 102 && offer.ExpectedCardCount == 3,
+    "A missing card must expire even when its two neighbors remain readable");
+  }
+
   static void TestChampSelectOverlayLayout() {
    Req(ChampSelectOverlayLayout.ContainsTierListPointer(.91, .14, 1280, 720, false),
     "The closed tier list pill can receive clicks");
@@ -98,6 +115,16 @@ namespace MayhemCompanion {
    Req(ChampSelectOverlayLayout.ContainsTierListPointer(.94, .65, 2560, 1080, true) &&
     !ChampSelectOverlayLayout.ContainsTierListPointer(.82, .65, 2560, 1080, true),
     "The click zone stays aligned to the side panel on an ultrawide screen");
+  }
+
+  static void TestWebBridgeSource() {
+   Req(HybridHubWindow.IsAppPage("https://maylo.local/index.html?theme=light#hub") &&
+    HybridHubWindow.IsAppPage("https://maylo.local/index.html#overlay"),
+    "The built-in Hub and overlay can use the bridge");
+   Req(!HybridHubWindow.IsAppPage("http://maylo.local/index.html") &&
+    !HybridHubWindow.IsAppPage("https://example.com/index.html") &&
+    !HybridHubWindow.IsAppPage("https://maylo.local/other.html"),
+    "Only the built-in HTTPS app page can use the bridge");
   }
 
   static void TestAugmentTiers() {
@@ -163,6 +190,8 @@ namespace MayhemCompanion {
     TestReviewAndReferenceData();
     TestAugmentTiers();
     TestChampSelectOverlayLayout();
+    TestStaleAugmentSlotExpires();
+    TestWebBridgeSource();
     File.WriteAllText(reportPath, "PASS Maylo recommendations, reference guides and match review");
     return 0;
    } catch (Exception ex) {

@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.2.0-beta.11
+
+- Choose the metrics shown in the Rift benchmark. Preview panel placement and the champion-select click area at four resolutions in Alt+O or Settings.
+- Put the active build, item recipes and League imports at the top of the Build page. Keep variants and detailed stats available below.
+- Restrict the Hub and overlay WebView native bridge to the bundled Maylo page.
+- Keep the chosen build consistent between the compact HUD and Alt+G. Scope in-game item and augment guides to the actual champion and mode.
+- Make Alt+G keyboard navigable and open a champion’s build when selected in the champion select tier list.
+- Let unreadable augment badges expire independently and pause card scanning while the overlay is hidden.
+- Update only the matching League shop set for each champion, mode and role. Preserve other Maylo and League sets.
+- Use the same queue detection for the Hub and the live overlay. Show timeline loading separately from an empty timeline and include all final inventory slots.
+
 ## v0.2.0-beta.10
 
 - Open the detected champion’s build from Home during champion select. Browse the tier list while waiting for a pick.

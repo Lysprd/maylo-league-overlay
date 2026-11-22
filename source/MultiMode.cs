@@ -842,7 +842,7 @@ namespace MayhemCompanion {
    foreach (var grpObj in Json.A(d, "augment_group")) {
     var gd = Json.D(grpObj); if (gd == null) continue;
     int rarNum = Json.I(gd, "rarity");
-    string rarity = rarNum == 1 ? "Silver" : (rarNum == 4 ? "Gold" : "Prismatic");
+    string rarity = rarNum == 1 ? "Silver" : rarNum == 4 ? "Gold" : rarNum == 8 ? "Prismatic" : "";
     foreach (var ao in Json.A(gd, "augments")) {
      var ad = Json.D(ao); if (ad == null) continue;
      int aid = Json.I(ad, "id");

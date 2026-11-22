@@ -100,12 +100,11 @@ namespace MayhemCompanion {
    try {
     var env = await app.GetWebEnv();
     await web.EnsureCoreWebView2Async(env);
-    web.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
-    web.CoreWebView2.Settings.IsStatusBarEnabled = false;
-    web.CoreWebView2.Settings.AreDevToolsEnabled = Environment.GetEnvironmentVariable("MAYLO_DEVTOOLS") == "1";
-    web.CoreWebView2.SetVirtualHostNameToFolderMapping("maylo.local", app.UiDistDir, CoreWebView2HostResourceAccessKind.Allow);
-    web.CoreWebView2.WebMessageReceived += (s, e) => app.HandleWebMessage(e.WebMessageAsJson);
-    web.CoreWebView2.NavigationCompleted += (s, e) => { webReady = true; app.PushState(); };
+    HybridHubWindow.ConfigureAppWebView(web.CoreWebView2, app.UiDistDir, app.HandleWebMessage);
+    web.CoreWebView2.NavigationCompleted += (s, e) => {
+     webReady = e.IsSuccess && HybridHubWindow.IsAppPage(web.CoreWebView2.Source);
+     if (webReady) app.PushState();
+    };
     web.CoreWebView2.Navigate("https://maylo.local/index.html#overlay");
    } catch { }
   }
@@ -221,6 +220,7 @@ namespace MayhemCompanion {
   Task<CoreWebView2Environment> webEnvTask;
   bool webReady, splashDismissed, closing, pollBusy, ocrBusy, selectionBusy, tabHeld, tabInteractive, champSelectInteractive, tabSuppressed, manualModeOverride;
   public bool HubActive, Preview, Editing, OverlayVisible = true, PrivateMode, InGameSheet, OverlayDragging, ChampTierOpen;
+  static readonly string[] BenchmarkMetricKeys = { "cs", "kda", "kp", "clock" };
   public string InGameSheetTab = "build", PreviewScene = "";
   public bool IsOverlayEditing { get { return Editing || tabHeld; } }
   public bool IsTabInteractive { get { return tabInteractive; } }
@@ -279,6 +279,8 @@ namespace MayhemCompanion {
    if (Config.MatchTimelines == null) Config.MatchTimelines = new Dictionary<string, List<MatchMoment>>();
    if (Config.ModePanels == null) Config.ModePanels = new Dictionary<string, Dictionary<string, OverlayPanelPosition>>();
    if (Config.ModePanelVisibility == null) Config.ModePanelVisibility = new Dictionary<string, Dictionary<string, bool>>();
+   Config.BenchmarkMetrics = BenchmarkMetricKeys.Where(key => Config.BenchmarkMetrics != null && Config.BenchmarkMetrics.Contains(key)).ToList();
+   if (Config.BenchmarkMetrics.Count == 0) Config.BenchmarkMetrics.AddRange(BenchmarkMetricKeys);
    if (Config.ModePanelScale == null) Config.ModePanelScale = new Dictionary<string, double>();
    if (Config.ModeWidgetScale == null) Config.ModeWidgetScale = new Dictionary<string, Dictionary<string, double>>();
    if (Config.TrackedAugments == null) Config.TrackedAugments = new List<int>();
@@ -532,14 +534,31 @@ namespace MayhemCompanion {
   async Task InitWeb() {
    var env = await GetWebEnv();
    await web.EnsureCoreWebView2Async(env);
-   web.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
-   web.CoreWebView2.Settings.IsStatusBarEnabled = false;
-   web.CoreWebView2.Settings.AreDevToolsEnabled = Environment.GetEnvironmentVariable("MAYLO_DEVTOOLS") == "1";
-   web.CoreWebView2.SetVirtualHostNameToFolderMapping("maylo.local", UiDistDir, CoreWebView2HostResourceAccessKind.Allow);
-   web.CoreWebView2.WebMessageReceived += (s, e) => HandleWebMessage(e.WebMessageAsJson);
-   web.CoreWebView2.NavigationCompleted += (s, e) => { webReady = true; PushState(); };
+   ConfigureAppWebView(web.CoreWebView2, UiDistDir, HandleWebMessage);
+   web.CoreWebView2.NavigationCompleted += (s, e) => {
+    webReady = e.IsSuccess && IsAppPage(web.CoreWebView2.Source);
+    if (webReady) PushState();
+   };
    string th = String.Equals(Config.Theme, "light", StringComparison.OrdinalIgnoreCase) ? "light" : "dark";
    web.CoreWebView2.Navigate("https://maylo.local/index.html?theme=" + th + "#hub");
+  }
+
+  internal static bool IsAppPage(string url) {
+   Uri page;
+   return Uri.TryCreate(url, UriKind.Absolute, out page) && page.Scheme == Uri.UriSchemeHttps &&
+    page.Host == "maylo.local" && page.IsDefaultPort && page.UserInfo == "" && page.AbsolutePath == "/index.html";
+  }
+
+  internal static void ConfigureAppWebView(CoreWebView2 core, string uiDist, Action<string> onMessage) {
+   core.Settings.AreDefaultContextMenusEnabled = false;
+   core.Settings.IsStatusBarEnabled = false;
+   core.Settings.AreDevToolsEnabled = Environment.GetEnvironmentVariable("MAYLO_DEVTOOLS") == "1";
+   core.SetVirtualHostNameToFolderMapping("maylo.local", uiDist, CoreWebView2HostResourceAccessKind.Allow);
+   core.NavigationStarting += (s, e) => { if (!IsAppPage(e.Uri)) e.Cancel = true; };
+   core.NewWindowRequested += (s, e) => { e.Handled = true; };
+   core.WebMessageReceived += (s, e) => {
+    if (IsAppPage(e.Source)) onMessage(e.WebMessageAsJson);
+   };
   }
 
   void SetupTray() {
@@ -607,7 +626,7 @@ namespace MayhemCompanion {
    ocrTimer.Tick += async (s, e) => {
     if (Game.InSelection && !Game.InGame) {
      ocrTimer.Interval = TimeSpan.FromMilliseconds(150);
-     bool allowCards = Config.Overlay && Config.Connected && !HubActive && !InGameSheet && !IsOverlayEditing && !champCardBusy
+     bool allowCards = Config.Overlay && OverlayVisible && Config.Connected && !HubActive && !InGameSheet && !IsOverlayEditing && !champCardBusy
       && (Game.ModeKey == "MAYHEM" || Game.ModeKey == "ARAM");
      if (allowCards) await ReadChampSelectCards();
      return;
@@ -618,7 +637,7 @@ namespace MayhemCompanion {
      PushState();
     }
     ocrTimer.Interval = TimeSpan.FromMilliseconds(offerSession.Visible || lastRawHitCount >= 1 ? 55 : 150);
-    if (Game.InGame && Config.Ocr && Config.Overlay && Config.Connected && !HubActive && !InGameSheet &&
+    if (Game.InGame && Config.Ocr && Config.Overlay && OverlayVisible && Config.Connected && !HubActive && !InGameSheet &&
         !IsOverlayEditing && IsAugmentMode && Game.ModeKey == ActiveMode)
      await ReadAugments(false);
    };
@@ -680,7 +699,16 @@ namespace MayhemCompanion {
    if (lastActionFire.TryGetValue(action, out prev) && (DateTime.UtcNow - prev).TotalMilliseconds < 320) return;
    lastActionFire[action] = DateTime.UtcNow;
    switch (action) {
-    case "Overlay": OverlayVisible = !OverlayVisible; if (overlay != null) overlay.Sync(); PushState(); break;
+    case "Overlay":
+     OverlayVisible = !OverlayVisible;
+     if (!OverlayVisible) {
+      ResetOfferSession();
+      champSelectCards.Clear();
+      lastChampCardSig = 0;
+     }
+     if (overlay != null) overlay.Sync();
+     PushState();
+     break;
     case "Edit": Editing = !Editing; OverlayVisible = true; if (!Editing) { Preview = false; PreviewScene = ""; OverlayDragging = false; Save(); } if (overlay != null) overlay.Sync(); PushState(); break;
     case "Build": HotkeyDestination("Build", fromGlobal); break;
     case "History": HotkeyDestination("History", fromGlobal); break;
@@ -1182,6 +1210,18 @@ namespace MayhemCompanion {
    return GameBridge.Norm(c.AssetKey) == n || GameBridge.Norm(c.Name) == n;
   }
 
+  void UseMatchMode(string mode) {
+   if (mode == ActiveMode) return;
+   ActiveMode = mode;
+   manualModeOverride = false;
+   manualRoleOverride = false;
+   ActiveRole = DetectedRole = mode == "SR" ? MultiModeParser.NormalizeRole(Game.AssignedRole) : "";
+   EnforceModeView();
+   List<TierListEntry> cached;
+   TierList = tierListByMode.TryGetValue(mode, out cached) && cached != null ? cached : new List<TierListEntry>();
+   var _ = RefreshTierList(false);
+  }
+
   async Task SyncLoadout() {
    if (loadoutBusy) return;
    if (!Game.InSelection && !Game.InGame) { Bridge.ResetSpellSelection(); return; }
@@ -1244,7 +1284,8 @@ namespace MayhemCompanion {
      var map = AugmentOcr.BuildChampionOcrMap(champSnap, aliasSnap, localSnap);
      return AugmentOcr.ScanChampSelectCards(rect, champSnap, map, preferUserLang, prevSig);
     });
-    if (closing || !Game.InSelection || Game.InGame || !Native.SameApplication(Native.GetForegroundWindow(), target)) return;
+    if (closing || !OverlayVisible || !Config.Overlay || HubActive || !Game.InSelection || Game.InGame ||
+        DateTime.UtcNow < champCardCooldownUntil || !Native.SameApplication(Native.GetForegroundWindow(), target)) return;
     if (scan.SkippedUnchanged) return;
     if (scan.Hits.Count >= 2) {
      lastChampCardSig = scan.Signature;
@@ -1307,7 +1348,7 @@ namespace MayhemCompanion {
     var scanSource = ModeData;
     // Run GDI capture + bitmap scaling + 600-augment fuzzy matching OFF the WPF UI thread!
     var scan = await Task.Run(() => AugmentOcr.ScanGameRect(rect, augSnapshot, aliasMap, preferUserLang, null, allowWide, requested, prevSig));
-    if (scanGeneration != offerScanGeneration || scanSource != ModeData || !Config.Ocr || !Game.InGame || closing || Game.Window != target ||
+    if (scanGeneration != offerScanGeneration || scanSource != ModeData || !Config.Ocr || !OverlayVisible || !Game.InGame || closing || Game.Window != target ||
         !Native.IsWindow(target) || !Native.IsWindowVisible(target) || !Native.SameApplication(Native.GetForegroundWindow(), target)) return;
     if (scan.SkippedUnchanged) return;
     lastRawHitCount = scan.Hits.Count;
@@ -1754,10 +1795,10 @@ namespace MayhemCompanion {
      List<MatchMoment> moments;
      moments = null;
      if (viewedMatchKey == matchKey) Config.MatchTimelines.TryGetValue(matchKey, out moments);
-     return new { id = m.Id, championId = m.ChampionId, championName = mc != null ? mc.Name : ("Champion " + m.ChampionId), championIcon = mc != null ? MultiModeParser.ChampIconOf(mc) : "", queue = m.Queue, queueName = m.QueueName, mode = m.Mode, mayhem = m.Mayhem, kills = m.Kills, deaths = m.Deaths, assists = m.Assists, won = m.Won, remake = m.Remake, duration = m.Duration, time = m.Time, dateText = m.Date.ToString("dd MMM HH:mm"), damage = m.Damage, gold = m.Gold, cs = m.Cs, items = (m.Items ?? new List<int>()).ToArray(), augments = (m.Augments ?? new List<int>()).ToArray(), augmentDetails = augDet,
+     return new { id = m.Id, championId = m.ChampionId, championName = mc != null ? mc.Name : ("Champion " + m.ChampionId), championIcon = mc != null ? MultiModeParser.ChampIconOf(mc) : "", queue = m.Queue, queueName = m.QueueName, mode = m.Mode, modeKey = GameBridge.DetectModeKey(m.Mode, m.Queue, m.Mayhem), mayhem = m.Mayhem, kills = m.Kills, deaths = m.Deaths, assists = m.Assists, won = m.Won, remake = m.Remake, duration = m.Duration, time = m.Time, dateText = m.Date.ToString("dd MMM HH:mm"), damage = m.Damage, gold = m.Gold, cs = m.Cs, items = (m.Items ?? new List<int>()).ToArray(), augments = (m.Augments ?? new List<int>()).ToArray(), augmentDetails = augDet,
       runes = (m.Runes ?? new List<int>()).Select(id => runeMetaObj(id)).ToArray(), created = m.Created,
       note = matchNote ?? "", clipName = String.IsNullOrEmpty(clipPath) ? "" : Path.GetFileName(clipPath),
-      timeline = (moments ?? new List<MatchMoment>()).Select(moment => new {
+      timeline = viewedMatchKey != matchKey ? null : (moments ?? new List<MatchMoment>()).Select(moment => new {
        seconds = moment.Seconds, kind = moment.Kind, detail = moment.Detail ?? "",
        itemName = moment.Item > 0 ? ItemName(moment.Item) : ""
       }).ToArray() };
@@ -1769,6 +1810,7 @@ namespace MayhemCompanion {
       (System.Globalization.CultureInfo.InstalledUICulture.TwoLetterISOLanguageName == "fr" ? "fr" : "en"),
      connected = Config.Connected, overlay = Config.Overlay, showBuildOverlay = ModePanelVisible("build", Config.ShowBuildOverlay), showRerollBar = Config.ShowRerollBar,
      showSkillAdvisor = Config.ShowSkillAdvisor, showPerfStrip = ModePanelVisible("performance", Config.ShowPerfStrip), showJungleWidget = ModePanelVisible("minimap", Config.ShowJungleWidget),
+     benchmarkMetrics = Config.BenchmarkMetrics.ToArray(),
      showBenchBar = ModePanelVisible("bench", Config.ShowBenchBar), minimalHud = Config.MinimalHud,
      ocr = Config.Ocr, ocrAllModes = Config.OcrAllModes, autoLayout = Config.AutoLayout, autoPage = Config.AutoPage,
      autoSpells = Config.AutoSpells, autoRunes = Config.AutoRunes, autoExportShop = Config.AutoExportShop,
@@ -1875,6 +1917,26 @@ namespace MayhemCompanion {
       else
        await SelectChampion(draftPick, false, !String.IsNullOrEmpty(draftRole) ? draftRole : null);
       break;
+     case "browseDraftBuild":
+      if (Game.InGame || (!Game.InSelection && (!Preview || PreviewScene != "bench"))) break;
+      string browseMode = Preview ? ActiveMode : Game.ModeKey;
+      var browsePick = Champions.FirstOrDefault(c => c.Slug == Json.S(msg, "slug"));
+      if (browseMode == "" || browsePick == null) break;
+      UseMatchMode(browseMode);
+      ChampTierOpen = false;
+      if (Preview) { Preview = false; PreviewScene = ""; Editing = false; }
+      if (!HubActive || View != "Build") ToggleHub("Build");
+      View = "Build";
+      var browseRole = ActiveMode == "SR" ? MultiModeParser.NormalizeRole(Json.S(msg, "role")) : "";
+      await SelectChampion(browsePick, false, browseRole == "" ? null : browseRole);
+      break;
+     case "useLiveBuild":
+      if (!Game.InGame || Game.ModeKey == "") break;
+      var livePick = Champions.FirstOrDefault(c => ChampionMatches(c, Game.Champion));
+      if (livePick == null) break;
+      UseMatchMode(Game.ModeKey);
+      await SelectChampion(livePick);
+      break;
      case "selectChampion":
       string slug = Json.S(msg, "slug"); string nextView = Json.S(msg, "view"); string pickRole = Json.S(msg, "role");
       var ch = Champions.FirstOrDefault(x => x.Slug == slug || GameBridge.Norm(x.Name) == GameBridge.Norm(slug));
@@ -1927,6 +1989,11 @@ namespace MayhemCompanion {
        map[widget] = Math.Max(0.75, Math.Min(1.35, size));
        Save(); PushState(); break;
       }
+     case "setBenchmarkMetrics":
+      var chosenMetrics = new HashSet<string>(Json.A(msg, "metrics").OfType<string>());
+      var validMetrics = BenchmarkMetricKeys.Where(chosenMetrics.Contains).ToList();
+      if (validMetrics.Count > 0) { Config.BenchmarkMetrics = validMetrics; Save(); PushState(); }
+      break;
      case "useMinimalOverlay":
       SetModePanelVisible("build", true);
       SetModePanelVisible("performance", false);
@@ -2127,7 +2194,7 @@ namespace MayhemCompanion {
        var exportedCore = requested.Count > 0 ? requested.Where(id => !ModeData.Starters.Any(x => x.Id == id) &&
         !ModeData.Boots.Any(x => x.Id == id)).ToList() : bp.Where(x => !x.IsBoots && x.Role != "STARTER").Select(x => x.Stat.Id).ToList();
        ImportStatus = await Bridge.ExportItemSet(
-        Selected.Name, ChampionIdOf(Selected), ActiveMode,
+        Selected.Name, ChampionIdOf(Selected), ActiveMode, ActiveMode == "SR" ? ActiveRole : "",
         ModeData.Starters.Select(x => x.Id).ToList(),
         exportedCore,
         ModeData.Boots.Select(x => x.Id).ToList(),

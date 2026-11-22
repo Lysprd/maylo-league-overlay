@@ -242,12 +242,26 @@ namespace MayhemCompanion {
    string alias; return ChampionNames.TryGetValue(selected, out alias) ? alias : "";
   }
 
-  public async Task<string> ExportItemSet(string championName, int championId, string modeLabel, List<int> starters, List<int> coreIds, List<int> bootIds, List<int> situationalIds) {
+  readonly System.Threading.SemaphoreSlim itemSetWrite = new System.Threading.SemaphoreSlim(1, 1);
+
+  public async Task<string> ExportItemSet(string championName, int championId, string modeKey, string role, List<int> starters, List<int> coreIds, List<int> bootIds, List<int> situationalIds) {
+   await itemSetWrite.WaitAsync();
+   try {
+    return await WriteItemSet(championName, championId, modeKey, role, starters, coreIds, bootIds, situationalIds);
+   } finally { itemSetWrite.Release(); }
+  }
+
+  async Task<string> WriteItemSet(string championName, int championId, string modeKey, string role,
+   List<int> starters, List<int> coreIds, List<int> bootIds, List<int> situationalIds) {
+   string modeLabel = (modeKey == "SR" ? "Summoner's Rift" : modeKey == "MAYHEM" ? "ARAM Mayhem" : modeKey == "ARENA" ? "Arena" : "ARAM")
+    + (String.IsNullOrEmpty(role) ? "" : " · " + MultiModeParser.RoleDisplay(role));
+   string uid = "maylo-" + Norm(championName) + "-" + Norm(modeKey) +
+    (String.IsNullOrEmpty(role) ? "" : "-" + Norm(role));
    var summoner = Json.Serializer().Deserialize<Dictionary<string, object>>(await LcuGet("/lol-summoner/v1/current-summoner"));
    string summonerId = Json.S(summoner, "summonerId");
    if (String.IsNullOrEmpty(summonerId)) throw new Exception("Summoner ID unavailable");
    var existing = Json.Serializer().Deserialize<Dictionary<string, object>>(await LcuGet("/lol-item-sets/v1/item-sets/" + summonerId + "/sets"));
-   var sets = Json.A(existing, "itemSets").Select(Json.D).Where(d => d != null && !Json.S(d, "uid").StartsWith("maylo-")).Cast<object>().ToList();
+   var sets = Json.A(existing, "itemSets").Select(Json.D).Where(d => d != null && Json.S(d, "uid") != uid).Cast<object>().ToList();
 
    Func<string, List<int>, object> makeBlock = (title, list) => new {
     type = title,
@@ -260,7 +274,7 @@ namespace MayhemCompanion {
    if (situationalIds.Count > 0) blocks.Add(makeBlock("Situational", situationalIds));
 
    sets.Insert(0, new {
-    uid = "maylo-" + Norm(championName),
+    uid = uid,
     title = "maylo · " + championName + " (" + modeLabel + ")",
     type = "custom",
     map = "any",
@@ -318,8 +332,7 @@ namespace MayhemCompanion {
    if (coreIds == null || coreIds.Count == 0) return;
    string key = championName + ":" + modeLabel + ":" + (role ?? "") + ":" + String.Join(",", coreIds.Take(4));
    if (key == shopSelection) return;
-   string label = String.IsNullOrEmpty(role) ? modeLabel : (modeLabel + " · " + MultiModeParser.RoleDisplay(role));
-   await ExportItemSet(championName, championId, label, starters, coreIds, bootIds, situationalIds);
+   await ExportItemSet(championName, championId, modeLabel, role, starters, coreIds, bootIds, situationalIds);
    shopSelection = key;
    ShopStatus = "Shop auto-exported (" + championName + (String.IsNullOrEmpty(role) ? "" : " " + MultiModeParser.RoleDisplay(role)) + ")";
   }

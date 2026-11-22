@@ -204,6 +204,7 @@ export interface MatchRecord {
   queueName: string;
   mode: string;
   mayhem: boolean;
+  modeKey: GameModeKey | '';
   kills: number;
   deaths: number;
   assists: number;
@@ -215,7 +216,7 @@ export interface MatchRecord {
   created?: number;
   note?: string;
   clipName?: string;
-  timeline?: { seconds: number; kind: string; detail: string; itemName: string }[];
+  timeline?: { seconds: number; kind: string; detail: string; itemName: string }[] | null;
   runes?: { id: number; name: string; icon: string }[];
   damage: number;
   gold: number;
@@ -242,6 +243,8 @@ export interface AugmentDetail extends AugmentEntry {
   description: string;
 }
 
+export type BenchmarkMetric = 'cs' | 'kda' | 'kp' | 'clock';
+
 export interface AppSettings {
   language?: "fr" | "en";
   connected: boolean;
@@ -250,6 +253,7 @@ export interface AppSettings {
   showRerollBar: boolean;
   showSkillAdvisor: boolean;
   showPerfStrip: boolean;
+  benchmarkMetrics?: BenchmarkMetric[];
   showJungleWidget: boolean;
   showBenchBar: boolean;
   minimalHud: boolean;

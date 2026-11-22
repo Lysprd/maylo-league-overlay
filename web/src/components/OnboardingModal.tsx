@@ -17,12 +17,12 @@ export function OnboardingModal({ settings, onFinish }: OnboardingModalProps) {
   const pages = french ? [
     { icon: Gamepad2, title: 'Connecter League', text: 'Lance le client League of Legends. Maylo détecte ton mode et ton champion. Pour afficher le guide par-dessus le jeu, utilise le mode Sans bordure.' },
     { icon: BookOpen, title: 'Préparer ton build', text: 'En sélection, ouvre le build du champion détecté depuis l’accueil. Enregistre une variante et choisis-la dans le menu Alt+G pour la retrouver en partie. En Mayhem et en Arena, cherche les augments par nom, effet ou rareté. Les tiers comparent les cartes de même rareté.' },
-    { icon: Settings2, title: 'Consulter le guide en partie', text: 'Alt+G ouvre les guides d’objets et d’augments. Choisis un objet pour voir sa recette. Les cartes détectées affichent leur tier. Alt+O sert à placer les panneaux de l’overlay.' },
+    { icon: Settings2, title: 'Consulter le guide en partie', text: 'Alt+G ouvre les guides d’objets et d’augments. Choisis un objet pour voir sa recette. Les cartes détectées affichent leur tier. Alt+O sert à placer les panneaux et à vérifier la disposition selon la résolution.' },
     { icon: History, title: 'Revoir ta partie', text: 'Ouvre la dernière partie depuis l’accueil pour revoir ton équipement, filtrer la chronologie, ajouter une note ou associer un clip local. Ce guide reste accessible dans les réglages.' },
   ] : [
     { icon: Gamepad2, title: 'Connect League', text: 'Open the League of Legends client. Maylo detects your mode and champion. Use Borderless mode to show the guide over your game.' },
     { icon: BookOpen, title: 'Prepare a build', text: 'During champion select, open the detected champion’s build from Home. Save a variant and select it in the Alt+G menu to use it in game. In Mayhem and Arena, find augments by name, effect or rarity. Tiers compare cards of the same rarity.' },
-    { icon: Settings2, title: 'Open the guide in game', text: 'Alt+G opens the item and augment guides. Choose an item to view its recipe. Detected cards show their tier. Use Alt+O to move overlay panels.' },
+    { icon: Settings2, title: 'Open the guide in game', text: 'Alt+G opens the item and augment guides. Choose an item to view its recipe. Detected cards show their tier. Use Alt+O to position panels and preview the layout at different resolutions.' },
     { icon: History, title: 'Review your match', text: 'Open your latest match from Home to review your loadout, filter the timeline, add a note or attach a local clip. You can reopen this guide from Settings.' },
   ];
   const page = pages[step];

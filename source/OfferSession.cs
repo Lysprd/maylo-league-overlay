@@ -109,14 +109,12 @@ namespace MayhemCompanion {
    }
 
    if (Visible) {
-    bool sameRow = observed.Count(h => Positions.Any(old => old != null && old.Stat.Id == h.Stat.Id
-     && Math.Abs(old.X - h.X) < 0.035 && Math.Abs(old.Y - h.Y) < 0.065)) >= 2;
     for (int i = 0; i < MaxSlots; i++) {
      var oldStat = Choices[i];
      var oldPos = Positions[i];
      if (oldStat == null || oldPos == null) continue;
      if (oldStat.Id == rerolledId && now >= clickUntil) continue;
-     if (!sameRow && (now - SlotLastSeen[i]).TotalMilliseconds > SlotHoldMilliseconds) continue;
+     if ((now - SlotLastSeen[i]).TotalMilliseconds > SlotHoldMilliseconds) continue;
      if (merged.Any(m => m.Item1.Id == oldStat.Id)) continue;
      if (merged.Any(m => Math.Abs(m.Item2.X - oldPos.X) < AugmentOcr.MinCardSpacing)) continue;
      if (merged.Count == MaxSlots) break;

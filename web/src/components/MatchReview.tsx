@@ -26,7 +26,7 @@ export function MatchReview({ matchDetails, ddVersion, french, inGame, onBack }:
     ? (french ? 'Victoire' : 'Victory')
     : (french ? 'Défaite' : 'Defeat');
   const kda = `${matchDetails.kills}/${matchDetails.deaths}/${matchDetails.assists}`;
-  const finalItems = matchDetails.items.filter((id) => id > 0).slice(0, 6);
+  const finalItems = matchDetails.items.filter((id) => id > 0);
   const moments = (matchDetails.timeline ?? []).filter(({ kind }) =>
     timelineFilter === 'all' || (timelineFilter === 'items' ? kind === 'item' : kind !== 'item'));
   const labels: Record<string, string> = {
@@ -124,7 +124,9 @@ export function MatchReview({ matchDetails, ddVersion, french, inGame, onBack }:
         )}
         {matchTab === 'timeline' && (
           <section className="space-y-3 text-sm">
-            {!matchDetails.timeline?.length ? (
+            {matchDetails.timeline == null ? (
+              <p role="status" className="text-zinc-500">{french ? 'Chargement de la chronologie…' : 'Loading timeline…'}</p>
+            ) : !matchDetails.timeline.length ? (
               <p className="text-zinc-500">{french ? 'Aucun événement enregistré pour cette partie.' : 'No events were recorded for this match.'}</p>
             ) : (
               <>
@@ -143,7 +145,11 @@ export function MatchReview({ matchDetails, ddVersion, french, inGame, onBack }:
                           <time className="w-10 shrink-0 tabular-nums text-zinc-500">
                             {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}
                           </time>
-                          {moment.kind === 'item' ? moment.itemName : labels[moment.kind] || moment.kind}
+                          {moment.kind === 'item' ? moment.itemName : (
+                            <span>{labels[moment.kind] || moment.kind}
+                              {moment.detail && <span className="ml-2 text-xs text-zinc-500">{moment.detail}</span>}
+                            </span>
+                          )}
                         </li>
                       );
                     })}

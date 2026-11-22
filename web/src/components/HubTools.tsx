@@ -116,13 +116,23 @@ export function RankedProgress({ history, french }: { history: AppState['rankHis
 
 type SavedBuild = { id: string; name: string; items: { id: number; name: string }[] };
 
-export function useSavedBuilds(state: AppState) {
-  const storageKey = `maylo:builds:${state.activeMode}:${state.activeRole}:${state.selected?.slug}`;
+export function useSavedBuilds(state: AppState, inOverlay = false) {
+  const match = inOverlay && state.game.inGame && !state.preview;
+  const champion = match
+    ? (state.game.modeKey === state.activeMode ? state.game.pickedChampion?.slug : null)
+    : state.selected?.slug;
+  const storageKey = champion ? `maylo:builds:${state.activeMode}:${state.activeRole}:${champion}` : '';
   const guideKey = `${storageKey}:guide`;
   const read = () => {
+    if (!storageKey) return { key: storageKey, saved: [], guideId: '' };
     try {
       const list = JSON.parse(localStorage.getItem(storageKey) || '[]');
-      return { key: storageKey, saved: Array.isArray(list) ? list as SavedBuild[] : [], guideId: localStorage.getItem(guideKey) || '' };
+      const saved = Array.isArray(list) ? list.filter((build): build is SavedBuild =>
+        build && typeof build.id === 'string' && typeof build.name === 'string' &&
+        Array.isArray(build.items) && build.items.length > 0 &&
+        build.items.every((item: SavedBuild['items'][number]) =>
+          item && Number.isInteger(item.id) && item.id > 0 && typeof item.name === 'string')) : [];
+      return { key: storageKey, saved, guideId: localStorage.getItem(guideKey) || '' };
     } catch {
       return { key: storageKey, saved: [], guideId: '' };
     }
@@ -141,11 +151,13 @@ export function useSavedBuilds(state: AppState) {
   }, [storageKey, guideKey]);
 
   const selectGuide = (id: string) => {
+    if (!storageKey) return;
     if (id) localStorage.setItem(guideKey, id);
     else localStorage.removeItem(guideKey);
     setSnapshot(read());
   };
   const commit = (entries: SavedBuild[]) => {
+    if (!storageKey) return;
     localStorage.setItem(storageKey, JSON.stringify(entries));
     if (!entries.some(({ id }) => id === guideId)) localStorage.removeItem(guideKey);
     setSnapshot(read());
@@ -156,19 +168,25 @@ export function useSavedBuilds(state: AppState) {
 export function BuildLibrary({ state, french }: { state: AppState; french: boolean }) {
   const [name, setName] = useState('');
   const [comparison, setComparison] = useState('');
+  const [recipeId, setRecipeId] = useState<number | null>(null);
   const { saved, commit, guide, selectGuide } = useSavedBuilds(state);
   const current = state.buildPath.map(({ stat }) => ({ id: stat.id, name: stat.name }));
   const matching = useMemo(() => new Set(current.map(({ id }) => id)), [current]);
   const alternate = saved.find((build) => build.id === comparison);
+  const activeItems = guide?.items ?? current;
+  const recipe = activeItems.some(({ id }) => id === recipeId)
+    ? state.referenceItems?.find(({ id }) => id === recipeId)
+    : undefined;
+  const canImport = state.settings.connected && !state.game.inGame;
 
   return (
     <section className="space-y-3 rounded-xl border border-zinc-500/25 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold">{french ? 'Builds favoris' : 'Saved builds'}</h2>
+        <h2 className="text-sm font-semibold">{french ? 'Build actif' : 'Active build'}</h2>
         {saved.length > 0 && (
           <label className="flex items-center gap-2 text-xs text-zinc-500">
             Alt+{state.settings.hotkeySheet || 'G'}
-            <select className="max-w-52 rounded-lg border border-zinc-500/25 bg-transparent px-2 py-1 text-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+            <select aria-label={french ? 'Variante active' : 'Active variant'} className="max-w-52 rounded-lg border border-zinc-500/25 bg-transparent px-2 py-1 text-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
               value={guide?.id ?? ''} onChange={(event) => selectGuide(event.target.value)}>
               <option value="">{french ? 'Guide standard' : 'Default guide'}</option>
               {saved.map(({ id, name }) => <option key={id} value={id}>{name}</option>)}
@@ -176,38 +194,74 @@ export function BuildLibrary({ state, french }: { state: AppState; french: boole
           </label>
         )}
       </div>
-      <form className="flex flex-wrap gap-2" onSubmit={(event) => {
-        event.preventDefault();
-        if (!name.trim() || !current.length) return;
-        commit([{ id: String(Date.now()), name: name.trim(), items: current }, ...saved].slice(0, 20));
-        setName('');
-      }}>
-        <input aria-label={french ? 'Nom du build' : 'Build name'} placeholder={french ? 'Nom du build' : 'Build name'}
-          className="min-w-40 flex-1 rounded border border-zinc-500/25 bg-transparent px-2 py-1 text-sm" value={name} maxLength={60}
-          onChange={(event) => setName(event.target.value)} />
-        <Button type="submit" size="sm" disabled={!name.trim() || !current.length}>{french ? 'Enregistrer le guide' : 'Save current guide'}</Button>
-      </form>
-      {saved.map((build) => (
-        <div key={build.id} className="flex flex-wrap items-center gap-2 border-t border-zinc-500/20 pt-2">
-          <strong className="mr-auto text-xs">{build.name}</strong>
-          {build.items.map((item) => <img key={item.id} src={itemIconUrl(item.id, state.ddVersion)} alt={item.name} title={item.name} className="size-6 rounded" />)}
-          <Button size="xs" variant="secondary" onClick={() => setComparison(comparison === build.id ? '' : build.id)}>{french ? 'Comparer' : 'Compare'}</Button>
-          <Button size="xs" variant="secondary" disabled={state.game.inGame} onClick={() => postAction('exportItemSet', { guideItems: build.items.map(({ id }) => id) })}>
-            {french ? 'Exporter' : 'Export'}
-          </Button>
-          <Button size="xs" variant="ghost" onClick={() => commit(saved.filter((entry) => entry.id !== build.id))}>{french ? 'Retirer' : 'Remove'}</Button>
-        </div>
-      ))}
-      {alternate && (
-        <div className="grid gap-2 text-xs sm:grid-cols-2">
-          <div><strong>{french ? 'Guide actuel' : 'Current guide'}</strong><p>{current.map(({ name }) => name).join(' → ') || '—'}</p></div>
-          <div><strong>{alternate.name}</strong>
-            <ul className="mt-1 list-inside list-disc">{alternate.items.map((item) => (
-              <li key={item.id} className={matching.has(item.id) ? '' : 'font-semibold text-indigo-500'}>{item.name}</li>
-            ))}</ul>
-          </div>
+      {activeItems.length > 0 ? (
+        <ul className="flex flex-wrap gap-2">
+          {activeItems.map(({ id, name }) => (
+            <li key={id}>
+              <button type="button" aria-pressed={id === recipeId} onClick={() => setRecipeId(recipeId === id ? null : id)}
+                className="flex items-center gap-2 rounded-lg border border-zinc-500/25 p-1.5 pr-2.5 text-left text-xs hover:border-indigo-400/60 aria-pressed:border-indigo-400 aria-pressed:bg-indigo-500/10">
+                <img src={itemIconUrl(id, state.ddVersion)} alt="" className="size-7 rounded" />
+                {name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : <p className="text-xs text-zinc-500">{french ? 'Guide indisponible.' : 'Build guide unavailable.'}</p>}
+      {recipeId != null && activeItems.some(({ id }) => id === recipeId) && (
+        <div className="rounded-lg bg-zinc-500/10 p-2.5 text-xs">
+          {recipe ? <>
+            <strong>{recipe.name}{recipe.total > 0 ? ` · ${recipe.total}g` : ''}</strong>
+            <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+              {recipe.components.map((component, index) => <li key={`${component.id}-${index}`}>{component.name} · {component.price}g</li>)}
+            </ul>
+          </> : <span>{french ? 'Recette indisponible.' : 'Recipe unavailable.'}</span>}
         </div>
       )}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" disabled={!canImport || !activeItems.length}
+          onClick={() => postAction('exportItemSet', guide ? { guideItems: guide.items.map(({ id }) => id) } : undefined)}>
+          {french ? 'Exporter vers la boutique' : 'Export to shop'}
+        </Button>
+        {state.runes && <Button size="sm" variant="secondary" disabled={!canImport} onClick={() => postAction('importRunes')}>
+          {french ? 'Importer les runes' : 'Import runes'}
+        </Button>}
+        {state.importStatus && <span role="status" className="text-xs text-zinc-500">{state.importStatus}</span>}
+      </div>
+      <details className="space-y-3">
+        <summary className="cursor-pointer text-xs font-semibold">{french ? 'Gérer les variantes' : 'Manage variants'}</summary>
+        <form className="flex flex-wrap gap-2" onSubmit={(event) => {
+          event.preventDefault();
+          if (!name.trim() || !current.length) return;
+          commit([{ id: String(Date.now()), name: name.trim(), items: current }, ...saved].slice(0, 20));
+          setName('');
+        }}>
+          <input aria-label={french ? 'Nom du build' : 'Build name'} placeholder={french ? 'Nom du build' : 'Build name'}
+            className="min-w-40 flex-1 rounded border border-zinc-500/25 bg-transparent px-2 py-1 text-sm" value={name} maxLength={60}
+            onChange={(event) => setName(event.target.value)} />
+          <Button type="submit" size="sm" disabled={!name.trim() || !current.length}>{french ? 'Enregistrer le guide' : 'Save current guide'}</Button>
+        </form>
+        {saved.map((build) => (
+          <div key={build.id} className="flex flex-wrap items-center gap-2 border-t border-zinc-500/20 pt-2">
+            <strong className="mr-auto text-xs">{build.name}</strong>
+            {build.items.map((item) => <img key={item.id} src={itemIconUrl(item.id, state.ddVersion)} alt={item.name} title={item.name} className="size-6 rounded" />)}
+            <Button size="xs" variant="secondary" onClick={() => setComparison(comparison === build.id ? '' : build.id)}>{french ? 'Comparer' : 'Compare'}</Button>
+            <Button size="xs" variant="secondary" disabled={!canImport} onClick={() => postAction('exportItemSet', { guideItems: build.items.map(({ id }) => id) })}>
+              {french ? 'Exporter' : 'Export'}
+            </Button>
+            <Button size="xs" variant="ghost" onClick={() => commit(saved.filter((entry) => entry.id !== build.id))}>{french ? 'Retirer' : 'Remove'}</Button>
+          </div>
+        ))}
+        {alternate && (
+          <div className="grid gap-2 text-xs sm:grid-cols-2">
+            <div><strong>{french ? 'Guide actuel' : 'Current guide'}</strong><p>{current.map(({ name }) => name).join(' → ') || '—'}</p></div>
+            <div><strong>{alternate.name}</strong>
+              <ul className="mt-1 list-inside list-disc">{alternate.items.map((item) => (
+                <li key={item.id} className={matching.has(item.id) ? '' : 'font-semibold text-indigo-500'}>{item.name}</li>
+              ))}</ul>
+            </div>
+          </div>
+        )}
+      </details>
     </section>
   );
 }

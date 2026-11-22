@@ -24,6 +24,7 @@ import { SegmentedTabs } from '@/components/ui/segmented-tabs';
 import { Button, Keycap, TierBadge } from '@/components/ui/primitives';
 import { postAction } from '@/lib/bridge';
 import { AugmentGuide, AugmentTier } from '@/components/AugmentGuide';
+import { benchmarkMetrics, draftDrawerStyle, OverlayLayoutPreview } from '@/components/OverlayLayoutPreview';
 import { useSavedBuilds } from '@/components/HubTools';
 import { cn, fmtGold, fmtPct, iconUrl, itemIconUrl, parsePct, spellIconUrl } from '@/lib/utils';
 import type { AppState, DraftChampion, LivePlayer, AugmentEntry } from '@/types';
@@ -378,16 +379,35 @@ const ROLE_LIST = [
   { key: 'support', label: 'Support' },
 ] as const;
 
-function InGameCommandSheet({ state }: { state: AppState }) {
-  const champ = state.selected;
-  const isMayhem = state.activeMode === 'MAYHEM';
-  const isArena = state.activeMode === 'ARENA';
+function InGameCommandSheet({ state, builds }: { state: AppState; builds: ReturnType<typeof useSavedBuilds> }) {
+  const game = state.game;
+  const inMatch = game.inGame && !state.preview;
+  const guideReady = !inMatch || (game.modeKey === state.activeMode &&
+    game.pickedChampion?.slug != null && game.pickedChampion.slug === state.selected?.slug);
+  const champ = guideReady ? state.selected : game.pickedChampion;
+  const modeForSheet = inMatch ? game.modeKey : state.activeMode;
+  const isMayhem = modeForSheet === 'MAYHEM';
+  const isArena = modeForSheet === 'ARENA';
   const hasAugments = isMayhem || isArena;
   const isRift = (state.game.modeKey ?? state.activeMode) === 'SR';
   const rawTab = state.inGameSheetTab || 'build';
   const tab = !hasAugments && rawTab === 'augments' ? 'build' : rawTab;
   const [itemId, setItemId] = useState<number | null>(null);
-  const { saved, guide: variant, selectGuide } = useSavedBuilds(state);
+  const { saved, guide: variant, selectGuide } = builds;
+  const dialog = useRef<HTMLDivElement>(null);
+  useEffect(() => dialog.current?.focus({ preventScroll: true }), []);
+  const trapTab = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Tab') return;
+    const controls = dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), a[href]');
+    if (!controls?.length) { event.preventDefault(); return; }
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    const active = document.activeElement;
+    if (active === dialog.current || (event.shiftKey ? active === first : active === last)) {
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus();
+    }
+  };
   const opening = state.buildPath.map((step) => ({
     id: step.stat.id, name: step.stat.name, icon: step.stat.icon, total: step.totalGold, components: step.components,
   }));
@@ -524,6 +544,12 @@ function InGameCommandSheet({ state }: { state: AppState }) {
         initial={{ opacity: 0, scale: 0.97, y: 6 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+        ref={dialog}
+        role="dialog"
+        aria-modal="true"
+        aria-label={french ? 'Guide en partie' : 'In-game guide'}
+        tabIndex={-1}
+        onKeyDown={trapTab}
         onClick={(e) => e.stopPropagation()}
         style={{ clipPath: 'inset(0 round 16px)' }}
         className="rounded-2xl overflow-hidden shadow-[0_28px_80px_rgba(0,0,0,0.75)]"
@@ -551,18 +577,18 @@ function InGameCommandSheet({ state }: { state: AppState }) {
                   {champ?.name ?? 'Champion'}
                 </span>
                 {champ && <TierBadge tier={champ.tier} size="sm" dark />}
-                {champ?.patchTag && (
+                {state.selected?.slug === champ?.slug && guideReady && state.selected?.patchTag && (
                   <span
                     className={cn(
                       'rounded-md border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider',
-                      champ.patchTag === 'buff'
+                      state.selected.patchTag === 'buff'
                         ? 'border-emerald-400/45 bg-emerald-500/18 text-emerald-300'
-                        : champ.patchTag === 'nerf'
+                        : state.selected.patchTag === 'nerf'
                           ? 'border-rose-400/45 bg-rose-500/18 text-rose-300'
                           : 'border-amber-400/45 bg-amber-500/18 text-amber-200'
                     )}
                   >
-                    {champ.patchTag === 'adjust' ? 'ADJ' : champ.patchTag}
+                    {state.selected.patchTag === 'adjust' ? 'ADJ' : state.selected.patchTag}
                   </span>
                 )}
                 <span className="rounded-md border border-indigo-400/30 bg-indigo-500/15 px-2 py-0.5 text-[10px] font-semibold text-indigo-200">
@@ -600,19 +626,20 @@ function InGameCommandSheet({ state }: { state: AppState }) {
               options={
                 hasAugments
                   ? [
-                      { value: 'build', label: 'Build & Skills', icon: <Swords className="size-3" /> },
+                      { value: 'build', label: french ? 'Build et compétences' : 'Build & Skills', icon: <Swords className="size-3" /> },
                       { value: 'augments', label: 'Augments', icon: <Sparkles className="size-3" /> },
-                      { value: 'live', label: 'Live Match', icon: <Timer className="size-3" /> },
+                      { value: 'live', label: french ? 'Partie en cours' : 'Live Match', icon: <Timer className="size-3" /> },
                     ]
                   : [
-                      { value: 'build', label: 'Build & Skills', icon: <Swords className="size-3" /> },
-                      { value: 'live', label: 'Live Match', icon: <Timer className="size-3" /> },
+                      { value: 'build', label: french ? 'Build et compétences' : 'Build & Skills', icon: <Swords className="size-3" /> },
+                      { value: 'live', label: french ? 'Partie en cours' : 'Live Match', icon: <Timer className="size-3" /> },
                     ]
               }
             />
             <button
               type="button"
               onClick={() => postAction('closeInGameSheet')}
+              aria-label={french ? 'Fermer le guide' : 'Close guide'}
               className="inline-flex items-center gap-1.5 rounded-lg border border-white/12 bg-white/[0.06] px-2.5 py-1.5 text-[11px] font-medium text-zinc-200 hover:bg-white/[0.14] hover:text-white cursor-pointer"
             >
               <Keycap keys={`Alt+${state.settings.hotkeySheet || 'G'}`} />
@@ -623,7 +650,15 @@ function InGameCommandSheet({ state }: { state: AppState }) {
 
         {/* Scrollable Content */}
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-3 py-3 sm:px-5 sm:py-4">
-          {tab === 'build' && (
+          {(tab === 'build' || tab === 'augments') && !guideReady && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 p-3 text-sm text-zinc-300">
+              <p role="status">{french ? 'Le guide du champion joué est indisponible.' : 'The guide for the champion in this match is unavailable.'}</p>
+              {game.pickedChampion && <Button size="xs" onClick={() => postAction('useLiveBuild')}>
+                {french ? 'Afficher le guide de la partie' : 'Show guide for this match'}
+              </Button>}
+            </div>
+          )}
+          {tab === 'build' && guideReady && (
             <>
               {/* Role Bar (SR) + Focus Bar + Actions */}
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -687,7 +722,7 @@ function InGameCommandSheet({ state }: { state: AppState }) {
                     size="xs"
                     variant="secondary"
                     disabled={!champ || state.game.inGame}
-                    onClick={() => postAction('exportItemSet')}
+                    onClick={() => postAction('exportItemSet', variant ? { guideItems: variant.items.map(({ id }) => id) } : undefined)}
                     className="border-white/12 bg-white/[0.06] text-zinc-100 hover:bg-white/[0.12]"
                   >
                     <Download className="size-3" />
@@ -711,8 +746,9 @@ function InGameCommandSheet({ state }: { state: AppState }) {
                   {referenceItems.map((item) => (
                     <button key={item.id} type="button" aria-pressed={itemId === item.id}
                       onClick={() => setItemId(item.id)}
-                      className="flex items-center gap-2 rounded-lg border border-white/10 p-2 text-left text-xs hover:border-indigo-400/50">
-                      {item.icon && <img src={iconUrl(item.icon)} alt="" className="size-7 rounded" />}
+                      className={cn('flex items-center gap-2 rounded-lg border p-2 text-left text-xs hover:border-indigo-400/50',
+                        itemId === item.id ? 'border-indigo-400/60 bg-indigo-500/15' : 'border-white/10')}>
+                      <img src={item.icon ? iconUrl(item.icon) : itemIconUrl(item.id, state.ddVersion)} alt="" className="size-7 rounded" />
                       <span className="flex-1 font-semibold text-white">{item.name}</span>
                       {item.total > 0 && <span className="text-zinc-400">{fmtGold(item.total)}</span>}
                     </button>
@@ -725,7 +761,7 @@ function InGameCommandSheet({ state }: { state: AppState }) {
                       <ul className="mt-2 flex flex-wrap gap-2">
                         {guideItem.components.map((component, index) => (
                           <li key={`${component.id}-${index}`} className="flex items-center gap-1.5">
-                            <img src={iconUrl(component.icon)} alt="" className="size-4 rounded" />
+                            <img src={component.icon ? iconUrl(component.icon) : itemIconUrl(component.id, state.ddVersion)} alt="" className="size-4 rounded" />
                             {component.name} · {fmtGold(component.price)}
                           </li>
                         ))}
@@ -818,7 +854,7 @@ function InGameCommandSheet({ state }: { state: AppState }) {
                               <span className="truncate text-zinc-200">{st.name}</span>
                             </div>
                             <span className="text-[11px] font-semibold text-indigo-300 tabular-nums shrink-0">
-                              {isArena ? (parsePct(st.pick) || '—') : fmtPct(st.rate)}
+                              {isArena ? (parsePct(st.pick) ? `${parsePct(st.pick)} PR` : '—') : fmtPct(st.rate)}
                             </span>
                           </div>
                         ))
@@ -830,7 +866,7 @@ function InGameCommandSheet({ state }: { state: AppState }) {
             </>
           )}
 
-          {tab === 'augments' && (
+          {tab === 'augments' && guideReady && (
             <AugmentGuide key={`${state.activeMode}:${champ?.slug}`} augments={state.allAugments} dark french={french} />
           )}
 
@@ -934,7 +970,7 @@ function ChampSelectTierDrawer({ state }: { state: AppState }) {
           animate={{ opacity: 1, x: 0, scale: 1 }}
           exit={{ opacity: 0, x: 12, scale: 0.95 }}
           transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-          className="pointer-events-auto fixed right-[1vw] top-[12vh] z-40 h-[5vh] w-[min(18vw,20vh)]"
+          className="pointer-events-auto fixed z-40" style={draftDrawerStyle(false)}
         >
           <button
             type="button"
@@ -954,7 +990,7 @@ function ChampSelectTierDrawer({ state }: { state: AppState }) {
           animate={{ opacity: 1, x: 0, scale: 1 }}
           exit={{ opacity: 0, x: 22, scale: 0.97 }}
           transition={{ type: 'spring', stiffness: 420, damping: 32, mass: 0.7 }}
-          className="pointer-events-auto fixed right-[1vw] top-[12vh] bottom-[10vh] z-40 flex w-[min(28vw,32vh)] flex-col"
+          className="pointer-events-auto fixed z-40 flex flex-col" style={draftDrawerStyle(true)}
         >
           <GlassCard
             surface="overlay"
@@ -1054,7 +1090,7 @@ function ChampSelectTierDrawer({ state }: { state: AppState }) {
                   key={`${row.slug}-${row.role}-${idx}`}
                   type="button"
                   onClick={() =>
-                    postAction('selectChampion', {
+                    postAction('browseDraftBuild', {
                       slug: row.slug,
                       role: isSR ? row.role : '',
                     })
@@ -1132,6 +1168,7 @@ function ChampSelectTierDrawer({ state }: { state: AppState }) {
 }
 
 export function OverlayView({ state }: { state: AppState }) {
+  const builds = useSavedBuilds(state, true);
   const [jungleSide, setJungleSide] = useState<'red' | 'blue'>('red');
   const [tickDelta, setTickDelta] = useState(0);
   const [liveMapScale, setLiveMapScale] = useState<number | null>(null);
@@ -1183,7 +1220,7 @@ export function OverlayView({ state }: { state: AppState }) {
   // Prevent Chromium Tab focus-scrolling completely & close focused Alt+G Sheet on Escape
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Tab') {
+      if (e.key === 'Tab' && !state.inGameSheet) {
         e.preventDefault();
         e.stopPropagation();
       } else if (e.key === 'Escape' && state.inGameSheet) {
@@ -1202,7 +1239,7 @@ export function OverlayView({ state }: { state: AppState }) {
 
   // Zero-lag centered Alt+G / F9 In-Game Command Overlay
   if (state.inGameSheet) {
-    return <InGameCommandSheet state={state} />;
+    return <InGameCommandSheet state={state} builds={builds} />;
   }
 
   const editing = state.editing;
@@ -1252,10 +1289,17 @@ export function OverlayView({ state }: { state: AppState }) {
       (state.preview && (pScene === 'sr_hud' || (pScene === '' && !state.game.inSelection)))) &&
     pScene !== 'augments' &&
     pScene !== 'bench';
-  const showBuildHud = showInGameHud && state.settings.showBuildOverlay && state.buildPath.length > 0;
+  const hudItems = builds.guide
+    ? builds.guide.items.map((item) => ({
+        ...item, icon: state.referenceItems?.find((reference) => reference.id === item.id)?.icon,
+      }))
+    : state.buildPath.map(({ stat }) => stat);
+  const showBuildHud = showInGameHud && state.settings.showBuildOverlay && hudItems.length > 0 &&
+    (!state.game.inGame || state.preview || state.activeMode === state.game.modeKey);
   const isSR = pScene === 'sr_hud' || (state.game.inGame
     ? (state.game.modeKey ?? (['CLASSIC', 'SWIFTPLAY'].includes(state.game.mode) ? 'SR' : '')) === 'SR'
     : state.activeMode === 'SR');
+  const metrics = benchmarkMetrics(state.settings);
   const showPerfStrip = isSR && showInGameHud && state.settings.showPerfStrip && (me !== null || state.preview);
   const showJungleWidget =
     showInGameHud &&
@@ -1332,6 +1376,14 @@ export function OverlayView({ state }: { state: AppState }) {
                 Drag widgets · Ctrl+Tab or Alt+{state.settings.hotkeyEdit || 'O'} to lock
               </span>
             )}
+            <details className="relative">
+              <summary className="cursor-pointer rounded-full border border-white/15 px-2.5 py-0.5 text-[11px]">
+                {state.settings.language === 'fr' ? 'Aperçu' : 'Preview'}
+              </summary>
+              <div className="absolute left-1/2 top-full mt-3 w-[min(420px,calc(100vw-20px))] -translate-x-1/2 whitespace-normal rounded-xl border border-indigo-400/40 bg-[#101322] p-3 shadow-2xl">
+                <OverlayLayoutPreview state={state} french={state.settings.language === 'fr'} dark />
+              </div>
+            </details>
             <button
               type="button"
               onClick={() => postAction('resetPositions')}
@@ -1436,10 +1488,13 @@ export function OverlayView({ state }: { state: AppState }) {
         <DraggableSlot panelKey="build_hud" title="Build Guide" defaultX={0.012} defaultY={0.018}
           editing={editing} savedPanels={saved} scale={widgetScale("build_hud")} passThrough>
           <GlassCard surface="overlay" className="px-2.5 py-2">
-            <p className="text-[10px] font-semibold text-zinc-300">Build · Alt+{state.settings.hotkeySheet || 'G'}</p>
+            <p className="max-w-40 truncate text-[10px] font-semibold text-zinc-300">
+              {builds.guide?.name ?? 'Build'} · Alt+{state.settings.hotkeySheet || 'G'}
+            </p>
             <div className="mt-1.5 flex gap-1">
-              {state.buildPath.slice(0, 4).map((step) => (
-                <img key={step.stat.id} src={iconUrl(step.stat.icon)} alt={step.stat.name} className="size-6 rounded" />
+              {hudItems.slice(0, 4).map((item) => (
+                <img key={item.id} src={item.icon ? iconUrl(item.icon) : itemIconUrl(item.id, state.ddVersion)}
+                  alt={item.name} className="size-6 rounded" />
               ))}
             </div>
           </GlassCard>
@@ -1455,10 +1510,10 @@ export function OverlayView({ state }: { state: AppState }) {
                 portrait french={state.settings.language === 'fr'} />
             </div>}
             <dl className="flex items-center gap-2.5 whitespace-nowrap text-[11px] tabular-nums">
-              <div className="flex items-center gap-1"><dt className="text-zinc-400">CS/min</dt><dd className="font-semibold">{me && liveSeconds > 20 ? csPerMin.toFixed(1) : '—'}</dd></div>
-              <div className="flex items-center gap-1"><dt className="text-zinc-400">KDA</dt><dd className="font-semibold">{me ? `${me.kills}/${me.deaths}/${me.assists}` : '—'}</dd></div>
-              <div className="flex items-center gap-1"><dt className="text-zinc-400">KP</dt><dd className="font-semibold">{me && myTeamKills > 0 ? `${kp}%` : '—'}</dd></div>
-              {liveClock && <div className="border-l border-white/10 pl-2"><dt className="sr-only">Game time</dt><dd className="text-zinc-300">{liveClock}</dd></div>}
+              {metrics.includes('cs') && <div className="flex items-center gap-1"><dt className="text-zinc-400">CS/min</dt><dd className="font-semibold">{me && liveSeconds > 20 ? csPerMin.toFixed(1) : '—'}</dd></div>}
+              {metrics.includes('kda') && <div className="flex items-center gap-1"><dt className="text-zinc-400">KDA</dt><dd className="font-semibold">{me ? `${me.kills}/${me.deaths}/${me.assists}` : '—'}</dd></div>}
+              {metrics.includes('kp') && <div className="flex items-center gap-1"><dt className="text-zinc-400">KP</dt><dd className="font-semibold">{me && myTeamKills > 0 ? `${kp}%` : '—'}</dd></div>}
+              {metrics.includes('clock') && <div><dt className="sr-only">{state.settings.language === 'fr' ? 'Temps de partie' : 'Game time'}</dt><dd className="text-zinc-300">{liveClock || '—'}</dd></div>}
             </dl>
           </GlassCard>
         </DraggableSlot>

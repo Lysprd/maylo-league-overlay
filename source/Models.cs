@@ -127,6 +127,7 @@ namespace MayhemCompanion {
   public bool OnboardingSeen = false;
   public bool Connected = true, Overlay = true, Ocr = true, OcrAllModes = true, AutoLayout = true, AutoPage = true;
   public bool ShowBuildOverlay = true, ShowRerollBar = true, ShowSkillAdvisor = true, ShowPerfStrip = true, ShowJungleWidget = true;
+  public List<string> BenchmarkMetrics = new List<string> { "cs", "kda", "kp", "clock" };
   public bool ShowBenchBar = true, MinimalHud = false;
   public bool AutoSpells, AutoRunes, AutoExportShop, MinimapLeft;
   public bool LaunchWithWindows = false, MinimizeToTray = true;

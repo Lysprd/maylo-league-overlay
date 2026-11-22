@@ -44,6 +44,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
+import { BENCHMARK_METRICS, benchmarkMetrics, OverlayLayoutPreview } from '@/components/OverlayLayoutPreview';
 import { MatchReview } from '@/components/MatchReview';
 import { AugmentGuide, AugmentTier } from '@/components/AugmentGuide';
 import { BuildLibrary, RankedProgress, RecentProgress, RuneEditor, SettingsSearch, SkinCollection } from '@/components/HubTools';
@@ -591,7 +592,7 @@ export function HubView({ state }: { state: AppState }) {
   const [dismissedTutorial, setDismissedTutorial] = useState(false);
   const [champSearch, setChampSearch] = useState('');
   const [tierFilter, setTierFilter] = useState('All');
-  const [selectedMatch, setSelectedMatch] = useState<MatchRecord | null>(null);
+  const [selectedMatch, setSelectedMatch] = useState<{ id: string; account: string | undefined } | null>(null);
   const main = useRef<HTMLElement>(null);
   const reviewReturn = useRef({ scrollTop: 0, focus: null as HTMLElement | null });
   const [onlyClips, setOnlyClips] = useState(false);
@@ -599,7 +600,7 @@ export function HubView({ state }: { state: AppState }) {
   const french = state.settings.language === 'fr';
   const openMatch = (match: MatchRecord) => {
     reviewReturn.current = { scrollTop: main.current?.scrollTop ?? 0, focus: document.activeElement instanceof HTMLElement ? document.activeElement : null };
-    setSelectedMatch(match);
+    setSelectedMatch({ id: match.id, account: state.account?.riotId });
   };
   const closeMatch = () => {
     setSelectedMatch(null);
@@ -609,7 +610,9 @@ export function HubView({ state }: { state: AppState }) {
       focus?.focus({ preventScroll: true });
     });
   };
-  const matchDetails = state.history.find((match) => match.id === selectedMatch?.id) ?? selectedMatch;
+  const matchDetails = selectedMatch && selectedMatch.account === state.account?.riotId
+    ? state.history.find((match) => match.id === selectedMatch.id)
+    : undefined;
   const [liveFilter, setLiveFilter] = useState<'Overview' | 'Your team' | 'Opponents'>('Overview');
   const [tierSearch, setTierSearch] = useState('');
   const [historySearch, setHistorySearch] = useState('');
@@ -646,9 +649,13 @@ export function HubView({ state }: { state: AppState }) {
   }, [view, state.activeMode, game.inSelection, game.inGame]);
 
   useEffect(() => {
-    postAction('viewMatchReview', { matchId: selectedMatch?.id ?? '' });
-    if (selectedMatch && main.current) main.current.scrollTop = 0;
-  }, [selectedMatch]);
+    postAction('viewMatchReview', { matchId: matchDetails?.id ?? '' });
+    if (matchDetails && main.current) main.current.scrollTop = 0;
+  }, [matchDetails?.id]);
+
+  useEffect(() => {
+    if (selectedMatch && !matchDetails) setSelectedMatch(null);
+  }, [selectedMatch, matchDetails]);
 
   // Reset patch filters cleanly when switching game mode in the top bar
   useEffect(() => {
@@ -763,18 +770,9 @@ export function HubView({ state }: { state: AppState }) {
   const draftPick = draftActive ? game.pickedChampion : null;
   const activeModeLabel = isMayhem ? 'ARAM Mayhem' : isArena ? 'Arena' : isSR ? 'Ranked SR' : 'ARAM';
 
-  const modeHistory = useMemo(() => {
-    return (state.history || []).filter((m) => {
-      const modeStr = (m.mode || '').toUpperCase();
-      const isMayhemMatch = Boolean(m.mayhem) || m.queue === 2400 || m.queue === 3270 || modeStr === 'KIWI';
-      const isAramMatch = !isMayhemMatch && (m.queue === 450 || m.queue === 720 || modeStr === 'ARAM');
-      const isArenaMatch = m.queue === 1700 || m.queue === 1710 || modeStr === 'CHERRY';
-      if (state.activeMode === 'MAYHEM') return isMayhemMatch;
-      if (state.activeMode === 'ARENA') return isArenaMatch;
-      if (state.activeMode === 'ARAM') return isAramMatch;
-      return !isMayhemMatch && !isAramMatch && !isArenaMatch;
-    });
-  }, [state.history, state.activeMode]);
+  const modeHistory = useMemo(() =>
+    state.history.filter((match) => match.modeKey === state.activeMode),
+  [state.history, state.activeMode]);
 
   const filteredHistory = useMemo(() => {
     const q = historySearch.trim().toLowerCase();
@@ -1289,7 +1287,7 @@ export function HubView({ state }: { state: AppState }) {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
+                  {view !== 'Build' && <div className="flex items-center gap-2 shrink-0">
                     {state.runes && (
                       <Button size="sm" variant="secondary" onClick={() => postAction('importRunes')}>
                         <Wand2 className="size-3.5" />
@@ -1300,7 +1298,7 @@ export function HubView({ state }: { state: AppState }) {
                       <Download className="size-3.5" />
                       Export to Shop
                     </Button>
-                  </div>
+                  </div>}
                 </div>
 
                 {/* Quick Auto-Import Toggles + SR Role Selector Bar */}
@@ -2114,6 +2112,8 @@ export function HubView({ state }: { state: AppState }) {
                   />
                 )}
 
+                <details className="space-y-4 rounded-xl border border-zinc-500/25 p-4">
+                  <summary className="cursor-pointer text-sm font-semibold">{french ? 'Stats et autres options' : 'Stats and other options'}</summary>
                 {/* Build Path + Focus */}
                 <GlassCard surface="hub" spotlight className="p-5 space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2200,7 +2200,7 @@ export function HubView({ state }: { state: AppState }) {
                         </div>
                         <div className="flex items-center gap-3">
                           <img
-                            src={iconUrl(step.stat.icon)}
+                            src={step.stat.icon ? iconUrl(step.stat.icon) : itemIconUrl(step.stat.id, state.ddVersion)}
                             alt={step.stat.name}
                             className="size-11 rounded-xl border border-zinc-200 dark:border-white/12 bg-zinc-900 shrink-0"
                           />
@@ -2210,9 +2210,9 @@ export function HubView({ state }: { state: AppState }) {
                             </div>
                             <div className="mt-0.5 flex items-center gap-2 text-xs tabular-nums">
                               <span className="font-bold text-indigo-600 dark:text-indigo-300">
-                                {isArena ? (parsePct(step.stat.pick) || '—') : `${fmtPct(step.stat.rate)} WR`}
+                                {isArena ? (parsePct(step.stat.pick) ? `${parsePct(step.stat.pick)} PR` : '—') : `${fmtPct(step.stat.rate)} WR`}
                               </span>
-                              {parsePct(step.stat.pick) && (
+                              {!isArena && parsePct(step.stat.pick) && (
                                 <span className="text-zinc-500 dark:text-zinc-400">
                                   {parsePct(step.stat.pick)} PR
                                 </span>
@@ -2309,7 +2309,7 @@ export function HubView({ state }: { state: AppState }) {
                                   <div className="truncate text-xs font-semibold text-zinc-900 dark:text-zinc-100">
                                     {st.name}
                                   </div>
-                                  {parsePct(st.pick) && (
+                                  {!isArena && parsePct(st.pick) && (
                                     <div className="text-[10px] text-zinc-500 tabular-nums">
                                       PR {parsePct(st.pick)}
                                     </div>
@@ -2317,7 +2317,7 @@ export function HubView({ state }: { state: AppState }) {
                                 </div>
                               </div>
                               <span className="text-xs font-bold text-indigo-600 dark:text-indigo-300 tabular-nums shrink-0">
-                                {isArena ? (parsePct(st.pick) || '—') : fmtPct(st.rate)}
+                                {isArena ? (parsePct(st.pick) ? `${parsePct(st.pick)} PR` : '—') : fmtPct(st.rate)}
                               </span>
                             </div>
                           ))
@@ -2327,6 +2327,8 @@ export function HubView({ state }: { state: AppState }) {
                     );
                   })}
                 </div>
+
+                </details>
 
                 {/* Early / Mid / Late Game Scaling Curve */}
                 {state.gameLengths && state.gameLengths.length >= 2 && (
@@ -2606,7 +2608,8 @@ export function HubView({ state }: { state: AppState }) {
                         type="text"
                         value={historySearch}
                         onChange={(e) => setHistorySearch(e.target.value)}
-                        placeholder="Filter champion..."
+                        aria-label={french ? 'Filtrer par champion ou file' : 'Filter by champion or queue'}
+                        placeholder={french ? 'Champion ou file…' : 'Champion or queue…'}
                         className="w-full rounded-xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#14151B] py-1.5 pl-8 pr-2.5 text-xs text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:border-indigo-400 focus:outline-none"
                       />
                     </div>
@@ -2736,7 +2739,7 @@ export function HubView({ state }: { state: AppState }) {
                                   </div>
                                   {m.augmentDetails && m.augmentDetails.length > 0 && (
                                     <div className="mt-1 flex items-center gap-1">
-                                      {m.augmentDetails.slice(0, 4).map((a) => (
+                                      {m.augmentDetails.filter((a) => a.icon).slice(0, 4).map((a) => (
                                         <img
                                           key={a.id}
                                           src={iconUrl(a.icon)}
@@ -3883,6 +3886,22 @@ export function HubView({ state }: { state: AppState }) {
                   label="Live CS/min & Performance Strip"
                   description="Summoner’s Rift · CS/min, KDA and kill participation"
                 />
+                {isSR && <fieldset className="mx-2 mb-2 flex flex-wrap gap-x-4 gap-y-2 rounded-lg border border-zinc-500/25 px-3 pb-3 pt-1 text-xs">
+                  <legend className="px-1 font-semibold">Benchmark</legend>
+                  {BENCHMARK_METRICS.map(({ id, fr, en }) => {
+                    const active = benchmarkMetrics(state.settings);
+                    const checked = active.includes(id);
+                    return <label key={id} className="flex items-center gap-1.5">
+                      <input type="checkbox" checked={checked} disabled={checked && active.length === 1}
+                        onChange={() => postAction('setBenchmarkMetrics', { metrics: checked ? active.filter((metric) => metric !== id) : [...active, id] })} />
+                      {french ? fr : en}
+                    </label>;
+                  })}
+                </fieldset>}
+                <details className="space-y-2 rounded-lg border border-zinc-500/25 p-3">
+                  <summary className="cursor-pointer text-xs font-semibold">{french ? 'Aperçu par résolution' : 'Resolution preview'}</summary>
+                  <OverlayLayoutPreview state={state} french={french} />
+                </details>
                 <Switch
                   checked={state.settings.showJungleWidget}
                   onChange={(v) => postAction('updateSetting', { key: 'showJungleWidget', value: v })}
