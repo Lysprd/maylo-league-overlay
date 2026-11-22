@@ -932,10 +932,15 @@ function DraftChampionBadge({ champion, portrait = false, french = false }: {
 }) {
   const tierLabel = champion.tier ? `Tier ${champion.tier}` : (french ? 'Tier indisponible' : 'Tier unavailable');
   return (
-    <div className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-white/12 bg-[#10131c]/95 px-1.5 py-1 text-white">
-      {portrait && champion.icon && <img src={iconUrl(champion.icon)} alt="" className="size-6 shrink-0 rounded-md object-cover" />}
-      <span className="min-w-0 truncate text-[11px] font-semibold leading-tight">{champion.name}</span>
-      <span className="shrink-0" title={tierLabel} aria-label={tierLabel}><TierBadge tier={champion.tier} size="xs" dark /></span>
+    <div className="inline-flex max-w-full min-w-0 flex-col rounded-lg border border-white/12 bg-[#10131c]/95 px-1.5 py-1 text-white">
+      <div className="flex min-w-0 items-center gap-1.5">
+        {portrait && champion.icon && <img src={iconUrl(champion.icon)} alt="" className="size-6 shrink-0 rounded-md object-cover" />}
+        <span className="min-w-0 truncate text-[11px] font-semibold leading-tight">{champion.name}</span>
+        <span className="shrink-0" title={tierLabel} aria-label={tierLabel}><TierBadge tier={champion.tier} size="xs" dark /></span>
+      </div>
+      {champion.note && <p data-draft-note className="mt-1 line-clamp-2 w-36 max-w-full break-words border-t border-white/10 pt-1 text-[11px] leading-tight text-zinc-200">
+        {champion.note}
+      </p>}
     </div>
   );
 }

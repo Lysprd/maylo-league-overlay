@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.0-beta.12
+
+- Show saved champion notes on champion-select cards and the top ribbon. Private mode suppresses the notes.
+- Clear the update spinner on background download failures and retry without reusing the failed release check. Enforce the download deadline even when the response stream stops sending data.
+
 ## v0.2.0-beta.11
 
 - Choose the metrics shown in the Rift benchmark. Preview panel placement and the champion-select click area at four resolutions in Alt+O or Settings.

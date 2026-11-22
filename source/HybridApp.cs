@@ -1613,23 +1613,32 @@ namespace MayhemCompanion {
     patchTag = draftMode == ActiveMode ? patchTagOf(t.Slug) : "",
     winRate = t.WinRate, pickRate = t.PickRate, banRate = t.BanRate, kda = t.Kda, games = t.Games, counters = t.Counters.ToArray()
    };
-   bool previewDraft = Preview && PreviewScene == "bench" && (draftMode == "MAYHEM" || draftMode == "ARAM");
+   bool previewSelection = Preview && PreviewScene == "bench";
+   bool previewDraft = previewSelection && (draftMode == "MAYHEM" || draftMode == "ARAM");
    var rawCards = previewDraft
     ? Champions.Take(3).Select((champion, index) => new ChampionCardHit { Champion = champion, X = .28 + .22 * index, Y = .54 }).ToList()
     : Game.InSelection && !Game.InGame ? champSelectCards : new List<ChampionCardHit>();
    var rawBench = (previewDraft ? Champions.Skip(3).Take(5) : Game.Bench.Select(FromId).Where(c => c != null))
     .GroupBy(c => c.Slug).Select(group => group.First()).ToList();
-   var actualPick = previewDraft ? Selected : Champions.FirstOrDefault(champion => ChampionMatches(champion, Game.Champion));
+   var actualPick = previewSelection ? Selected : Champions.FirstOrDefault(champion => ChampionMatches(champion, Game.Champion));
+   bool showDraftNotes = !PrivateMode && (previewSelection || (Game.InSelection && !Game.InGame));
+   Func<Champion, string> draftNote = champion => {
+    string note;
+    if (!showDraftNotes || !Config.Notes.TryGetValue(champion.Slug, out note) || String.IsNullOrWhiteSpace(note)) return null;
+    note = System.Text.RegularExpressions.Regex.Replace(note.Trim(), @"\s+", " ");
+    if (note.Length <= 90) return note;
+    return note.Substring(0, Char.IsHighSurrogate(note[89]) ? 89 : 90) + "…";
+   };
    Func<Champion, object> draftChampion = champion => {
     var tier = ChampionTierFor(draftTiers, champion, draftMode, MultiModeParser.NormalizeRole(Game.AssignedRole));
     return new {
      name = champion.Name, slug = champion.Slug, tier = tier != null ? tier.Tier : "",
-     icon = MultiModeParser.ChampIconOf(champion)
+     icon = MultiModeParser.ChampIconOf(champion), note = draftNote(champion)
     };
    };
    var champCardsPayload = rawCards.Where(hit => hit != null && hit.Champion != null).Select(hit => {
     var tier = ChampionTierFor(draftTiers, hit.Champion, draftMode, "");
-    return new { name = hit.Champion.Name, slug = hit.Champion.Slug, tier = tier != null ? tier.Tier : "", x = hit.X, y = hit.Y };
+    return new { name = hit.Champion.Name, slug = hit.Champion.Slug, tier = tier != null ? tier.Tier : "", x = hit.X, y = hit.Y, note = draftNote(hit.Champion) };
    }).ToArray();
    var pn = MultiModeParser.PatchNotes ?? new PatchNotesBundle();
 

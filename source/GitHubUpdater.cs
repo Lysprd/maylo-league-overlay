@@ -27,7 +27,7 @@ namespace MayhemCompanion {
   static readonly object statusLock = new object();
   static UpdateSnapshot currentStatus = new UpdateSnapshot();
   static string cachedRepoFullName;
-  static string releasesEtag;
+  static string releasesEtag, etagInstalledVersion;
   static DateTime lastActivateCheckUtc = DateTime.MinValue;
   public static event Action StatusChanged;
 
@@ -141,11 +141,19 @@ namespace MayhemCompanion {
    } catch (Exception ex) {
     if (ex is OperationCanceledException && cancellation.IsCancellationRequested) throw;
     System.Diagnostics.Trace.WriteLine("maylo update: " + ex.Message);
+    releasesEtag = null;
+    etagInstalledVersion = null;
     var pending = PendingVersion(root);
-    if (force || pending != null) {
-     SetStatus("error", pending == null ? "" : pending.Text,
-      pending == null ? "Update check failed. Try again from Settings."
-       : "Update check failed. You can still restart to apply v" + pending.Text + ".", pending != null);
+    if (pending != null) {
+     SetStatus("ready", pending.Text, "v" + pending.Text + " is ready — restart maylo to apply.", true);
+    } else {
+     var status = GetStatus();
+     bool downloading = status.State == "downloading";
+     string message = downloading
+      ? (ex is OperationCanceledException ? "Update download timed out. Try again from Settings." :
+         "Could not download or prepare the update. Try again from Settings.")
+      : "Update check failed. Try again from Settings.";
+     SetStatus("error", downloading ? status.Version : "", message, false);
     }
    } finally {
     checkGate.Release();
@@ -201,8 +209,10 @@ namespace MayhemCompanion {
    }
 
    Release[] releases;
+   string nextEtag;
    using (var req = new HttpRequestMessage(HttpMethod.Get, RepositoryApi + "/releases?per_page=15")) {
-    if (!force && !String.IsNullOrEmpty(releasesEtag)) req.Headers.TryAddWithoutValidation("If-None-Match", releasesEtag);
+    if (!force && etagInstalledVersion == current.Text && !String.IsNullOrEmpty(releasesEtag))
+     req.Headers.TryAddWithoutValidation("If-None-Match", releasesEtag);
     using (var response = await client.SendAsync(req, cancellation)) {
      if (response.StatusCode == System.Net.HttpStatusCode.NotModified) {
       var pend = PendingVersion(root);
@@ -211,7 +221,7 @@ namespace MayhemCompanion {
       return;
      }
      response.EnsureSuccessStatusCode();
-     if (response.Headers.ETag != null) releasesEtag = response.Headers.ETag.Tag;
+     nextEtag = response.Headers.ETag == null ? null : response.Headers.ETag.ToString();
      string json = await response.Content.ReadAsStringAsync();
      releases = new JavaScriptSerializer { MaxJsonLength = 4 * 1024 * 1024 }.Deserialize<Release[]>(json);
     }
@@ -219,6 +229,8 @@ namespace MayhemCompanion {
 
    var target = SelectRelease(releases ?? new Release[0], current, repoFullName);
    if (target == null) {
+    releasesEtag = nextEtag;
+    etagInstalledVersion = current.Text;
     var pending = PendingVersion(root);
     if (pending == null)
      SetStatus("up_to_date", current.Text, "You're up to date (v" + current.Text + ").", false);
@@ -242,7 +254,23 @@ namespace MayhemCompanion {
      }
     }
    }
+   releasesEtag = nextEtag;
+   etagInstalledVersion = current.Text;
    SetStatus("ready", current.Text, "v" + current.Text + " is ready — restart maylo to apply.", true);
+  }
+
+  // A blocked .NET Framework response stream can ignore cancellation until another byte arrives.
+  static async Task<T> AwaitDownloadStep<T>(Task<T> step, CancellationToken cancellation) {
+   if (step.IsCompleted) return await step.ConfigureAwait(false);
+   var cancelled = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+   using (cancellation.Register(() => cancelled.TrySetResult(true))) {
+    if (await Task.WhenAny(step, cancelled.Task).ConfigureAwait(false) == step)
+     return await step.ConfigureAwait(false);
+    var _ = step.ContinueWith(t => GC.KeepAlive(t.Exception), CancellationToken.None,
+     TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+    cancellation.ThrowIfCancellationRequested();
+    return await step.ConfigureAwait(false);
+   }
   }
 
   static async Task<MemoryStream> Download(HttpClient client, Asset asset, CancellationToken cancellation) {
@@ -261,12 +289,12 @@ namespace MayhemCompanion {
      }
 
      response.EnsureSuccessStatusCode();
-     using (var input = await response.Content.ReadAsStreamAsync()) {
+     using (var input = await AwaitDownloadStep(response.Content.ReadAsStreamAsync(), cancellation)) {
       var output = new MemoryStream(asset.size);
       try {
        byte[] buffer = new byte[64 * 1024];
        int read;
-       while ((read = await input.ReadAsync(buffer, 0, buffer.Length, cancellation)) != 0) {
+       while ((read = await AwaitDownloadStep(input.ReadAsync(buffer, 0, buffer.Length, cancellation), cancellation)) != 0) {
         if (output.Length + read > asset.size) throw new InvalidDataException("Incorrect update size.");
         output.Write(buffer, 0, read);
        }
@@ -314,12 +342,91 @@ namespace MayhemCompanion {
      throw new Exception("Accepted mismatched digest");
     } catch (InvalidDataException) { }
     VerifyStagedUpdate();
+    VerifyRetryAfterDownloadFailure();
+    VerifyDownloadCancellation();
 
-    File.WriteAllText(report, "PASS: beta ordering, release selection, SHA-256, archive paths, atomic activation, rollback, and pruning.");
+    File.WriteAllText(report, "PASS: release selection, SHA-256, download timeout and retry, archive paths, atomic activation, rollback, and pruning.");
     return 0;
    } catch (Exception ex) {
     File.WriteAllText(report, ex.ToString());
     return 1;
+   }
+  }
+
+  sealed class UpdateTestHandler : HttpMessageHandler {
+   readonly byte[] payload;
+   public int Downloads;
+   public int ConditionalChecks;
+
+   public UpdateTestHandler(byte[] payload) { this.payload = payload; }
+
+   protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellation) {
+    var uri = request.RequestUri;
+    var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK);
+    if (uri.Host == "github.com") {
+     Downloads++;
+     if (Downloads == 1) response.StatusCode = System.Net.HttpStatusCode.BadGateway;
+     else response.Content = new ByteArrayContent(payload);
+    } else if (!uri.AbsolutePath.EndsWith("/releases", StringComparison.Ordinal)) {
+     response.Content = new StringContent("{\"id\":1464758229,\"full_name\":\"Lysprd/maylo-league-overlay\"}");
+    } else if (request.Headers.IfNoneMatch.Count != 0) {
+     ConditionalChecks++;
+     response.StatusCode = System.Net.HttpStatusCode.NotModified;
+    } else {
+     string digest;
+     using (var sha = SHA256.Create()) digest = "sha256:" + BitConverter.ToString(sha.ComputeHash(payload)).Replace("-", "");
+     response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue("\"fixture\"");
+     response.Content = new StringContent(new JavaScriptSerializer().Serialize(new[] { new Release {
+      tag_name = "v9.9.8", assets = new[] { new Asset {
+       name = InstallStore.Payload, size = payload.Length, digest = digest, state = "uploaded",
+       browser_download_url = "https://github.com/Lysprd/maylo-league-overlay/releases/download/v9.9.8/" + InstallStore.Payload
+      } }
+     } }));
+    }
+    return Task.FromResult(response);
+   }
+  }
+
+  static void VerifyRetryAfterDownloadFailure() {
+   string directory = Path.Combine(Path.GetTempPath(), "maylo-updater-test-" + Guid.NewGuid().ToString("N"));
+   var installed = ReleaseVersion.Parse(BuildInfo.Version);
+   var offered = ReleaseVersion.Parse("9.9.8");
+   try {
+    using (InstallStore.Lock(directory)) {
+     using (var zip = TestPackage(installed, false)) InstallStore.Stage(directory, installed, zip);
+     InstallStore.Activate(directory, installed);
+    }
+    using (var zip = TestPackage(offered, false))
+    using (var handler = new UpdateTestHandler(zip.ToArray()))
+    using (var client = new HttpClient(handler, false)) {
+     CheckLocked(directory, client, CancellationToken.None, false).GetAwaiter().GetResult();
+     if (GetStatus().State != "error" || InstallStore.Current(directory).Text != installed.Text)
+      throw new Exception("A failed background download must clear the spinner and preserve the installation");
+     CheckLocked(directory, client, CancellationToken.None, false).GetAwaiter().GetResult();
+     if (handler.Downloads != 2 || handler.ConditionalChecks != 0 || !GetStatus().CanRestart ||
+         InstallStore.Current(directory).Text != offered.Text)
+      throw new Exception("A failed download must be retried without a cached release response");
+     CheckLocked(directory, client, CancellationToken.None, false).GetAwaiter().GetResult();
+     if (handler.ConditionalChecks != 1 || !GetStatus().CanRestart)
+      throw new Exception("A successful update should allow conditional checks and remain ready to apply");
+    }
+   } finally {
+    if (Directory.Exists(directory)) Directory.Delete(directory, true);
+   }
+  }
+
+  static void VerifyDownloadCancellation() {
+   using (var cancellation = new CancellationTokenSource()) {
+    var blocked = new TaskCompletionSource<int>();
+    var read = AwaitDownloadStep(blocked.Task, cancellation.Token);
+    cancellation.Cancel();
+    if (!SpinWait.SpinUntil(() => read.IsCompleted, TimeSpan.FromSeconds(2)))
+     throw new Exception("An unresponsive download must release the updater at its deadline");
+    try {
+     read.GetAwaiter().GetResult();
+     throw new Exception("An expired download must be cancelled");
+    } catch (OperationCanceledException) { }
+    finally { blocked.TrySetResult(0); }
    }
   }
 

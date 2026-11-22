@@ -35,7 +35,7 @@ Everything renders in a borderless click-through WebView2 layer that stays out o
 </p>
 
 - **Champ Select Tier List drawer** — pinned on the right edge of Champion Select with instant search, `All / S+ / S / A` filters, role filters in Ranked SR, and cursor-aware click-through so moving back onto the champion grid never blocks picks or bans.
-- **Champion cards and bench** — the ARAM and Mayhem overlays show a compact tier badge for revealed cards and available bench champions. The benchmark labels your own champion during play.
+- **Champion cards and bench** — the ARAM and Mayhem overlays show a compact tier badge for revealed cards and available bench champions. During selection, the cards show a short excerpt of your saved champion notes. Private mode hides these excerpts. The benchmark labels your own champion during play.
 - **Alt+G reference** — browse items and their recipes, saved build variants, and the Mayhem or Arena augment catalog. Search augments by name, effect or rarity and sort by observed pick rate.
 - **Summoner’s Rift HUD** — opening items from your active guide, a configurable benchmark for CS/min, KDA, kill participation and game time, and movable panels. Preview your layout and the champion-select click area in Alt+O.
 

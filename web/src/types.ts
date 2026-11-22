@@ -290,6 +290,7 @@ export interface DraftChampion {
   slug: string;
   tier: string;
   icon: string;
+  note?: string | null;
 }
 
 export interface ChampCardOffer extends Omit<DraftChampion, 'icon'> {
