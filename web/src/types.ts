@@ -391,6 +391,11 @@ export interface AppState {
     live: LiveSummary;
   };
   buildSummary: string;
+  rankedBuild?: {
+    active: string;
+    variants: { key: string; games: number }[];
+    options: { step: number; items: { id: number; name: string; games: number }[] }[];
+  } | null;
   enemyThreats?: string[];
   situationalItems?: SituationalItem[] | null;
   buildPath: BuildStep[];

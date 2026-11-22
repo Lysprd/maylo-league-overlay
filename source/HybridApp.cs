@@ -293,6 +293,7 @@ namespace MayhemCompanion {
    if (Config.Layout == null) Config.Layout = new Placement();
    if (Config.AugmentPreferences == null) Config.AugmentPreferences = new Dictionary<string, int>();
    if (Config.Notes == null) Config.Notes = new Dictionary<string, string>();
+   if (Config.RankedBuildVariants == null) Config.RankedBuildVariants = new Dictionary<string, string>();
    if (Config.Theme != "light" && Config.Theme != "dark") Config.Theme = "dark";
    Config.FlashKey = String.Equals(Config.FlashKey, "D", StringComparison.OrdinalIgnoreCase) ? "D" : "F";
    if (String.IsNullOrWhiteSpace(Config.TierElo)) Config.TierElo = "emerald_plus";
@@ -993,26 +994,45 @@ namespace MayhemCompanion {
    if (roleOverride != null) ActiveRole = MultiModeParser.NormalizeRole(roleOverride);
    var prevModeData = ModeData;
    Selected = c; ImportStatus = "";
+   string targetRole = ActiveMode == "SR" ? (!String.IsNullOrEmpty(ActiveRole) ? ActiveRole : DetectedRole) : "";
    // Clear stale ModeData immediately when switching champion/mode so SyncLoadout NEVER applies the previous champion's runes/spells!
-   if (ModeData == null || ModeData.ChampionSlug != c.Slug || ModeData.ModeKey != ActiveMode) {
-    ModeData = new ModeBuildData { ChampionSlug = "", ModeKey = ActiveMode };
+   if (ModeData == null || ModeData.ChampionSlug != c.Slug || ModeData.ModeKey != ActiveMode ||
+       (ActiveMode == "SR" && ((targetRole != "" && ModeData.ActiveRole != targetRole) || ModeData.ActiveElo != Config.TierElo))) {
+    ModeData = new ModeBuildData { ChampionSlug = "", ModeKey = ActiveMode, SourceLabel = "" };
    }
    PushState();
    try {
-    string targetRole = ActiveMode == "SR" ? (!String.IsNullOrEmpty(ActiveRole) ? ActiveRole : DetectedRole) : "";
     var data = await MultiModeParser.LoadChampionMode(c, ActiveMode, targetRole, Config.TierElo, force || refreshedThisLaunch.Add(ActiveMode + ":" + c.Slug + ":" + targetRole + ":" + Config.TierElo), Bridge.Items, Champions);
     if (closing || ticket != generation) return;
     if (!IsAugmentMode && data.Augments.Count == 0 && prevModeData != null && prevModeData.ChampionSlug == c.Slug && prevModeData.Augments.Count > 0) data.Augments = prevModeData.Augments;
     data.ChampionSlug = c.Slug;
+    string preferred;
+    if (data.RankedVariants.Count > 0 && Config.RankedBuildVariants.TryGetValue(RankedVariantScope(data), out preferred)) {
+     var variant = data.RankedVariants.FirstOrDefault(build => build.Key == preferred);
+     if (variant != null) variant.Apply(data);
+    }
     ModeData = data;
     if (ActiveMode == "SR" && !String.IsNullOrEmpty(data.ActiveRole)) ActiveRole = data.ActiveRole;
     EnsureAugmentCatalog();
     StatusText = c.Name + " · " + ModeData.SourceLabel;
     PushState();
     await SyncLoadout();
+    if (data.ModeKey == "SR" && data.ActiveRole != "" && ticket == generation) {
+     var context = await MultiModeParser.LoadRankedContext(c, data.ActiveRole, data.ActiveElo);
+     if (context != null && !closing && ticket == generation) {
+      data.Teammates = context.Teammates;
+      data.Matchups = context.Matchups;
+      data.GameLengths = context.GameLengths;
+      PushState();
+     }
+    }
    } catch (Exception ex) {
     if (ticket == generation) { StatusText = "Build unavailable: " + ex.Message; PushState(); }
    }
+  }
+
+  static string RankedVariantScope(ModeBuildData data) {
+   return data.ChampionSlug + ":" + data.ActiveRole + ":" + data.ActiveElo;
   }
 
   List<CollectionSkin> collection = new List<CollectionSkin>();
@@ -1262,7 +1282,8 @@ namespace MayhemCompanion {
      // Auto-Export Shop Item Set during Champ Select (League loads custom item sets at game start, not mid-game!)
      if (Config.AutoExportShop) {
       try {
-       var coreIds = CurrentBuildPath(true).Where(x => !x.IsBoots && x.Role != "STARTER").Select(x => x.Stat.Id).ToList();
+       var coreIds = CurrentBuildPath(true).Where(x => ModeData.RankedVariant != null ? Price(x.Stat.Id) > 0 :
+        !x.IsBoots && x.Role != "STARTER").Select(x => x.Stat.Id).ToList();
        var starterOrPrism = ActiveMode == "ARENA" && ModeData.PrismaticItems.Count > 0
         ? ModeData.PrismaticItems.Select(x => x.Id).ToList()
         : ModeData.Starters.Select(x => x.Id).ToList();
@@ -1270,8 +1291,8 @@ namespace MayhemCompanion {
         Selected.Name, ChampionIdOf(Selected), ActiveMode, ActiveMode == "SR" ? ActiveRole : "",
         starterOrPrism,
         coreIds,
-        ModeData.Boots.Select(x => x.Id).ToList(),
-        ModeData.BestItems.Select(x => x.Id).ToList()
+        ModeData.RankedVariant != null ? new List<int>() : ModeData.Boots.Select(x => x.Id).ToList(),
+        ModeData.BestItems.Where(x => ModeData.RankedVariant == null || Price(x.Id) > 0).Select(x => x.Id).ToList()
        );
       } catch { }
      }
@@ -1522,6 +1543,12 @@ namespace MayhemCompanion {
        (Game.InGame && !Preview && (Game.ModeKey != ActiveMode || !ChampionMatches(Selected, Game.Champion))))
     return new List<BuildStep>();
 
+   if (ModeData.RankedVariant != null)
+    return ModeData.RankedVariant.Path.Select(item => new BuildStep {
+     Stat = item, Role = "BUILD ITEM", Reason = "U.GG", ShortTip = "",
+     IsBoots = MultiModeParser.IsRankedBoot(item.Id), Owned = !referenceOnly && Game.Owned.Contains(item.Id)
+    }).ToList();
+
    var map = ActiveItemsMap();
    var bootIds = new HashSet<int>(ModeData.Boots.Select(x => BuildPlanner.Canonical(x.Id)));
    var nonShopPrismatics = new HashSet<int>(ModeData.PrismaticItems.Select(x => x.Id));
@@ -1708,7 +1735,7 @@ namespace MayhemCompanion {
    Dictionary<string, double> widgetScale;
    Config.ModeWidgetScale.TryGetValue(ActiveMode, out widgetScale);
    const string emptyBuild = "No build data available";
-   string summary = path.Count == 0 ? emptyBuild : Config.BuildFocus + " build guide";
+   string summary = path.Count == 0 ? emptyBuild : ModeData.RankedVariant != null ? ModeData.SourceLabel : Config.BuildFocus + " build guide";
    bool hasReference = Selected != null && ModeData.ModeKey == ActiveMode && ModeData.ChampionSlug == Selected.Slug;
    var catalog = IsAugmentMode && hasReference ? ModeData.Augments.OrderBy(x => x.Name).ToArray() : new Stat[0];
 
@@ -1818,6 +1845,14 @@ namespace MayhemCompanion {
     detectedRole = DetectedRole,
     availableRoles = ModeData.AvailableRoles.ToArray(),
     modeSource = ModeData.SourceLabel,
+    rankedBuild = hasReference && ModeData.RankedVariant != null ? new {
+     active = ModeData.RankedVariant.Key,
+     variants = ModeData.RankedVariants.Select(variant => new { key = variant.Key, games = variant.Games }).ToArray(),
+     options = ModeData.RankedVariant.Options.Select((items, i) => new {
+      step = ModeData.RankedVariant.CoreCount + i + 1,
+      items = items.Select(item => new { id = item.Id, name = item.Name, games = item.Games }).ToArray()
+     }).ToArray()
+    } : null,
     privateMode = PrivateMode,
     hubActive = HubActive,
     inGameSheet = InGameSheet,
@@ -2124,6 +2159,19 @@ namespace MayhemCompanion {
       }
       break;
      case "setBuildFocus": Config.BuildFocus = Json.S(msg, "focus"); Save(); PushState(); break;
+     case "setRankedBuildVariant": {
+      if (ActiveMode != "SR" || Selected == null || ModeData.ChampionSlug != Selected.Slug || ModeData.ActiveRole != ActiveRole ||
+          ModeData.ActiveElo != Config.TierElo || Json.S(msg, "champion") != Selected.Slug ||
+          Json.S(msg, "role") != ActiveRole || Json.S(msg, "elo") != Config.TierElo) break;
+      var variant = ModeData.RankedVariants.FirstOrDefault(build => build.Key == Json.S(msg, "variant"));
+      if (variant == null || variant == ModeData.RankedVariant) break;
+      variant.Apply(ModeData);
+      Config.RankedBuildVariants[RankedVariantScope(ModeData)] = variant.Key;
+      ImportStatus = "";
+      Save(); PushState();
+      await SyncLoadout();
+      break;
+     }
      case "inspectItem": inspectedAugmentId = -1; inspectedItemId = Json.I(msg, "id"); PushState(); break;
      case "closeItem": inspectedItemId = -1; PushState(); break;
      case "inspectAugment": inspectedItemId = -1; inspectedAugmentId = Json.I(msg, "id"); PushState(); break;
@@ -2370,14 +2418,16 @@ namespace MayhemCompanion {
         ImportStatus = "Some saved items are unavailable for this champion and mode.";
         PushState(); break;
        }
-       var exportedCore = requested.Count > 0 ? requested.Where(id => !ModeData.Starters.Any(x => x.Id == id) &&
+       bool ranked = ModeData.RankedVariant != null;
+       var exportedCore = ranked ? (requested.Count > 0 ? requested : bp.Select(step => step.Stat.Id)).Where(id => Price(id) > 0).ToList()
+        : requested.Count > 0 ? requested.Where(id => !ModeData.Starters.Any(x => x.Id == id) &&
         !ModeData.Boots.Any(x => x.Id == id)).ToList() : bp.Where(x => !x.IsBoots && x.Role != "STARTER").Select(x => x.Stat.Id).ToList();
        ImportStatus = await Bridge.ExportItemSet(
         Selected.Name, ChampionIdOf(Selected), ActiveMode, ActiveMode == "SR" ? ActiveRole : "",
         ModeData.Starters.Select(x => x.Id).ToList(),
         exportedCore,
-        ModeData.Boots.Select(x => x.Id).ToList(),
-        ModeData.BestItems.Select(x => x.Id).ToList()
+        ranked ? new List<int>() : ModeData.Boots.Select(x => x.Id).ToList(),
+        ModeData.BestItems.Where(x => !ranked || Price(x.Id) > 0).Select(x => x.Id).ToList()
        );
       } catch (Exception ex) { ImportStatus = "Shop export failed: " + ex.Message; }
       PushState(); break;

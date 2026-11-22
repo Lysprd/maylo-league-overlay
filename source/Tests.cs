@@ -200,6 +200,24 @@ namespace MayhemCompanion {
    Req(augments.Single(row => row.Id == 1338).Rate == 52, "Preserve supported rates for tier scoring");
   }
 
+  static void TestUggRanked() {
+   const string recommended = "{\"12\":{\"17\":{\"5\":[[[],[200,100,[4,14]],[200,100,[1056,2003,2003]],[100,52,[3118,3020,3100]],[90,46,[\"Q\",\"W\",\"E\"],\"QWE\"],[[[3041,7,7],[3157,50,100]],[[3157,25,40],[3089,20,30]],[]],[100,200]],\"timestamp\"]},\"14\":{\"5\":[[[],[],[],[10,6,[3118,3100,3020]]],\"timestamp\"]}}}";
+   const string tank = "{\"12\":{\"17\":{\"5\":[[[],[10,4,[4,12]],[],[3,1,[3118,3111,3102]]],\"timestamp\"]}}}";
+   var docs = new Dictionary<string, string> { { "recommended", recommended }, { "tank", tank }, { "ad", "invalid" } };
+   var champion = new Champion { Name = "Ahri", Slug = "ahri" };
+   var mid = MultiModeParser.ParseUggRanked(docs, champion, "mid", "emerald_plus", "16.23");
+   Req(mid.RankedVariants.Select(build => build.Key).SequenceEqual(new[] { "recommended", "tank" }), "Expose only valid U.GG families for the selected role/rank");
+   Req(mid.RankedVariant.Path.Select(item => item.Id).SequenceEqual(new[] { 3118, 3020, 3100, 3157, 3089 }), "Keep core order and fill late steps without repeats");
+   Req(mid.RankedVariant.Games == 100 && mid.Starters.Count(item => item.Id == 2003) == 2, "Preserve the core sample and the full starting bundle");
+   mid.RankedVariants[1].Apply(mid);
+   Req(mid.RankedVariant.Path.Select(item => item.Id).SequenceEqual(new[] { 3118, 3111, 3102 }) &&
+       mid.Spells.Single().Name == "Flash + Teleport" && mid.Skills == null, "Switch loadout with the build family");
+   var master = MultiModeParser.ParseUggRanked(docs, champion, "mid", "master_plus", "16.23");
+   Req(master.RankedVariants.Count == 1 && master.RankedVariant.Path[1].Id == 3100, "Respect the exact rank and its different boot order");
+   var jungle = MultiModeParser.ParseUggRanked(docs, champion, "jungle", "emerald_plus", "16.23");
+   Req(jungle.ActiveRole == "jungle" && jungle.RankedVariants.Count == 0 && jungle.AvailableRoles.Contains("mid"), "Keep the requested role when no guide exists");
+  }
+
   static void TestSituationalItems() {
    var item = new Dictionary<string, object> {
     { "maps", new Dictionary<string, object> { { "11", true }, { "12", true }, { "30", false } } },
@@ -296,6 +314,7 @@ namespace MayhemCompanion {
     TestAugmentTiers();
     TestUnratedAugmentReason();
     TestSituationalItems();
+    TestUggRanked();
     TestWithheldAugmentPopularity();
     TestChampSelectOverlayLayout();
     TestStaleAugmentSlotExpires();
@@ -341,25 +360,27 @@ namespace MayhemCompanion {
     var aliasMap = MultiModeParser.BuildAugmentAliasMap(null);
     Req(aliasMap.Count >= 150, "CommunityDragon EN+FR alias map must cover 150+ augments");
 
-    // 2. Role-specific Briar SR + Starter-first Build Path + Core Synergy + Enemy Comp Threat Analysis
+    // 2. Ranked source ordering and enemy comp threat analysis.
     var briar = champs.First(c => c.Slug == "briar");
     var briarJg = MultiModeParser.LoadChampionMode(briar, "SR", "jungle", "emerald_plus", true, null, champs).GetAwaiter().GetResult();
-    var briarPlan = BuildPlanner.Plan(briarJg.Items.Concat(briarJg.BestItems).Concat(briarJg.Boots), new int[0], briarJg.Boots.Select(b => b.Id), 50.0, id => new string[0], "Adaptive", new string[0], briarJg.CorePaths);
-    Req(briarPlan.Count >= 4 && briarPlan[0].Stat.Id != 3026, "Briar 1st buy != Guardian Angel");
+    Req(briarJg.SourceLabel.StartsWith("U.GG", StringComparison.Ordinal) && briarJg.ActiveRole == "jungle" &&
+        briarJg.RankedVariants.Any(build => build.Key == "recommended"), "Briar Jungle gets U.GG Ranked variants");
     Req(briarJg.Runes != null && briarJg.Runes.Perks.Count == 9, "Briar 9 Riot rune perk IDs");
 
-    // Starter integration check via HybridHubWindow.CurrentBuildPath()
     var diagWin = new HybridHubWindow(true);
     diagWin.Selected = briar;
     diagWin.ActiveMode = "SR";
     diagWin.ModeData = briarJg;
     briarJg.ChampionSlug = briar.Slug;
     diagWin.Game = new GameSnapshot { InGame = true, Mode = "CLASSIC", Champion = briar.AssetKey, Gold = 500 };
-    var starterPath = diagWin.CurrentBuildPath();
-    Req(starterPath.Count >= 5 && starterPath[0].Role == "STARTER", "Starter item must be step 0 when inventory is empty");
-    diagWin.Game.Owned.Add(starterPath[0].Stat.Id);
-    var afterStarter = diagWin.CurrentBuildPath();
-    Req(afterStarter.Count >= 4 && afterStarter[0].Role != "STARTER", "Build path advances past STARTER once owned");
+    var sourcePath = briarJg.RankedVariant.Path.Select(item => item.Id).ToArray();
+    Req(briarJg.Starters.Any(item => item.Id == 1101 || item.Id == 1102 || item.Id == 1103) &&
+        sourcePath.Length >= 3 && diagWin.CurrentBuildPath(true).Select(step => step.Stat.Id).SequenceEqual(sourcePath),
+        "Keep the jungle starter bundle and the U.GG purchase order");
+    diagWin.Game.Owned.Add(sourcePath[0]);
+    var afterPurchase = diagWin.CurrentBuildPath();
+    Req(afterPurchase[0].Owned && afterPurchase.Select(step => step.Stat.Id).SequenceEqual(sourcePath),
+        "Mark a ranked purchase without reordering the U.GG guide");
 
     var fakeLive = new LiveSummary();
     fakeLive.Players.Add(new LivePlayer { Champion = "Briar", Team = "ORDER", Me = true, Position = "JUNGLE" });
@@ -369,8 +390,6 @@ namespace MayhemCompanion {
     fakeLive.Players.Add(new LivePlayer { Champion = "Soraka", Team = "CHAOS", Position = "UTILITY" });
     var threats = EnemyCompAnalyzer.Analyze(fakeLive, id => new string[0]);
     Req(threats.NeedsAntiHeal && threats.NeedsAntiTank, "EnemyCompAnalyzer detects Anti-Heal + Anti-Tank");
-    var adapted = BuildPlanner.Plan(briarJg.Items.Concat(briarJg.BestItems).Concat(briarJg.Boots), new[] { 3748 }, briarJg.Boots.Select(b => b.Id), 50.0, id => new string[0], "Adaptive", new string[0], briarJg.CorePaths, threats, id => MultiModeParser.ItemNameOf(id));
-    Req(adapted.Any(s => s.SynergyTag == "CORE SYNERGY"), "Core branch synergy active");
 
     var commonItem = new Stat { Id = 3071, Pick = "22%", Rate = 54, Games = 1800 };
     var rareItem = new Stat { Id = 3075, Pick = "0.3%", Rate = 90, Games = 3 };

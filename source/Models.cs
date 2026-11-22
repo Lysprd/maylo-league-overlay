@@ -143,6 +143,7 @@ namespace MayhemCompanion {
   public List<int> TrackedAugments = new List<int>();
   public Dictionary<string, int> AugmentPreferences = new Dictionary<string, int>();
   public Dictionary<string, string> Notes = new Dictionary<string, string>();
+  public Dictionary<string, string> RankedBuildVariants = new Dictionary<string, string>();
   public Dictionary<string, string> MatchNotes = new Dictionary<string, string>();
   public Dictionary<string, Dictionary<string, OverlayPanelPosition>> ModePanels = new Dictionary<string, Dictionary<string, OverlayPanelPosition>>();
   public Dictionary<string, Dictionary<string, bool>> ModePanelVisibility = new Dictionary<string, Dictionary<string, bool>>();

@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.0-beta.19
+
+- Source Ranked Solo/Duo builds from U.GG for the active patch, role and rank. Choose Recommended, AP, AD, Tank, Crit, Lethality or On-hit where available, with the observed number of core builds.
+- Keep the published core order and starting purchases, including consumable quantities. Show late-game options separately and load the selected variant’s runes, spells and skill order.
+- Share the variant across the Hub and Alt+G, remember it per champion, role and rank, and export the selected item order to the League shop. Update the first-launch guide.
+
 ## v0.2.0-beta.18
 
 - Replace the current build step from Alt+G with an off-build purchase or a situational item. Changes apply to the current match, and the original step can be restored.

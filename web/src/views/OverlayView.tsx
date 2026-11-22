@@ -27,7 +27,7 @@ import { postAction } from '@/lib/bridge';
 import { SituationalItemGuide } from '@/components/SituationalItemGuide';
 import { AugmentGuide, AugmentPickRate, AugmentTier } from '@/components/AugmentGuide';
 import { benchmarkMetrics, draftDrawerStyle, OverlayLayoutPreview } from '@/components/OverlayLayoutPreview';
-import { useSavedBuilds } from '@/components/HubTools';
+import { RankedBuildChoice, RankedItemChoices, useSavedBuilds } from '@/components/HubTools';
 import { cn, fmtGold, fmtPct, iconUrl, itemIconUrl, parsePct, spellIconUrl } from '@/lib/utils';
 import type { AppState, DraftChampion, LivePlayer, AugmentEntry, GuideItem } from '@/types';
 
@@ -712,7 +712,10 @@ function InGameCommandSheet({ state, builds, referenceItems, originals, onReplac
                       })}
                     </fieldset>
                   )}
-                  <fieldset className="flex flex-wrap items-center gap-1.5">
+                  {state.activeMode === 'SR' ? (
+                    <RankedBuildChoice state={state} french={french} saved={!!variant}
+                      onSelect={() => { selectGuide(''); setItemId(null); }} />
+                  ) : <fieldset className="flex flex-wrap items-center gap-1.5">
                     <legend className="mb-1 text-[11px] font-semibold text-zinc-300">{french ? 'Orientation du build' : 'Build focus'}</legend>
                     {BUILD_FOCUS.map((focus) => {
                       const active = !variant && state.settings.buildFocus === focus.key;
@@ -728,7 +731,7 @@ function InGameCommandSheet({ state, builds, referenceItems, originals, onReplac
                         </button>
                       );
                     })}
-                  </fieldset>
+                  </fieldset>}
                   {(saved.length > 0 || !state.game.inGame) && (
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       {!!saved.length && (
@@ -736,7 +739,7 @@ function InGameCommandSheet({ state, builds, referenceItems, originals, onReplac
                           {french ? 'Variante' : 'Variant'}
                           <select value={variant?.id ?? ''} onChange={(event) => { selectGuide(event.target.value); setItemId(null); }}
                             aria-label={french ? 'Choisir un build' : 'Choose a build'} className="rounded bg-zinc-900 p-1.5 text-white">
-                            <option value="">{french ? 'Guide selon l’orientation' : 'Guide by focus'}</option>
+                            <option value="">{state.rankedBuild ? 'U.GG' : french ? 'Guide selon l’orientation' : 'Guide by focus'}</option>
                             {saved.map((build) => <option key={build.id} value={build.id}>{build.name}</option>)}
                           </select>
                         </label>
@@ -753,6 +756,16 @@ function InGameCommandSheet({ state, builds, referenceItems, originals, onReplac
                   )}
                   {state.importStatus && <p role="status" className="text-xs text-teal-300">{state.importStatus}</p>}
                 </div>
+                {!variant && (
+                  <RankedItemChoices state={state} french={french}
+                    canChoose={(step, id) => inMatch && !!progress.steps[step - 1] &&
+                      !progress.steps[step - 1].owned && !planned.has(buildItemKey(id))}
+                    onChoose={(step, id) => {
+                      const item = state.referenceItems?.find((entry) => entry.id === id);
+                      if (item) { onReplace(step, item); setItemId(id); }
+                    }}
+                  />
+                )}
                 {offBuild.length > 0 && progress.current && (
                   <div className="rounded-lg border border-indigo-400/30 bg-indigo-500/10 p-2.5 text-xs">
                     <p className="font-semibold text-indigo-100">{french ? 'Objets achetés hors build' : 'Off-build purchases'}</p>
@@ -824,7 +837,9 @@ function InGameCommandSheet({ state, builds, referenceItems, originals, onReplac
                     </div>
                   )}
                 </div>
-                {!referenceItems.length && <p className="text-xs text-zinc-400">{french ? 'Guide indisponible.' : 'Build guide unavailable.'}</p>}
+                {!referenceItems.length && <p className="text-xs text-zinc-400">{modeForSheet === 'SR'
+                  ? (french ? 'Guide U.GG indisponible pour cette voie et ce rang.' : 'U.GG guide unavailable for this role and rank.')
+                  : (french ? 'Guide indisponible.' : 'Build guide unavailable.')}</p>}
               </section>
 
               {state.skills && state.skills.levels.length > 0 && (
@@ -880,7 +895,7 @@ function InGameCommandSheet({ state, builds, referenceItems, originals, onReplac
                       { title: 'Situational', items: state.bestItems.slice(0, 3) },
                     ]
                   : [
-                      { title: 'Starters', items: state.starters.slice(0, 3) },
+                      ...(state.rankedBuild ? [] : [{ title: 'Starters', items: state.starters.slice(0, 3) }]),
                       { title: 'Boots', items: state.boots.slice(0, 3) },
                       { title: 'Summoner Spells', items: state.spells.slice(0, 3) },
                     ]
@@ -1254,7 +1269,7 @@ export function OverlayView({ state }: { state: AppState }) {
     });
   const scope = state.game.inGame && !state.preview
     ? JSON.stringify([state.game.matchId || '', state.game.modeKey, state.activeMode, state.selected?.slug, state.activeRole,
-      builds.guide?.id, state.settings.buildFocus, originals.map(({ id }) => id)])
+      builds.guide?.id, state.rankedBuild?.active ?? state.settings.buildFocus, originals.map(({ id }) => id)])
     : '';
   const replacements = scope && edits.scope === scope ? edits.items : {};
   const editedItems = originals.map((item, index) => replacements[index + 1]

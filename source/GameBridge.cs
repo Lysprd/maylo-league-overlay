@@ -294,7 +294,8 @@ namespace MayhemCompanion {
 
    Func<string, List<int>, object> makeBlock = (title, list) => new {
     type = title,
-    items = list.Where(x => x > 0).Distinct().Select(id => new { id = id.ToString(), count = 1 }).ToArray()
+    items = list.Where(x => x > 0).GroupBy(id => id)
+     .Select(group => new { id = group.Key.ToString(), count = title == "Starters" ? group.Count() : 1 }).ToArray()
    };
    var blocks = new List<object>();
    if (starters.Count > 0) blocks.Add(makeBlock("Starters", starters));
@@ -359,7 +360,8 @@ namespace MayhemCompanion {
 
   public async Task ApplyShopAuto(string championName, int championId, string modeLabel, string role, List<int> starters, List<int> coreIds, List<int> bootIds, List<int> situationalIds) {
    if (coreIds == null || coreIds.Count == 0) return;
-   string key = championName + ":" + modeLabel + ":" + (role ?? "") + ":" + String.Join(",", coreIds.Take(4));
+   string key = championName + ":" + modeLabel + ":" + (role ?? "") + ":" +
+    String.Join(",", coreIds) + ":" + String.Join(",", starters) + ":" + String.Join(",", bootIds) + ":" + String.Join(",", situationalIds);
    if (key == shopSelection) return;
    await ExportItemSet(championName, championId, modeLabel, role, starters, coreIds, bootIds, situationalIds);
    shopSelection = key;

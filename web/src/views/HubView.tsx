@@ -2074,7 +2074,7 @@ export function HubView({ state }: { state: AppState }) {
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-1.5">
-                      {FOCUS_OPTIONS.map((f) => {
+                      {state.activeMode !== 'SR' && FOCUS_OPTIONS.map((f) => {
                         const active = state.settings.buildFocus === f.value;
                         return (
                           <button
@@ -2185,7 +2185,7 @@ export function HubView({ state }: { state: AppState }) {
                         { title: 'Situational Items', items: state.bestItems.slice(0, 5), inspectable: true },
                       ]
                     : [
-                        { title: 'Starters', items: state.starters.slice(0, 4), inspectable: true },
+                        ...(state.rankedBuild ? [] : [{ title: 'Starters', items: state.starters.slice(0, 4), inspectable: true }]),
                         { title: 'Boots', items: state.boots.slice(0, 4), inspectable: true },
                         { title: 'Summoner Spells', items: state.spells.slice(0, 4), inspectable: false },
                       ]

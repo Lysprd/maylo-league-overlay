@@ -165,6 +165,101 @@ export function useSavedBuilds(state: AppState, inOverlay = false) {
   return { saved, commit, guide, selectGuide };
 }
 
+const rankedLabels: Record<string, [en: string, fr: string]> = {
+  recommended: ['Recommended', 'Recommandé'],
+  ap: ['AP', 'AP'],
+  ad: ['AD', 'AD'],
+  tank: ['Tank', 'Tank'],
+  crit: ['Crit', 'Critique'],
+  lethality: ['Lethality', 'Létalité'],
+  onhit: ['On-hit', 'À l’impact'],
+};
+
+export function RankedBuildChoice({ state, french, saved, onSelect }: {
+  state: AppState;
+  french: boolean;
+  saved: boolean;
+  onSelect: () => void;
+}) {
+  if (!state.rankedBuild) return null;
+  const format = new Intl.NumberFormat(french ? 'fr-FR' : 'en-US');
+  return (
+    <label className="flex flex-wrap items-center gap-2 text-xs">
+      <span className="font-semibold">{state.modeSource || 'U.GG'}</span>
+      <select
+        aria-label={french ? 'Variante U.GG' : 'U.GG variant'}
+        className="max-w-full rounded-md border border-zinc-500/40 bg-transparent px-2 py-1.5 text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100"
+        value={saved ? '' : state.rankedBuild.active}
+        onChange={(event) => {
+          onSelect();
+          postAction('setRankedBuildVariant', {
+            variant: event.target.value, champion: state.selected?.slug, role: state.activeRole,
+            elo: state.settings.tierElo || 'emerald_plus',
+          });
+        }}
+      >
+        {saved && <option value="" disabled>{french ? 'Choisir un build U.GG' : 'Choose a U.GG build'}</option>}
+        {state.rankedBuild.variants.map(({ key, games }) => (
+          <option key={key} value={key}>
+            {rankedLabels[key]?.[french ? 1 : 0] ?? key} · {format.format(games)} {french ? (games === 1 ? 'partie' : 'parties') : games === 1 ? 'game' : 'games'}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+export function RankedItemChoices({ state, french, canChoose, onChoose }: {
+  state: AppState;
+  french: boolean;
+  canChoose?: (step: number, id: number) => boolean;
+  onChoose?: (step: number, id: number) => void;
+}) {
+  if (!state.rankedBuild) return null;
+  const starters = new Map<number, { name: string; count: number }>();
+  for (const item of state.starters) {
+    starters.set(item.id, { name: item.name, count: (starters.get(item.id)?.count ?? 0) + 1 });
+  }
+  const extras = state.rankedBuild.options.filter(({ items }) => items.length > 0);
+  const format = new Intl.NumberFormat(french ? 'fr-FR' : 'en-US');
+  return (
+    <div className="space-y-2 text-xs">
+      {starters.size > 0 && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <strong>{french ? 'Départ' : 'Starting items'}</strong>
+          {Array.from(starters, ([id, { name, count }]) => (
+            <span key={id} className="inline-flex items-center gap-1">
+              <img src={itemIconUrl(id, state.ddVersion)} alt="" className="size-5 rounded" />
+              {count > 1 && `${count}× `}{name}
+            </span>
+          ))}
+        </div>
+      )}
+      {extras.length > 0 && (
+        <details>
+          <summary className="cursor-pointer font-semibold">{french ? 'Options de fin de build U.GG' : 'U.GG late-build options'}</summary>
+          <div className="mt-1 space-y-1.5">
+            {extras.map(({ step, items }) => (
+              <div key={step} className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <strong>{french ? 'Étape' : 'Step'} {step}</strong>
+                {items.map(({ id, name, games }) => (
+                  canChoose?.(step, id) && onChoose
+                    ? <button key={id} type="button" onClick={() => onChoose(step, id)}
+                        className="rounded border border-zinc-500/35 px-1.5 py-0.5 hover:border-indigo-400">
+                        {name} <span className="opacity-70">({format.format(games)})</span>
+                      </button>
+                    : <span key={id}>{name} <span className="opacity-70">({format.format(games)})</span></span>
+                ))}
+              </div>
+            ))}
+            <p className="opacity-70">{french ? 'Après le noyau, le guide affiche par défaut l’option disponible la plus jouée à chaque étape.' : 'After the core build, the guide defaults to the most played available item at each step.'}</p>
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
 export function BuildLibrary({ state, french }: { state: AppState; french: boolean }) {
   const [name, setName] = useState('');
   const [comparison, setComparison] = useState('');
@@ -183,17 +278,19 @@ export function BuildLibrary({ state, french }: { state: AppState; french: boole
     <section className="space-y-3 rounded-xl border border-zinc-500/25 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold">{french ? 'Build actif' : 'Active build'}</h2>
+        <RankedBuildChoice state={state} french={french} saved={!!guide} onSelect={() => selectGuide('')} />
         {saved.length > 0 && (
           <label className="flex items-center gap-2 text-xs text-zinc-500">
             Alt+{state.settings.hotkeySheet || 'G'}
             <select aria-label={french ? 'Variante active' : 'Active variant'} className="max-w-52 rounded-lg border border-zinc-500/25 bg-transparent px-2 py-1 text-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
               value={guide?.id ?? ''} onChange={(event) => selectGuide(event.target.value)}>
-              <option value="">{french ? 'Guide standard' : 'Default guide'}</option>
+              <option value="">{state.rankedBuild ? 'U.GG' : french ? 'Guide standard' : 'Default guide'}</option>
               {saved.map(({ id, name }) => <option key={id} value={id}>{name}</option>)}
             </select>
           </label>
         )}
       </div>
+      {!guide && <RankedItemChoices state={state} french={french} />}
       {activeItems.length > 0 ? (
         <ul className="flex flex-wrap gap-2">
           {activeItems.map(({ id, name }) => (
@@ -206,7 +303,9 @@ export function BuildLibrary({ state, french }: { state: AppState; french: boole
             </li>
           ))}
         </ul>
-      ) : <p className="text-xs text-zinc-500">{french ? 'Guide indisponible.' : 'Build guide unavailable.'}</p>}
+      ) : <p className="text-xs text-zinc-500">{state.activeMode === 'SR'
+        ? (french ? 'Guide U.GG indisponible pour cette voie et ce rang.' : 'U.GG guide unavailable for this role and rank.')
+        : (french ? 'Guide indisponible.' : 'Build guide unavailable.')}</p>}
       {recipeId != null && activeItems.some(({ id }) => id === recipeId) && (
         <div className="rounded-lg bg-zinc-500/10 p-2.5 text-xs">
           {recipe ? <>
