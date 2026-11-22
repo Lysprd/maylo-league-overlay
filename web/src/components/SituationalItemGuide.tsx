@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Check, Search } from 'lucide-react';
 import { cn, fmtGold } from '@/lib/utils';
+import { Button } from '@/components/ui/primitives';
 import type { SituationalItem } from '@/types';
 
 const groups = [
@@ -30,10 +31,12 @@ const groups = [
 
 const normalize = (text: string) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
-export function SituationalItemGuide({ items, owned, french }: {
+export function SituationalItemGuide({ items, owned, french, onUse, canUse }: {
   items?: SituationalItem[] | null;
   owned: Set<number>;
   french: boolean;
+  onUse?: (item: SituationalItem) => void;
+  canUse?: (item: SituationalItem) => boolean;
 }) {
   const [category, setCategory] = useState(groups[0].filters[0]);
   const [query, setQuery] = useState('');
@@ -89,6 +92,11 @@ export function SituationalItemGuide({ items, owned, french }: {
           </ul>
           <div className="space-y-2 rounded-lg border border-white/10 bg-black/20 p-3 text-xs text-zinc-300">
             <h3 className="font-semibold text-white">{selected.name}</h3>
+            {onUse && canUse?.(selected) && (
+              <Button size="xs" variant="secondary" onClick={() => onUse(selected)}>
+                {french ? 'Remplacer l’étape actuelle' : 'Replace current step'}
+              </Button>
+            )}
             {selected.stats.length > 0 && <ul className="space-y-0.5 text-indigo-200">{selected.stats.map((stat, index) => <li key={index}>{stat}</li>)}</ul>}
             {selected.effects.map((effect, index) => <p key={index}>{effect.startsWith('# ') ? <strong className="text-zinc-100">{effect.slice(2)}</strong> : effect}</p>)}
             {!!selected.components.length && (

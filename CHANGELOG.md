@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.0-beta.18
+
+- Replace the current build step from Alt+G with an off-build purchase or a situational item. Changes apply to the current match, and the original step can be restored.
+- Show owned recipe components and the remaining cost of the selected build item.
+
 ## v0.2.0-beta.17
 
 - Put lane, build focus and saved variants at the top of Alt+G. Selecting a focus switches from a saved variant to the corresponding reference guide.

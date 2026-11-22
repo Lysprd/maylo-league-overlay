@@ -196,6 +196,15 @@ export interface LiveSummary {
   inventoryValue?: { blue: number; red: number; partial: boolean } | null;
 }
 
+export interface GuideItem {
+  id: number;
+  name: string;
+  icon: string;
+  total: number;
+  remainingGold?: number | null;
+  components: { id: number; name: string; price: number; icon: string; owned?: boolean }[];
+}
+
 export interface SituationalItem {
   id: number;
   name: string;
@@ -363,6 +372,7 @@ export interface AppState {
   selected: Champion | null;
   game: {
     phase: string;
+    matchId?: string;
     mode: string;
     modeKey?: GameModeKey | '';
     modeLabel?: string;
@@ -384,7 +394,8 @@ export interface AppState {
   enemyThreats?: string[];
   situationalItems?: SituationalItem[] | null;
   buildPath: BuildStep[];
-  referenceItems?: { id: number; name: string; icon: string; total: number; components: { id: number; name: string; price: number; icon: string }[] }[];
+  referenceItems?: GuideItem[] | null;
+  ownedBuildItems?: GuideItem[];
   starters: StatItem[];
   prismaticItems?: StatItem[];
   boots: StatItem[];

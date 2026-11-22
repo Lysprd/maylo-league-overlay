@@ -29,7 +29,7 @@ import { AugmentGuide, AugmentPickRate, AugmentTier } from '@/components/Augment
 import { benchmarkMetrics, draftDrawerStyle, OverlayLayoutPreview } from '@/components/OverlayLayoutPreview';
 import { useSavedBuilds } from '@/components/HubTools';
 import { cn, fmtGold, fmtPct, iconUrl, itemIconUrl, parsePct, spellIconUrl } from '@/lib/utils';
-import type { AppState, DraftChampion, LivePlayer, AugmentEntry } from '@/types';
+import type { AppState, DraftChampion, LivePlayer, AugmentEntry, GuideItem } from '@/types';
 
 const SKILL_KEYS = ['Q', 'W', 'E', 'R'] as const;
 const SKILL_COLORS: Record<string, string> = {
@@ -402,7 +402,14 @@ function buildProgress<T extends { id: number }>(state: AppState, items: T[]) {
   return { steps, remaining, current: remaining[0], acquired: steps.length - remaining.length };
 }
 
-function InGameCommandSheet({ state, builds }: { state: AppState; builds: ReturnType<typeof useSavedBuilds> }) {
+function InGameCommandSheet({ state, builds, referenceItems, originals, onReplace, onRestore }: {
+  state: AppState;
+  builds: ReturnType<typeof useSavedBuilds>;
+  referenceItems: GuideItem[];
+  originals: GuideItem[];
+  onReplace: (step: number, item: GuideItem) => void;
+  onRestore: (step: number) => void;
+}) {
   const game = state.game;
   const inMatch = game.inGame && !state.preview;
   const guideReady = !inMatch || (game.modeKey === state.activeMode &&
@@ -431,15 +438,12 @@ function InGameCommandSheet({ state, builds }: { state: AppState; builds: Return
       (event.shiftKey ? last : first).focus();
     }
   };
-  const opening = state.buildPath.map((step) => ({
-    id: step.stat.id, name: step.stat.name, icon: step.stat.icon, total: step.totalGold, components: step.components,
-  }));
-  const referenceItems = variant
-    ? variant.items.map((item) => state.referenceItems?.find((entry) => entry.id === item.id) || { ...item, icon: '', total: 0, components: [] })
-    : opening;
   const progress = buildProgress(state, referenceItems);
   const guideItem = progress.steps.find((item) => item.id === itemId) ?? progress.current ?? progress.steps[0];
   const french = state.settings.language === 'fr';
+  const planned = new Set(referenceItems.map(({ id }) => buildItemKey(id)));
+  const offBuild = inMatch && progress.current
+    ? (state.ownedBuildItems ?? []).filter(({ id }) => !planned.has(buildItemKey(id))) : [];
   const live = state.game.live;
   const me = useMemo(() => live.players.find((p) => p.me) ?? null, [live.players]);
   const minutes = Math.max(1 / 60, (live.seconds || 0) / 60);
@@ -749,6 +753,22 @@ function InGameCommandSheet({ state, builds }: { state: AppState; builds: Return
                   )}
                   {state.importStatus && <p role="status" className="text-xs text-teal-300">{state.importStatus}</p>}
                 </div>
+                {offBuild.length > 0 && progress.current && (
+                  <div className="rounded-lg border border-indigo-400/30 bg-indigo-500/10 p-2.5 text-xs">
+                    <p className="font-semibold text-indigo-100">{french ? 'Objets achetés hors build' : 'Off-build purchases'}</p>
+                    <p className="mt-1 text-zinc-300">
+                      {french ? 'Remplacer l’étape' : 'Replace step'} {progress.current.step} · {progress.current.name}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {offBuild.map((item) => (
+                        <Button key={item.id} size="xs" variant="secondary"
+                          onClick={() => { onReplace(progress.current.step, item); setItemId(null); }}>
+                          {french ? 'Utiliser' : 'Use'} {item.name}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="grid items-start gap-3 sm:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
                   <ol className="space-y-1.5" aria-label={french ? 'Ordre du build' : 'Build order'}>
                     {progress.steps.map((item) => {
@@ -764,6 +784,9 @@ function InGameCommandSheet({ state, builds }: { state: AppState; builds: Return
                             <span className="min-w-0 flex-1 font-semibold text-white">
                               {item.name}
                               {current && <span className="block text-[10px] text-indigo-200">{french ? 'Étape actuelle' : 'Current step'}</span>}
+                              {originals[item.step - 1]?.id !== item.id && <span className="block text-[10px] text-zinc-400">
+                                {french ? 'Remplace' : 'Replaces'} {originals[item.step - 1]?.name}
+                              </span>}
                             </span>
                             {item.owned ? <span className="flex shrink-0 items-center gap-1 text-emerald-300">
                               <Check className="size-3" aria-hidden />{french ? 'Acheté' : 'Owned'}
@@ -777,12 +800,21 @@ function InGameCommandSheet({ state, builds }: { state: AppState; builds: Return
                     <div className="rounded-lg border border-white/10 bg-black/20 p-3 text-xs text-zinc-300">
                       <div className="text-[10px] text-zinc-400">{french ? 'Recette' : 'Recipe'}</div>
                       <strong className="text-white">{guideItem.name}</strong>
+                      {!guideItem.owned && guideItem.remainingGold != null && guideItem.remainingGold < guideItem.total && (
+                        <p className="text-indigo-200">{french ? 'Coût restant' : 'Remaining cost'} · {fmtGold(guideItem.remainingGold)}</p>
+                      )}
+                      {originals[guideItem.step - 1]?.id !== guideItem.id && (
+                        <Button size="xs" variant="secondary" onClick={() => { onRestore(guideItem.step); setItemId(null); }}>
+                          {french ? 'Rétablir' : 'Restore'} {originals[guideItem.step - 1]?.name}
+                        </Button>
+                      )}
                       {guideItem.components.length > 0 ? (
                         <ul className="mt-2 grid gap-2">
                           {guideItem.components.map((component, index) => (
                             <li key={`${component.id}-${index}`} className="flex items-center gap-1.5">
                               <img src={component.icon ? iconUrl(component.icon) : itemIconUrl(component.id, state.ddVersion)} alt="" className="size-5 rounded" />
-                              <span className="grow">{component.name}</span><span>{fmtGold(component.price)}</span>
+                              <span className="grow">{component.name}</span>
+                              {component.owned ? <span className="text-emerald-300">{french ? 'Acquis' : 'Owned'}</span> : <span>{fmtGold(component.price)}</span>}
                             </li>
                           ))}
                         </ul>
@@ -892,6 +924,10 @@ function InGameCommandSheet({ state, builds }: { state: AppState; builds: Return
           {tab === 'situational' && guideReady && <SituationalItemGuide
             items={state.situationalItems}
             owned={new Set(state.game.inGame && !state.preview ? state.game.owned : [])}
+            onUse={inMatch && progress.current ? (item) => {
+              if (!planned.has(buildItemKey(item.id))) { onReplace(progress.current.step, item); setItemId(null); }
+            } : undefined}
+            canUse={(item) => !planned.has(buildItemKey(item.id))}
             french={french} />}
 
           {tab === 'augments' && guideReady && (
@@ -1205,6 +1241,39 @@ function ChampSelectTierDrawer({ state }: { state: AppState }) {
 
 export function OverlayView({ state }: { state: AppState }) {
   const builds = useSavedBuilds(state, true);
+  const [edits, setEdits] = useState<{ scope: string; items: Record<number, GuideItem> }>({ scope: '', items: {} });
+  const originals: GuideItem[] = builds.guide
+    ? builds.guide.items.map((item) => state.referenceItems?.find((entry) => entry.id === item.id) ||
+      { ...item, icon: '', total: 0, components: [] })
+    : state.buildPath.map((step) => {
+      const entry = state.referenceItems?.find((item) => item.id === step.stat.id);
+      return {
+        id: step.stat.id, name: step.stat.name, icon: step.stat.icon, total: step.totalGold,
+        remainingGold: step.remainingGold, components: entry?.components ?? step.components,
+      };
+    });
+  const scope = state.game.inGame && !state.preview
+    ? JSON.stringify([state.game.matchId || '', state.game.modeKey, state.activeMode, state.selected?.slug, state.activeRole,
+      builds.guide?.id, state.settings.buildFocus, originals.map(({ id }) => id)])
+    : '';
+  const replacements = scope && edits.scope === scope ? edits.items : {};
+  const editedItems = originals.map((item, index) => replacements[index + 1]
+    ? state.ownedBuildItems?.find(({ id }) => id === replacements[index + 1].id) ?? replacements[index + 1]
+    : item);
+  useEffect(() => {
+    if (!state.game.inGame) setEdits({ scope: '', items: {} });
+  }, [state.game.inGame]);
+
+  const replaceStep = (step: number, item: GuideItem) => {
+    if (!scope) return;
+    setEdits({ scope, items: { ...replacements, [step]: item } });
+  };
+  const restoreStep = (step: number) => {
+    const items = { ...replacements };
+    delete items[step];
+    setEdits({ scope, items });
+  };
+
   const [jungleSide, setJungleSide] = useState<'red' | 'blue'>('red');
   const [tickDelta, setTickDelta] = useState(0);
   const [liveMapScale, setLiveMapScale] = useState<number | null>(null);
@@ -1275,7 +1344,8 @@ export function OverlayView({ state }: { state: AppState }) {
 
   // Zero-lag centered Alt+G / F9 In-Game Command Overlay
   if (state.inGameSheet) {
-    return <InGameCommandSheet state={state} builds={builds} />;
+    return <InGameCommandSheet state={state} builds={builds} referenceItems={editedItems}
+      originals={originals} onReplace={replaceStep} onRestore={restoreStep} />;
   }
 
   const editing = state.editing;
@@ -1321,11 +1391,7 @@ export function OverlayView({ state }: { state: AppState }) {
       (state.preview && (pScene === 'sr_hud' || (pScene === '' && !state.game.inSelection)))) &&
     pScene !== 'augments' &&
     pScene !== 'bench';
-  const hudItems = builds.guide
-    ? builds.guide.items.map((item) => ({
-        ...item, icon: state.referenceItems?.find((reference) => reference.id === item.id)?.icon,
-      }))
-    : state.buildPath.map(({ stat }) => stat);
+  const hudItems = editedItems;
   const hudProgress = buildProgress(state, hudItems);
   const hudCurrent = hudProgress.current;
   const showBuildHud = showInGameHud && state.settings.showBuildOverlay && hudItems.length > 0 &&

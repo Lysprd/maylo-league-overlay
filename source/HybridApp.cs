@@ -1681,8 +1681,27 @@ namespace MayhemCompanion {
    return situationalItemCatalog;
   }
 
+  object GuideItem(int id, string name, string icon, Dictionary<int, Dictionary<string, object>> items, int[] inventory) {
+   Dictionary<string, object> definition;
+   items.TryGetValue(id, out definition);
+   int total = Json.I(definition, "priceTotal");
+   return new {
+    id = id, name = name, icon = icon, total = total,
+    remainingGold = inventory == null || total <= 0 ? (int?)null : BuildPlanner.RemainingCost(id, inventory, items),
+    components = BuildPlanner.Components(id, inventory ?? new int[0], items).Select(component => {
+     Dictionary<string, object> child;
+     items.TryGetValue(component.Id, out child);
+     return new { id = component.Id, name = ItemName(component.Id), price = Json.I(child, "priceTotal"),
+      icon = MultiModeParser.ItemIconOf(component.Id), owned = component.Owned };
+    }).ToArray()
+   };
+  }
+
   public string BuildStateJson() {
    var path = CurrentBuildPath(true);
+   var guideItemsMap = ActiveItemsMap();
+   var localPlayer = Game.Live.Players.FirstOrDefault(player => player.Me && player.InventoryReported);
+   var inventory = Game.InGame && !Preview && localPlayer != null ? localPlayer.Items.Where(id => id > 0).ToArray() : null;
    bool isArena = ActiveMode == "ARENA";
    double modeScale;
    if (!Config.ModePanelScale.TryGetValue(ActiveMode, out modeScale)) modeScale = Config.Layout.Scale;
@@ -1840,7 +1859,7 @@ namespace MayhemCompanion {
      icon = Selected.Icon, assetKey = Selected.AssetKey, patchTag = patchTagOf(Selected.Slug) },
     game = new {
      phase = Game.Phase, mode = Game.Mode, modeKey = Game.ModeKey, modeLabel = Game.ModeLabel, champion = Game.Champion, inGame = Game.InGame, inSelection = Game.InSelection, mayhem = Game.Mayhem, gold = Game.Gold,
-     owned = Game.Owned.ToArray(), planned = plannedItems.ToArray(),
+     matchId = Game.MatchId, owned = Game.Owned.ToArray(), planned = plannedItems.ToArray(),
      bench = rawBench.Select(draftChampion).ToArray(),
      pickedChampion = actualPick != null ? draftChampion(actualPick) : null,
      champCards = champCardsPayload,
@@ -1881,14 +1900,16 @@ namespace MayhemCompanion {
     enemyThreats = new string[0],
     situationalItems = InGameSheet && InGameSheetTab == "situational" ? SituationalItemCatalog() : null,
     referenceItems = (hasReference ? ModeData.Items.Concat(ModeData.Boots).Concat(ModeData.Starters).Concat(ModeData.BestItems) : Enumerable.Empty<Stat>())
-     .Where(item => item.Id > 0).GroupBy(item => item.Id).Select(group => group.First()).Select(item => {
-      int total = Price(item.Id);
-      return new { id = item.Id, name = item.Name, icon = item.Icon ?? "", total,
-       components = BuildPlanner.Components(item.Id, new int[0], ActiveItemsMap())
-        .Select(component => new { id = component.Id, name = ItemName(component.Id), price = Price(component.Id),
-         icon = MultiModeParser.ItemIconOf(component.Id) }).ToArray()
-      };
-     }).ToArray(),
+     .Where(item => item.Id > 0).GroupBy(item => item.Id).Select(group => group.First())
+     .Select(item => GuideItem(item.Id, item.Name, item.Icon ?? "", guideItemsMap, InGameSheet ? inventory : null)).ToArray(),
+    ownedBuildItems = inventory == null ? new object[0] : inventory.Distinct().Where(id => {
+     Dictionary<string, object> item;
+     if (!guideItemsMap.TryGetValue(id, out item)) return false;
+     var categories = Json.A(item, "categories").Select(Convert.ToString);
+     return !MultiModeParser.StarterIds.Contains(BuildPlanner.Canonical(id)) &&
+      Json.I(item, "priceTotal") >= 1000 && !categories.Any(category => category == "Consumable" || category == "Trinket") &&
+      Json.A(item, "to").Length == 0 && !ItemName(id).StartsWith("Item ", StringComparison.Ordinal);
+    }).Select(id => GuideItem(id, ItemName(id), MultiModeParser.ItemIconOf(id), guideItemsMap, InGameSheet ? inventory : null)).ToArray(),
     buildPath = path.Select((step, idx) => {
      int total = Price(step.Stat.Id);
      var comps = BuildPlanner.Components(step.Stat.Id, new int[0], ActiveItemsMap())
@@ -1896,7 +1917,7 @@ namespace MayhemCompanion {
      string role = step.Role == "STARTER" ? "STARTER" : step.IsBoots ? "BOOTS" : "BUILD ITEM";
      return new { stat = SerializeStat(step.Stat, isArena), role = role, reason = step.Reason, shortTip = step.ShortTip,
       synergyTag = "", synergyTone = "", pickRate = step.PickRate, isBoots = step.IsBoots,
-      totalGold = total, remainingGold = total, affordable = false, components = comps };
+      totalGold = total, remainingGold = inventory != null && total > 0 ? BuildPlanner.RemainingCost(step.Stat.Id, inventory, guideItemsMap) : total, affordable = false, components = comps };
     }).ToArray(),
     starters = ModeData.Starters.Select(s => SerializeStat(s, isArena)).ToArray(),
     prismaticItems = ModeData.PrismaticItems.Select(s => SerializeStat(s, true)).ToArray(),
