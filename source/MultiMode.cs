@@ -19,6 +19,7 @@ namespace MayhemCompanion {
   public List<Stat> Boots = new List<Stat>();
   public List<Stat> BestItems = new List<Stat>();
   public List<Stat> Spells = new List<Stat>();
+  public List<int> SummonerSpellIds = new List<int>();
   public List<Stat> Augments = new List<Stat>();
   public List<Stat> Combos = new List<Stat>();
   public List<Stat> Teammates = new List<Stat>();
@@ -38,19 +39,30 @@ namespace MayhemCompanion {
   public List<Stat> Path = new List<Stat>();
   public List<List<Stat>> Options = new List<List<Stat>>();
   public List<Stat> Spells = new List<Stat>();
+  public List<int> SummonerSpellIds = new List<int>();
+  public Stat ObservedBoot;
+  public bool BootFromMatchingPath;
   public RunePage Runes;
   public SkillOrder Skills;
 
   public void Apply(ModeBuildData data) {
    data.RankedVariant = this;
    data.Starters = Starters;
-   data.Boots = Path.Where(item => MultiModeParser.IsRankedBoot(item.Id)).ToList();
+   data.Boots = Path.Where(item => MultiModeParser.IsRankedBoot(item.Id) && item.Id != 1001).ToList();
+   if (data.Boots.Count == 0 && ObservedBoot != null) data.Boots.Add(ObservedBoot);
    data.BestItems = Options.SelectMany(items => items).Where(item => !Path.Any(step => step.Id == item.Id))
     .GroupBy(item => item.Id).Select(group => group.First()).ToList();
    data.Spells = Spells;
+   data.SummonerSpellIds = SummonerSpellIds;
    data.Runes = Runes;
    data.Skills = Skills;
   }
+ }
+
+ public class DraftCounter {
+  public Champion Champion;
+  public int Id, Games;
+  public double WinRate, GoldAt15, LowerBound;
  }
 
  public static class MultiModeParser {
@@ -114,7 +126,12 @@ namespace MayhemCompanion {
    return Json.Array(UgAt(row, index)).Select(Json.ToInt).Where(id => id > 0).ToList();
   }
   public static bool IsRankedBoot(int id) {
-   return BootIds.Contains(id) || new[] { 3005, 3008, 3168, 3170, 3171, 3173, 3174, 3175, 3176 }.Contains(id);
+   return id == 1001 || BootIds.Contains(id) || new[] { 3005, 3008, 3168, 3170, 3171, 3173, 3174, 3175, 3176 }.Contains(id);
+  }
+  public static bool IsJungleStarter(int id) { return id == 1101 || id == 1102 || id == 1103; }
+  static bool NeedsSupplementalBuild(RankedBuildVariant variant) {
+   return !variant.Path.Any(item => item.Id != 1001 && IsRankedBoot(item.Id)) ||
+    (variant.SummonerSpellIds.Contains(11) && !variant.Starters.Any(item => IsJungleStarter(item.Id)));
   }
   static Stat UgItem(int id, int games, int wins, int slot, Dictionary<int, Dictionary<string, object>> lcuItems) {
    double win = games > 0 ? wins * 100.0 / games : 0;
@@ -158,9 +175,11 @@ namespace MayhemCompanion {
    var spells = Json.Array(UgAt(row, 1));
    var spellIds = UgIds(spells, 2);
    Tuple<string, string> first, second;
-   if (spellIds.Count == 2 && SpellById.TryGetValue(spellIds[0], out first) && SpellById.TryGetValue(spellIds[1], out second))
+   if (spellIds.Count == 2 && SpellById.TryGetValue(spellIds[0], out first) && SpellById.TryGetValue(spellIds[1], out second)) {
+    variant.SummonerSpellIds = spellIds;
     variant.Spells.Add(new Stat { Name = first.Item1 + " + " + second.Item1, Games = UgInt(spells, 0),
      Icon = "https://ddragon.leagueoflegends.com/cdn/" + DDragonVersion + "/img/spell/" + first.Item2 + ".png" });
+   }
    var skill = Json.Array(UgAt(row, 4));
    var levels = Json.Array(UgAt(skill, 2)).Select(Convert.ToString).ToList();
    var priority = Convert.ToString(UgAt(skill, 3)).Select(c => c.ToString()).ToList();
@@ -200,6 +219,9 @@ namespace MayhemCompanion {
    if (active == "") active = available.FirstOrDefault();
    if (active == null) return null;
    var variants = byRole[active];
+   string builds;
+   if (documents.TryGetValue("builds", out builds) && variants.Any(NeedsSupplementalBuild))
+    AddUggPurchases(variants, builds, rank, active, lcuItems);
    var data = new ModeBuildData {
     ModeKey = "SR", ChampionSlug = champion.Slug, ActiveRole = active, ActiveElo = elo, AvailableRoles = available,
     SourceLabel = "U.GG · " + RoleDisplay(active) + " · " + (elo == "gold_plus" ? "Gold" : EloDisplay(elo)) + " · " + patch,
@@ -211,15 +233,109 @@ namespace MayhemCompanion {
    return data;
   }
 
-  static async Task<ModeBuildData> LoadUggRanked(Champion champion, int id, string role, string elo,
+  static void AddUggPurchases(List<RankedBuildVariant> variants, string document, string rank, string role,
     Dictionary<int, Dictionary<string, object>> lcuItems) {
+   var root = Json.D(Json.Serializer().DeserializeObject(document));
+   var row = Json.A(UgObject(UgObject(root, "12"), rank), (Array.IndexOf(RankedRoles, role) + 1).ToString());
+   var paths = Json.Array(UgAt(row, 3)).Select(Json.Array)
+    .Select(entry => new { Ids = UgIds(entry, 0), Wins = UgInt(entry, 1), Games = UgInt(entry, 2) }).ToList();
+   var pet = Json.Array(UgAt(row, 2)).Select(Json.Array)
+    .Select(entry => new { Id = UgIds(entry, 0).FirstOrDefault(IsJungleStarter), Wins = UgInt(entry, 1), Games = UgInt(entry, 2) })
+    .Where(entry => entry.Id > 0 && entry.Games > 0).GroupBy(entry => entry.Id)
+    .Select(entries => new { Id = entries.Key, Wins = entries.Sum(entry => entry.Wins), Games = entries.Sum(entry => entry.Games) })
+    .OrderByDescending(entry => entry.Games).FirstOrDefault();
+   var common = Json.Array(UgAt(row, 5)).Select(Json.Array)
+    .Where(entry => UgInt(entry, 0) != 1001 && IsRankedBoot(UgInt(entry, 0)) && UgInt(entry, 2) > 0)
+    .OrderByDescending(entry => UgInt(entry, 2)).FirstOrDefault();
+   foreach (var variant in variants) {
+    if (pet != null && variant.SummonerSpellIds.Contains(11) && !variant.Starters.Any(item => IsJungleStarter(item.Id)))
+     variant.Starters.Insert(0, UgItem(pet.Id, pet.Games, pet.Wins, 0, lcuItems));
+    if (variant.Path.Any(item => item.Id != 1001 && IsRankedBoot(item.Id))) continue;
+    var core = variant.Path.Take(variant.CoreCount).Where(item => !IsRankedBoot(item.Id)).Select(item => item.Id).Take(2).ToList();
+    if (core.Count == 0) continue;
+    var matching = paths.Select(entry => new {
+     Entry = entry, BootIndex = entry.Ids.FindIndex(id => id != 1001 && IsRankedBoot(id)),
+     Core = entry.Ids.Where(id => !IsRankedBoot(id)).ToList()
+    }).Where(entry => entry.BootIndex >= 0 && entry.Entry.Games >= 25 && entry.Core.Count >= core.Count &&
+     entry.Core.Take(core.Count).SequenceEqual(core))
+     .OrderByDescending(entry => entry.Entry.Games).FirstOrDefault();
+    if (matching == null) {
+     if (common != null) variant.ObservedBoot = UgItem(UgInt(common, 0), UgInt(common, 2), UgInt(common, 1), 0, lcuItems);
+     continue;
+    }
+    int beforeBoot = matching.Entry.Ids.Take(matching.BootIndex).Count(id => !IsRankedBoot(id));
+    int index = 0;
+    while (index < variant.CoreCount && (beforeBoot > 0 || IsRankedBoot(variant.Path[index].Id))) {
+     if (!IsRankedBoot(variant.Path[index].Id)) beforeBoot--;
+     index++;
+    }
+    variant.ObservedBoot = UgItem(matching.Entry.Ids[matching.BootIndex], matching.Entry.Games, matching.Entry.Wins, index + 1, lcuItems);
+    // Keep the published core items in place relative to one another.
+    variant.Path.Insert(index, variant.ObservedBoot);
+    variant.CoreCount++;
+    variant.BootFromMatchingPath = true;
+    if (variant.Path.Count > 6) variant.Path.RemoveAt(6);
+    if (variant.Options.Count > 6 - variant.CoreCount) variant.Options.RemoveRange(6 - variant.CoreCount, variant.Options.Count - (6 - variant.CoreCount));
+   }
+  }
+
+  public static string SummonerName(int id) { return SpellById.ContainsKey(id) ? SpellById[id].Item1 : ""; }
+  public static string SummonerIconKey(int id) { return SpellById.ContainsKey(id) ? SpellById[id].Item2 : ""; }
+
+  static string UggPatch() {
    var version = DDragonVersion.Split('.');
-   if (id <= 0 || version.Length < 2 || !RankedRanks.ContainsKey(elo)) return null;
-   string patch = version[0] + "_" + version[1];
+   return version.Length >= 2 ? version[0] + "_" + version[1] : "";
+  }
+
+  static async Task<string> UggSchema(string patch, string dataset) {
    const string manifest = "https://static.bigbrain.gg/assets/lol/riot_patch_update/prod/ugg/ugg-api-versions.json";
    string json = await WebCache.Page("ugg-versions", manifest, false, s => s.Contains("\"overview\""), ".json", 120);
-   string schema = Json.S(UgObject(Json.D(Json.Serializer().DeserializeObject(json)), patch), "overview");
-   if (!Regex.IsMatch(schema, @"^1\.5\.\d+$")) return null;
+   string schema = Json.S(UgObject(Json.D(Json.Serializer().DeserializeObject(json)), patch), dataset);
+   return Regex.IsMatch(schema, @"^1\.5\.\d+$") ? schema : "";
+  }
+
+  public static List<DraftCounter> ParseDraftCounters(string document, int targetId, string role, string elo) {
+   string rank;
+   int roleIndex = Array.IndexOf(RankedRoles, NormalizeRole(role));
+   if (roleIndex < 0 || !RankedRanks.TryGetValue(elo, out rank)) return new List<DraftCounter>();
+   var root = Json.D(Json.Serializer().DeserializeObject(document));
+   var matches = Json.A(UgObject(UgObject(root, "12"), rank), (roleIndex + 1).ToString());
+   var result = new List<DraftCounter>();
+   foreach (var value in Json.Array(UgAt(matches, 0))) {
+    var row = Json.Array(value);
+    int id = UgInt(row, 0), games = UgInt(row, 2), wins = UgInt(row, 1);
+    Champion champion;
+    if (id == targetId || games < 100 || wins < 0 || wins > games || !DDragonChamps.TryGetValue(id, out champion)) continue;
+    double observed = 1.0 - wins / (double)games;
+    // Wilson lower bound gives fewer games less influence near the top of the list.
+    const double z = 1.96;
+    double z2 = z * z;
+    double lower = (observed + z2 / (2 * games) -
+     z * Math.Sqrt((observed * (1 - observed) + z2 / (4 * games)) / games)) / (1 + z2 / games);
+    result.Add(new DraftCounter { Id = id, Champion = champion, Games = games, WinRate = observed * 100,
+     GoldAt15 = -UgInt(row, 4) / (double)games, LowerBound = lower });
+   }
+   return result.OrderByDescending(row => row.LowerBound).ThenByDescending(row => row.Games).ToList();
+  }
+
+  public static async Task<List<DraftCounter>> LoadDraftCounters(int id, string role, string elo) {
+   await EnsureDDragon();
+   string patch = UggPatch();
+   if (patch == "") throw new InvalidOperationException("No active patch");
+   string schema = await UggSchema(patch, "matchups");
+   if (schema == "") throw new InvalidOperationException("No matchup data for this patch");
+   string url = "https://stats2.u.gg/lol/1.5/matchups/" + patch + "/ranked_solo_5x5/" + id + "/" + schema + ".json";
+   string document = await WebCache.Page("ugg-matchups-" + patch + "-" + id, url, false,
+    value => value.TrimStart().StartsWith("{", StringComparison.Ordinal), ".json", 60);
+   return ParseDraftCounters(document, id, role, elo);
+  }
+
+  static async Task<ModeBuildData> LoadUggRanked(Champion champion, int id, string role, string elo,
+    Dictionary<int, Dictionary<string, object>> lcuItems) {
+   string patch = UggPatch();
+   if (id <= 0 || patch == "" || !RankedRanks.ContainsKey(elo)) return null;
+   string schema = await UggSchema(patch, "overview");
+   if (schema == "") return null;
    var results = await Task.WhenAll(RankedFamilies.Select(async family => {
     string endpoint = family == "recommended" ? "overview" : family + "-overview";
     string url = "https://stats2.u.gg/lol/1.5/" + endpoint + "/" + patch + "/ranked_solo_5x5/" + id + "/" + schema + ".json";
@@ -232,8 +348,20 @@ namespace MayhemCompanion {
      return null;
     } catch (Exception) { return null; }
    }));
-   return ParseUggRanked(results.Where(result => result != null).ToDictionary(result => result.Item1, result => result.Item2),
-    champion, role, elo, patch.Replace('_', '.'), lcuItems);
+   var documents = results.Where(result => result != null).ToDictionary(result => result.Item1, result => result.Item2);
+   var parsed = ParseUggRanked(documents, champion, role, elo, patch.Replace('_', '.'), lcuItems);
+   if (parsed == null || !parsed.RankedVariants.Any(NeedsSupplementalBuild)) return parsed;
+   try {
+    string buildSchema = await UggSchema(patch, "builds");
+    if (buildSchema == "") return parsed;
+    string url = "https://stats2.u.gg/lol/1.5/builds/" + patch + "/ranked_solo_5x5/" + id + "/" + buildSchema + ".json";
+    documents["builds"] = await WebCache.Page("ugg-build-paths-" + patch + "-" + id, url, false,
+     value => value.TrimStart().StartsWith("{", StringComparison.Ordinal), ".json", 60);
+    return ParseUggRanked(documents, champion, role, elo, patch.Replace('_', '.'), lcuItems);
+   } catch (WebException ex) {
+    if (ex.Response != null) ex.Response.Dispose();
+    return parsed;
+   } catch (Exception) { return parsed; }
   }
 
   public static string NormalizeRole(string raw) {

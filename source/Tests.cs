@@ -218,6 +218,43 @@ namespace MayhemCompanion {
    Req(jungle.ActiveRole == "jungle" && jungle.RankedVariants.Count == 0 && jungle.AvailableRoles.Contains("mid"), "Keep the requested role when no guide exists");
   }
 
+  static void TestDraftCounters() {
+   const string session = "{\"myTeam\":[{\"cellId\":3},{\"cellId\":4}],\"theirTeam\":[{\"cellId\":5,\"championId\":103},{\"cellId\":6,\"championId\":0}],\"actions\":[[{\"actorCellId\":5,\"championId\":103,\"type\":\"pick\",\"completed\":true},{\"actorCellId\":6,\"championId\":222,\"type\":\"pick\",\"completed\":true},{\"actorCellId\":4,\"championId\":81,\"type\":\"pick\",\"completed\":false},{\"actorCellId\":3,\"championId\":64,\"type\":\"pick\",\"completed\":true}]],\"bans\":{\"myTeamBans\":[777],\"theirTeamBans\":[0,51]}}";
+   var snapshot = new GameSnapshot();
+   SelectionResolver.ReadDraftPicks(Json.D(Json.Serializer().DeserializeObject(session)), snapshot);
+   Req(snapshot.DraftEnemies.SequenceEqual(new[] { 103 }), "Expose only locked and revealed enemy champions");
+   Req(snapshot.DraftUnavailable.SetEquals(new[] { 103, 64, 777, 51 }), "Exclude locked champions and reported bans");
+
+   const string matches = "{\"12\":{\"17\":{\"5\":[[[81,34,100,0,15000],[777,370,1000,0,-212000],[222,0,99,0,0]],[]]}}}";
+   var previous = MultiModeParser.DDragonChamps;
+   try {
+    MultiModeParser.DDragonChamps = new[] { 81, 777, 222 }.ToDictionary(id => id, id => new Champion());
+    var rows = MultiModeParser.ParseDraftCounters(matches, 103, "mid", "emerald_plus");
+    Req(rows.Select(row => row.Id).SequenceEqual(new[] { 777, 81 }), "Rank by confidence and skip tiny samples");
+    Req(Math.Abs(rows[0].WinRate - 63) < .001 && rows[0].GoldAt15 == 212 && rows[1].GoldAt15 == -150,
+     "Compute win rate and gold from the counter perspective");
+    Req(MultiModeParser.ParseDraftCounters(matches, 103, "jungle", "emerald_plus").Count == 0,
+     "Do not borrow matchup data from another role");
+   } finally { MultiModeParser.DDragonChamps = previous; }
+  }
+
+  static void TestRankedLoadout() {
+   const string guide = "{\"12\":{\"11\":{\"1\":[[[],[100,50,[4,11]],[],[50,25,[6692,3071,6333]]],\"timestamp\"]}}}";
+   const string paths = "{\"12\":{\"11\":{\"1\":[[],[],[[[1101,2003],25,40],[[1103],12,20]],[[[6692,3111,3071],60,100],[[3047,6692,6333],70,120]],[],[[3047,90,150]]]}}}";
+   var docs = new Dictionary<string, string> { { "recommended", guide }, { "builds", paths } };
+   var champion = new Champion { Name = "Lee Sin", Slug = "leesin" };
+   var data = MultiModeParser.ParseUggRanked(docs, champion, "jungle", "diamond_plus", "16.23");
+   Req(data.RankedVariant.Path.Select(item => item.Id).SequenceEqual(new[] { 6692, 3111, 3071, 6333 }) &&
+    data.RankedVariant.BootFromMatchingPath, "Recover the boot slot from a matching sequence and keep the published core order");
+   Req(data.Starters.Single().Id == 1101 && data.SummonerSpellIds.SequenceEqual(new[] { 4, 11 }), "Recover the observed jungle companion and both spells");
+   Req(SpellPlan.OrderForFlash(data.SummonerSpellIds.ToArray(), "F", 0, 0).SequenceEqual(new[] { 11, 4 }),
+    "Show Smite on D when Flash is on F");
+   docs["builds"] = paths.Replace("[6692,3111,3071]", "[6692,3111,3156]");
+   var fallback = MultiModeParser.ParseUggRanked(docs, champion, "jungle", "diamond_plus", "16.23");
+   Req(fallback.Boots.Single().Id == 3047 && fallback.RankedVariant.Path.Count == 3 &&
+    !fallback.RankedVariant.BootFromMatchingPath, "Show popular boots without inventing a purchase position");
+  }
+
   static void TestSituationalItems() {
    var item = new Dictionary<string, object> {
     { "maps", new Dictionary<string, object> { { "11", true }, { "12", true }, { "30", false } } },
@@ -315,6 +352,8 @@ namespace MayhemCompanion {
     TestUnratedAugmentReason();
     TestSituationalItems();
     TestUggRanked();
+    TestDraftCounters();
+    TestRankedLoadout();
     TestWithheldAugmentPopularity();
     TestChampSelectOverlayLayout();
     TestStaleAugmentSlotExpires();

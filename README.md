@@ -35,6 +35,7 @@ Everything renders in a borderless click-through WebView2 layer that stays out o
 </p>
 
 - **Champ Select Tier List drawer** — pinned on the right edge of Champion Select with instant search, `All / S+ / S / A` filters, role filters in Ranked SR, and cursor-aware click-through so moving back onto the champion grid never blocks picks or bans.
+- **Champ Select counters** — select a revealed opponent or search by champion in the Rift drawer. Compare U.GG matchups for your lane by win rate, gold difference at 15 minutes and games played.
 - **Champion cards and bench** — the ARAM and Mayhem overlays show compact tiers on revealed cards and in the corner of recognized bench portraits. Revealed cards show a short note excerpt, and a note icon marks bench portraits with a saved note. Private mode hides both. The benchmark labels your own champion during play.
 - **Alt+G reference** — browse items and their recipes, saved build variants, and the Mayhem or Arena augment catalog. Search augments by name, effect or rarity and sort by observed pick rate. The Situational tab groups shop items by effects such as armor penetration, anti-heal, burst protection and utility, with prices and recipes from Data Dragon.
 - **Ranked Solo/Duo builds** — choose the variants published by U.GG for your champion, role and rank in the Hub or Alt+G. The guide keeps the published core order, shows the sample size and late-game options, and updates runes, spells and skill order with the variant.

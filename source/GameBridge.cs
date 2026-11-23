@@ -11,6 +11,37 @@ using System.Runtime.InteropServices;
 
 namespace MayhemCompanion {
  public static class SelectionResolver {
+  public static void ReadDraftPicks(Dictionary<string, object> session, GameSnapshot snapshot) {
+   var revealed = new HashSet<int>(Json.A(session, "theirTeam").Select(Json.D)
+    .Select(player => Json.I(player, "championId")).Where(id => id > 0));
+   var enemyCells = new HashSet<int>(Json.A(session, "theirTeam").Select(Json.D)
+    .Where(player => player != null && player.ContainsKey("cellId")).Select(player => Json.I(player, "cellId")));
+   var allyCells = new HashSet<int>(Json.A(session, "myTeam").Select(Json.D)
+    .Where(player => player != null && player.ContainsKey("cellId")).Select(player => Json.I(player, "cellId")));
+   foreach (var group in Json.A(session, "actions")) foreach (var value in Json.Array(group)) {
+    var action = Json.D(value);
+    int id = Json.I(action, "championId");
+    if (id <= 0 || !String.Equals(Json.S(action, "completed"), "true", StringComparison.OrdinalIgnoreCase)) continue;
+    string type = Json.S(action, "type");
+    if (type == "pick") {
+     int actor = Json.I(action, "actorCellId");
+     string side = Json.S(action, "isAllyAction");
+     bool enemy = enemyCells.Contains(actor) || String.Equals(side, "false", StringComparison.OrdinalIgnoreCase);
+     if (enemy && revealed.Contains(id)) {
+      snapshot.DraftUnavailable.Add(id);
+      if (!snapshot.DraftEnemies.Contains(id)) snapshot.DraftEnemies.Add(id);
+     } else if (!enemy && (allyCells.Contains(actor) || String.Equals(side, "true", StringComparison.OrdinalIgnoreCase))) {
+      snapshot.DraftUnavailable.Add(id);
+     }
+    }
+   }
+   var bans = session != null && session.ContainsKey("bans") ? Json.D(session["bans"]) : null;
+   foreach (var ban in Json.A(bans, "myTeamBans").Concat(Json.A(bans, "theirTeamBans"))) {
+    int id = Json.ToInt(ban);
+    if (id > 0) snapshot.DraftUnavailable.Add(id);
+   }
+  }
+
   public static int Champion(Dictionary<string, object> session, int current) {
    if (current > 0) return current;
    if (session == null || !session.ContainsKey("localPlayerCellId")) return 0;
@@ -465,6 +496,8 @@ namespace MayhemCompanion {
      if (Json.I(d, "cellId") == cell) {
       meCell = d;
       selfId = effectiveId;
+      snapshot.Spell1Id = Json.I(d, "spell1Id");
+      snapshot.Spell2Id = Json.I(d, "spell2Id");
       if (ChampionNames.ContainsKey(effectiveId)) snapshot.Champion = ChampionNames[effectiveId];
       string pos = MultiModeParser.NormalizeRole(Json.S(d, "assignedPosition"));
       if (pos != "") { snapshot.AssignedRole = pos; lastAssignedRole = pos; }
@@ -507,6 +540,7 @@ namespace MayhemCompanion {
      var flow = Json.Serializer().Deserialize<Dictionary<string, object>>(await LcuGet("/lol-gameflow/v1/session"));
      ApplyFlowSession(snapshot, flow, false);
     } catch { }
+    if (snapshot.ModeKey == "SR") SelectionResolver.ReadDraftPicks(session, snapshot);
     if (!snapshot.Mayhem && snapshot.Mode == "" && snapshot.Bench.Count > 0) snapshot.Mode = "ARAM";
 
     // Capture ARAM / ARAM Mayhem Champion Cards from subset/pickable endpoints during the opening flip window

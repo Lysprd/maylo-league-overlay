@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.0-beta.20
+
+- Add a lane counters tab to the champion-select drawer. Compare U.GG matchups by win rate, gold difference at 15 minutes and sample size. Select a revealed opponent or search the champion roster. Filter out reported bans and locked picks.
+- Show Ranked summoner spells in D/F order, the starting jungle companion, and the boot purchase step in the overlay. When the main U.GG path omits boots, use a matching observed sequence when available.
+
 ## v0.2.0-beta.19
 
 - Source Ranked Solo/Duo builds from U.GG for the active patch, role and rank. Choose Recommended, AP, AD, Tank, Crit, Lethality or On-hit where available, with the observed number of core builds.

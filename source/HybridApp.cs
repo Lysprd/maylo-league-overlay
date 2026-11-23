@@ -237,6 +237,9 @@ namespace MayhemCompanion {
   public Champion Selected;
   public ModeBuildData ModeData = new ModeBuildData();
   public string ActiveMode = "MAYHEM", DetectedMode = "MAYHEM", ActiveRole = "", DetectedRole = "", View = "Dashboard";
+  string draftCounterKey = "", draftCounterStatus = "";
+  List<DraftCounter> draftCounters = new List<DraftCounter>();
+  int draftCounterRequest;
   public bool BootReady = false;
   public int BootProgress = 12;
   public string BootStage = "Loading…";
@@ -1175,6 +1178,9 @@ namespace MayhemCompanion {
 
     bool enteringMatch = (!oldGame.InSelection && Game.InSelection) || (!wasInGame && Game.InGame);
     if (enteringMatch) {
+     draftCounterRequest++;
+     draftCounterKey = draftCounterStatus = "";
+     draftCounters.Clear();
      // Entering a real Champ Select or Game ALWAYS adapts to the actual match mode & role!
      manualModeOverride = false;
      manualRoleOverride = false;
@@ -1737,6 +1743,13 @@ namespace MayhemCompanion {
    const string emptyBuild = "No build data available";
    string summary = path.Count == 0 ? emptyBuild : ModeData.RankedVariant != null ? ModeData.SourceLabel : Config.BuildFocus + " build guide";
    bool hasReference = Selected != null && ModeData.ModeKey == ActiveMode && ModeData.ChampionSlug == Selected.Slug;
+   var rankedPair = hasReference ? ModeData.SummonerSpellIds.ToArray() : new int[0];
+   var rankedSpells = rankedPair.Length == 2
+    ? SpellPlan.OrderForFlash(rankedPair, Config.FlashKey, Game.Spell1Id, Game.Spell2Id)
+    : rankedPair;
+   var rankedBoot = ModeData.RankedVariant != null ? ModeData.Boots.FirstOrDefault() : null;
+   int rankedBootStep = rankedBoot == null ? -1 : path.FindIndex(step => step.Stat.Id == rankedBoot.Id);
+   var jungleStarter = ModeData.RankedVariant != null ? ModeData.Starters.FirstOrDefault(item => MultiModeParser.IsJungleStarter(item.Id)) : null;
    var catalog = IsAugmentMode && hasReference ? ModeData.Augments.OrderBy(x => x.Name).ToArray() : new Stat[0];
 
    bool inAugmentMatch = hasReference && IsAugmentMode && Game.InGame && Game.ModeKey == ActiveMode && ChampionMatches(Selected, Game.Champion);
@@ -1862,6 +1875,17 @@ namespace MayhemCompanion {
     editing = IsOverlayEditing,
     overlayVisible = OverlayVisible,
     champTierOpen = ChampTierOpen,
+    draftCounters = draftMode == "SR" && (previewSelection || (Game.InSelection && !Game.InGame)) ? new {
+     key = draftCounterKey, status = draftCounterStatus,
+     patch = String.Join(".", MultiModeParser.DDragonVersion.Split('.').Take(2)),
+     enemies = Game.DraftEnemies.Select(FromId).Where(c => c != null)
+      .Select(c => new { slug = c.Slug, name = c.Name, icon = MultiModeParser.ChampIconOf(c) }).ToArray(),
+     rows = draftCounters.Where(row => !Game.DraftUnavailable.Contains(row.Id)).Take(12).Select(row => {
+      var champion = FromId(row.Id) ?? row.Champion;
+      return new { slug = champion.Slug, name = champion.Name, icon = MultiModeParser.ChampIconOf(champion),
+       games = row.Games, winRate = row.WinRate, goldAt15 = row.GoldAt15 };
+     }).ToArray()
+    } : null,
     augmentsVisible = showPreviewAugments || showLiveAugments,
     refreshingOffers = offerSession.Refreshing,
     connectionText = ConnectionText,
@@ -1932,6 +1956,13 @@ namespace MayhemCompanion {
      }
     },
     buildSummary = summary,
+    rankedLoadout = hasReference && ModeData.RankedVariant != null ? new {
+     spells = rankedSpells.Select((id, index) => new { id, name = MultiModeParser.SummonerName(id),
+      iconKey = MultiModeParser.SummonerIconKey(id), slot = index == 0 ? "D" : "F" }).ToArray(),
+     boot = rankedBoot != null ? new { id = rankedBoot.Id, name = rankedBoot.Name, step = rankedBootStep + 1,
+      matched = ModeData.RankedVariant.BootFromMatchingPath } : null,
+     pet = jungleStarter != null ? new { id = jungleStarter.Id, name = jungleStarter.Name } : null
+    } : null,
     enemyThreats = new string[0],
     situationalItems = InGameSheet && InGameSheetTab == "situational" ? SituationalItemCatalog() : null,
     referenceItems = (hasReference ? ModeData.Items.Concat(ModeData.Boots).Concat(ModeData.Starters).Concat(ModeData.BestItems) : Enumerable.Empty<Stat>())
@@ -2130,6 +2161,35 @@ namespace MayhemCompanion {
       else
        await SelectChampion(draftPick, false, !String.IsNullOrEmpty(draftRole) ? draftRole : null);
       break;
+     case "loadDraftCounters": {
+      if (!((Game.InSelection && !Game.InGame && Game.ModeKey == "SR") ||
+          (Preview && PreviewScene == "bench" && ActiveMode == "SR"))) break;
+      var opponent = Champions.FirstOrDefault(c => c.Slug == Json.S(msg, "slug"));
+      int opponentId = opponent == null ? 0 : ChampionIdOf(opponent);
+      string lane = MultiModeParser.NormalizeRole(Json.S(msg, "role"));
+      if (opponentId <= 0 || lane == "") break;
+      string elo = Config.TierElo;
+      string key = opponent.Slug + ":" + lane + ":" + elo;
+      if (key == draftCounterKey && draftCounterStatus != "error") break;
+      int request = ++draftCounterRequest;
+      draftCounterKey = key;
+      draftCounterStatus = "loading";
+      draftCounters.Clear();
+      PushState();
+      try {
+       var result = await MultiModeParser.LoadDraftCounters(opponentId, lane, elo);
+       if (request != draftCounterRequest || closing) break;
+       draftCounters = result;
+       draftCounterStatus = "ready";
+      } catch (Exception ex) {
+       var webException = ex as System.Net.WebException;
+       if (webException != null && webException.Response != null) webException.Response.Dispose();
+       if (request != draftCounterRequest || closing) break;
+       draftCounterStatus = "error";
+      }
+      PushState();
+      break;
+     }
      case "browseDraftBuild":
       if (Game.InGame || (!Game.InSelection && (!Preview || PreviewScene != "bench"))) break;
       string browseMode = Preview ? ActiveMode : Game.ModeKey;

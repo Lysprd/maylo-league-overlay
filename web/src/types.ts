@@ -353,6 +353,13 @@ export interface AppState {
   editing: boolean;
   overlayVisible: boolean;
   champTierOpen?: boolean;
+  draftCounters?: {
+    key: string;
+    status: string;
+    patch: string;
+    enemies: { slug: string; name: string; icon: string }[];
+    rows: { slug: string; name: string; icon: string; games: number; winRate: number; goldAt15: number }[];
+  } | null;
   champSelectMode?: GameModeKey;
   champSelectTierList?: TierListEntry[] | null;
   augmentsVisible: boolean;
@@ -391,6 +398,11 @@ export interface AppState {
     live: LiveSummary;
   };
   buildSummary: string;
+  rankedLoadout?: {
+    spells: { id: number; name: string; iconKey: string; slot: 'D' | 'F' }[];
+    boot: { id: number; name: string; step: number; matched: boolean } | null;
+    pet: { id: number; name: string } | null;
+  } | null;
   rankedBuild?: {
     active: string;
     variants: { key: string; games: number }[];

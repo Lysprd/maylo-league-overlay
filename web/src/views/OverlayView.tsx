@@ -402,6 +402,34 @@ function buildProgress<T extends { id: number }>(state: AppState, items: T[]) {
   return { steps, remaining, current: remaining[0], acquired: steps.length - remaining.length };
 }
 
+function RankedLoadout({ state, french, showBoot = true, showPet = true }: {
+  state: AppState; french: boolean; showBoot?: boolean; showPet?: boolean;
+}) {
+  const loadout = state.rankedLoadout;
+  if (!loadout || (!loadout.spells.length && !(showPet && loadout.pet) && !(showBoot && loadout.boot))) return null;
+  return (
+    <div className="flex flex-wrap gap-x-3 gap-y-1.5 text-[10px] text-zinc-200" aria-label={french ? 'Préparation Ranked' : 'Ranked loadout'}>
+      {loadout.spells.map(({ id, name, iconKey, slot }) => (
+        <span key={slot} className="inline-flex items-center gap-1">
+          <kbd className="rounded bg-white/10 px-1 font-semibold">{slot}</kbd>
+          <img src={spellIconUrl(iconKey, state.ddVersion)} alt="" className="size-4 rounded" />
+          {id === 11 && french ? 'Châtiment' : name}
+        </span>
+      ))}
+      {showPet && loadout.pet && <span className="inline-flex items-center gap-1" title={french ? 'Compagnon de jungle à acheter au départ' : 'Starting jungle companion'}>
+        <img src={itemIconUrl(loadout.pet.id, state.ddVersion)} alt="" className="size-4 rounded" />
+        {french ? 'Départ' : 'Start'} · {loadout.pet.name}
+      </span>}
+      {showBoot && loadout.boot && <span className="inline-flex items-center gap-1" title={
+        loadout.boot.matched ? (french ? 'Ordre observé sur un chemin U.GG proche' : 'Order observed in a matching U.GG path')
+          : (loadout.boot.step > 0 ? loadout.boot.name : (french ? 'Bottes les plus jouées. Position d’achat indisponible.' : 'Most played boots. Purchase order unavailable.'))}>
+        <img src={itemIconUrl(loadout.boot.id, state.ddVersion)} alt="" className="size-4 rounded" />
+        {french ? 'Bottes' : 'Boots'}{loadout.boot.step > 0 ? ` · ${french ? 'étape' : 'step'} ${loadout.boot.step}` : ` · ${loadout.boot.name}`}
+      </span>}
+    </div>
+  );
+}
+
 function InGameCommandSheet({ state, builds, referenceItems, originals, onReplace, onRestore }: {
   state: AppState;
   builds: ReturnType<typeof useSavedBuilds>;
@@ -766,6 +794,7 @@ function InGameCommandSheet({ state, builds, referenceItems, originals, onReplac
                     }}
                   />
                 )}
+                <RankedLoadout state={state} french={french} showPet={false} showBoot={!variant && state.rankedLoadout?.boot?.step === 0} />
                 {offBuild.length > 0 && progress.current && (
                   <div className="rounded-lg border border-indigo-400/30 bg-indigo-500/10 p-2.5 text-xs">
                     <p className="font-semibold text-indigo-100">{french ? 'Objets achetés hors build' : 'Off-build purchases'}</p>
@@ -796,6 +825,7 @@ function InGameCommandSheet({ state, builds, referenceItems, originals, onReplac
                             <img src={item.icon ? iconUrl(item.icon) : itemIconUrl(item.id, state.ddVersion)} alt="" className="size-7 shrink-0 rounded" />
                             <span className="min-w-0 flex-1 font-semibold text-white">
                               {item.name}
+                              {item.id === state.rankedLoadout?.boot?.id && <span className="ml-1 rounded bg-indigo-500/20 px-1 text-[9px] text-indigo-200">{french ? 'Bottes' : 'Boots'}</span>}
                               {current && <span className="block text-[10px] text-indigo-200">{french ? 'Étape actuelle' : 'Current step'}</span>}
                               {originals[item.step - 1]?.id !== item.id && <span className="block text-[10px] text-zinc-400">
                                 {french ? 'Remplace' : 'Replaces'} {originals[item.step - 1]?.name}
@@ -896,8 +926,10 @@ function InGameCommandSheet({ state, builds, referenceItems, originals, onReplac
                     ]
                   : [
                       ...(state.rankedBuild ? [] : [{ title: 'Starters', items: state.starters.slice(0, 3) }]),
-                      { title: 'Boots', items: state.boots.slice(0, 3) },
-                      { title: 'Summoner Spells', items: state.spells.slice(0, 3) },
+                      ...(state.rankedLoadout ? [] : [
+                        { title: 'Boots', items: state.boots.slice(0, 3) },
+                        { title: 'Summoner Spells', items: state.spells.slice(0, 3) },
+                      ]),
                     ]
                 ).map((group) => (
                   <div
@@ -1004,6 +1036,125 @@ const CS_ROLES = [
   { key: 'SUPPORT', label: 'Sup' },
 ] as const;
 
+const DRAFT_RANKS: Record<string, string> = {
+  all: 'All', gold_plus: 'Gold', platinum_plus: 'Platinum+', emerald_plus: 'Emerald+',
+  diamond_plus: 'Diamond+', master_plus: 'Master+',
+};
+
+function DraftCounterPanel({ state, french, opponent, lane, setOpponent, setLane }: {
+  state: AppState;
+  french: boolean;
+  opponent: string;
+  lane: string;
+  setOpponent: (value: string) => void;
+  setLane: (value: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const source = state.draftCounters;
+  const detectedLane = ROLE_LIST.find(({ key }) => key === state.detectedRole)?.key;
+  const role = lane || detectedLane || '';
+  const rank = state.settings.tierElo || 'emerald_plus';
+  const requestKey = opponent && role ? `${opponent}:${role}:${rank}` : '';
+  const result = source?.key === requestKey ? source : null;
+  const target = state.champions.find(({ slug }) => slug === opponent);
+  const numbers = new Intl.NumberFormat(french ? 'fr-FR' : 'en-US');
+  const percents = new Intl.NumberFormat(french ? 'fr-FR' : 'en-US', { style: 'percent', maximumFractionDigits: 1 });
+  const gold = new Intl.NumberFormat(french ? 'fr-FR' : 'en-US', { signDisplay: 'exceptZero' });
+  const normalize = (value: string) => value.normalize('NFD').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const term = normalize(query);
+  const matching = term ? state.champions.filter(({ name, slug }) =>
+    normalize(name).includes(term) || normalize(slug).includes(term)).slice(0, 6) : [];
+
+  const load = () => postAction('loadDraftCounters', { slug: opponent, role });
+  useEffect(() => {
+    if (requestKey && requestKey !== source?.key) postAction('loadDraftCounters', { slug: opponent, role });
+  }, [requestKey, source?.key, opponent, role]);
+
+  const choose = (slug: string) => { setOpponent(slug); setQuery(''); };
+  const choice = (champion: { slug: string; name: string; icon: string }) => (
+    <button key={champion.slug} type="button" aria-pressed={opponent === champion.slug} onClick={() => choose(champion.slug)}
+      className="flex min-w-0 items-center gap-1.5 rounded-md border border-white/10 px-1.5 py-1 text-left text-[10px] text-white hover:border-indigo-300 aria-pressed:border-indigo-300 aria-pressed:bg-indigo-500/20">
+      {champion.icon && <img src={iconUrl(champion.icon)} alt="" className="size-5 shrink-0 rounded" />}
+      <span className="truncate">{champion.name}</span>
+    </button>
+  );
+
+  return (
+    <>
+      <div className="shrink-0 space-y-2 border-b border-white/10 px-2.5 py-2 text-[10px] sm:text-[11px]">
+        <div className="flex flex-wrap items-center justify-between gap-1.5">
+          <label className="flex items-center gap-1.5 text-zinc-300">
+            {french ? 'Voie' : 'Lane'}
+            <select value={role} onChange={(event) => setLane(event.target.value)} className="rounded border border-white/15 bg-zinc-900 p-1 text-white">
+              <option value="" disabled>{french ? 'Choisir' : 'Choose'}</option>
+              {ROLE_LIST.map((entry) => <option key={entry.key} value={entry.key}>{french ? entry.fr : entry.en}</option>)}
+            </select>
+          </label>
+          <span className="text-zinc-400">U.GG · {french && rank === 'all' ? 'Tous rangs' : DRAFT_RANKS[rank] || rank}{source?.patch && ` · ${source.patch}`}</span>
+        </div>
+        {!!source?.enemies.length && (
+          <div className="space-y-1">
+            <p className="text-zinc-400">{french ? 'Adversaires révélés' : 'Revealed opponents'}</p>
+            <div className="flex flex-wrap gap-1">{source.enemies.map(choice)}</div>
+          </div>
+        )}
+        <input type="search" value={query} onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => { if (event.key === 'Enter' && matching.length) choose(matching[0].slug); }}
+          aria-label={french ? 'Rechercher un adversaire' : 'Search for an opponent'}
+          placeholder={french ? 'Chercher un adversaire…' : 'Search for an opponent…'}
+          className="w-full rounded-md border border-white/15 bg-black/40 px-2 py-1.5 text-white outline-none focus:border-indigo-300" />
+        {!!term && (
+          matching.length ? <div className="grid grid-cols-2 gap-1">{matching.map(choice)}</div>
+            : <p className="text-zinc-400">{french ? 'Aucun champion trouvé.' : 'No champion found.'}</p>
+        )}
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2 text-[11px]">
+        {!target ? <p className="text-zinc-400">{french ? 'Choisis le champion adverse sur ta voie.' : 'Choose the opposing champion in your lane.'}</p>
+          : !role ? <p className="text-zinc-400">{french ? 'Sélectionne ta voie pour voir ce duel.' : 'Select your lane to see the matchup.'}</p>
+          : <>
+            <h3 className="mb-2 font-semibold text-white">{french ? 'Contres contre' : 'Counters to'} {target.name}</h3>
+            {!result || result.status === 'loading' ? <p role="status" className="text-zinc-400">{french ? 'Chargement des duels…' : 'Loading matchups…'}</p>
+              : result.status === 'error' ? <div role="status" className="space-y-2 text-zinc-300">
+                <p>{french ? 'U.GG est indisponible.' : 'U.GG is unavailable.'}</p>
+                <button type="button" onClick={load} className="rounded border border-white/20 px-2 py-1">{french ? 'Réessayer' : 'Retry'}</button>
+              </div>
+              : result.rows.length === 0 ? <p className="text-zinc-400">{french ? 'Aucun contre disponible avec au moins 100 parties pour ce duel.' : 'No available counter has at least 100 games for this matchup.'}</p>
+              : <>
+                <table className="w-full border-separate border-spacing-y-0.5 text-left tabular-nums">
+                  <thead className="text-[9px] text-zinc-400">
+                    <tr>
+                      <th scope="col" className="px-1">Champion</th>
+                      <th scope="col" className="text-right" title={french ? 'Taux de victoire' : 'Win rate'}>WR</th>
+                      <th scope="col" className="text-right" title={french ? 'Écart moyen d’or à 15 minutes' : 'Average gold difference at 15 minutes'}>{french ? 'Or à 15' : 'Gold at 15'}</th>
+                      <th scope="col" className="px-1 text-right">{french ? 'Parties' : 'Games'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.rows.map((row) => (
+                      <tr key={row.slug} className="bg-white/[0.035]">
+                        <td className="max-w-24 px-1 py-1">
+                          <button type="button" title={french ? `Voir le build de ${row.name}` : `See ${row.name} build`}
+                            onClick={() => postAction('browseDraftBuild', { slug: row.slug, role })}
+                            className="flex w-full items-center gap-1 text-left font-semibold text-white hover:text-indigo-200">
+                            <img src={iconUrl(row.icon)} alt="" className="size-5 shrink-0 rounded" />
+                            <span className="truncate">{row.name}</span>
+                          </button>
+                        </td>
+                        <td className={cn('text-right', row.winRate >= 50 ? 'text-emerald-300' : 'text-zinc-300')}>{percents.format(row.winRate / 100)}</td>
+                        <td className="text-right text-zinc-300">{gold.format(Math.round(row.goldAt15))}</td>
+                        <td className="px-1 text-right text-zinc-400">{numbers.format(row.games)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="mt-1.5 text-[9px] text-zinc-400">{french ? 'Taux de victoire du contre. Le classement tient compte du nombre de parties.' : 'Win rate from the counter’s perspective. Ranking accounts for sample size.'}</p>
+              </>}
+          </>}
+      </div>
+    </>
+  );
+}
+
 function DraftChampionBadge({ champion, portrait = false, french = false }: {
   champion: Omit<DraftChampion, 'icon'> & { icon?: string };
   portrait?: boolean;
@@ -1026,6 +1177,9 @@ function DraftChampionBadge({ champion, portrait = false, french = false }: {
 
 function ChampSelectTierDrawer({ state }: { state: AppState }) {
   const [search, setSearch] = useState('');
+  const [draftTab, setDraftTab] = useState<'counter' | 'tier'>('counter');
+  const [opponent, setOpponent] = useState('');
+  const [counterLane, setCounterLane] = useState('');
   const [tierFilter, setTierFilter] = useState<'ALL' | 'S+' | 'S' | 'A'>('ALL');
   const open = Boolean(state.champTierOpen);
   const french = state.settings.language === 'fr';
@@ -1034,7 +1188,10 @@ function ChampSelectTierDrawer({ state }: { state: AppState }) {
   const isArena = mode === 'ARENA';
   const listing = state.champSelectTierList ?? state.tierList;
   const modeLabel = isSR ? 'Faille' : isArena ? 'Arena' : mode === 'MAYHEM' ? 'ARAM Mayhem' : 'ARAM';
-  const title = `Tier list · ${isSR && !french ? 'Rift' : modeLabel}`;
+  const showingCounters = isSR && draftTab === 'counter';
+  const title = isSR && !open ? (french ? 'Contres et tiers' : 'Counters & tiers')
+    : showingCounters ? (french ? 'Contres de voie' : 'Lane counters')
+    : `Tier list · ${isSR && !french ? 'Rift' : modeLabel}`;
   const role = (state.settings.tierRole || 'ALL').toUpperCase();
   const rows = useMemo(() => {
     const normalize = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -1087,7 +1244,8 @@ function ChampSelectTierDrawer({ state }: { state: AppState }) {
             <div className="min-w-0">
               <div className="truncate text-xs font-bold text-white leading-tight">{title}</div>
               <div className="text-[9px] text-zinc-400 leading-tight">
-                {isArena ? 'Top 4 · Pick · Ban' : french ? 'Cliquer pour consulter le build' : 'Click a champion to see the build'}
+                {showingCounters ? (french ? 'Données Ranked Solo/Duo' : 'Ranked Solo/Duo data')
+                  : isArena ? 'Top 4 · Pick · Ban' : french ? 'Cliquer pour consulter le build' : 'Click a champion to see the build'}
               </div>
             </div>
           </div>
@@ -1101,6 +1259,24 @@ function ChampSelectTierDrawer({ state }: { state: AppState }) {
           </button>
         </div>
 
+        {isSR && state.game.pickedChampion?.slug === state.selected?.slug && state.selected && state.rankedLoadout && (
+          <div className="shrink-0 border-b border-white/10 px-2.5 py-1.5">
+            <RankedLoadout state={state} french={french} />
+          </div>
+        )}
+        {isSR && (
+          <div className="grid shrink-0 grid-cols-2 gap-1 border-b border-white/10 px-2.5 py-1.5">
+            <button type="button" aria-pressed={showingCounters} onClick={() => setDraftTab('counter')}
+              className="rounded px-2 py-1 text-[11px] text-zinc-300 aria-pressed:bg-indigo-500/30 aria-pressed:text-white">{french ? 'Contres' : 'Counters'}</button>
+            <button type="button" aria-pressed={!showingCounters} onClick={() => setDraftTab('tier')}
+              className="rounded px-2 py-1 text-[11px] text-zinc-300 aria-pressed:bg-indigo-500/30 aria-pressed:text-white">Tier list</button>
+          </div>
+        )}
+        {isSR && <div hidden={!showingCounters} className="min-h-0 flex-1 flex-col [&:not([hidden])]:flex">
+          <DraftCounterPanel state={state} french={french} opponent={opponent} lane={counterLane}
+            setOpponent={setOpponent} setLane={setCounterLane} />
+        </div>}
+        {!showingCounters && <>
         <div className="space-y-2 border-b border-white/[0.07] px-3 py-2 shrink-0">
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3 -translate-y-1/2 text-zinc-400" />
@@ -1247,6 +1423,7 @@ function ChampSelectTierDrawer({ state }: { state: AppState }) {
             })
           )}
         </div>
+        </>}
       </GlassCard>
         </motion.div>
       )}
@@ -1409,6 +1586,12 @@ export function OverlayView({ state }: { state: AppState }) {
   const hudItems = editedItems;
   const hudProgress = buildProgress(state, hudItems);
   const hudCurrent = hudProgress.current;
+  const bootHint = state.rankedLoadout?.boot;
+  const hudBootStep = bootHint && hudProgress.remaining.find(({ id }) => id === bootHint.id);
+  const hudBoot = bootHint && (hudBootStep || (bootHint.step === 0 && !builds.guide && !state.game.owned.includes(bootHint.id)));
+  const startPet = state.rankedLoadout?.pet;
+  const hudPet = startPet && liveSeconds < 120 && !state.game.owned.some((id) => id === 1101 || id === 1102 || id === 1103) &&
+    hudProgress.acquired === 0 ? startPet : null;
   const showBuildHud = showInGameHud && state.settings.showBuildOverlay && hudItems.length > 0 &&
     (!state.game.inGame || state.preview || state.activeMode === state.game.modeKey);
   const isSR = pScene === 'sr_hud' || (state.game.inGame
@@ -1578,6 +1761,12 @@ export function OverlayView({ state }: { state: AppState }) {
               </span>
               <span className="text-zinc-400">Alt+{state.settings.hotkeySheet || 'G'}</span>
             </div>
+            {hudPet && (
+              <p className="mt-1 flex max-w-48 items-center gap-1 text-[10px] font-semibold text-indigo-100">
+                <img src={itemIconUrl(hudPet.id, state.ddVersion)} alt="" className="size-5 shrink-0 rounded" />
+                <span className="truncate">{state.settings.language === 'fr' ? 'Départ' : 'Start'} · {hudPet.name}</span>
+              </p>
+            )}
             {hudCurrent && <p className="mt-0.5 max-w-44 truncate text-xs font-bold text-white">{hudCurrent.name}</p>}
             {hudCurrent && (
               <ol className="mt-1 flex items-center gap-1.5" aria-label={state.settings.language === 'fr' ? 'Objets restants du build' : 'Remaining build items'}>
@@ -1592,6 +1781,12 @@ export function OverlayView({ state }: { state: AppState }) {
                   </li>
                 ))}
               </ol>
+            )}
+            {hudBoot && bootHint && (
+              <p className="mt-1 flex max-w-48 items-center gap-1 text-[10px] text-zinc-300">
+                <img src={itemIconUrl(bootHint.id, state.ddVersion)} alt="" className="size-4 rounded" />
+                <span className="truncate">{state.settings.language === 'fr' ? 'Bottes' : 'Boots'} · {hudBootStep ? hudBootStep.step : bootHint.name}</span>
+              </p>
             )}
           </GlassCard>
         </DraggableSlot>
